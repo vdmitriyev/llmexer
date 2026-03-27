@@ -1,0 +1,23 @@
+# custom files
+.env
+
+# folders
+.git/*
+.venv/*
+temp/*
+data/*
+*-data/*
+data-*/*
+configs/*
+.configs/*
+.jsons/*
+llmexer/.jsons/*
+
+# extentions
+*.env
+*.csv
+*.txt
+*.json
+
+
+

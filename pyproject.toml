@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llmexer"
+description = "It is a framework and CLI utility to plan, design, run and control various LLM experiments"
+version = "0.1.0"
+readme = "README.md"
+authors = [
+  {name = "vdmitriyev"},
+  {name = "ellariel"}
+]
+maintainers = [
+  {name = "vdmitriyev"}
+]
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.7.0",
+    "python-dotenv>=1.0.0",
+    "Jinja2>=3.1.6",
+    "typing-extensions>=4.0.0",
+]
+
+[project.scripts]
+llmexer = "llmexer.cli:app"
+
+[project.urls]
+
+homepage = "https://github.com/vdmitriyev/llmexer"
+changelog = "https://github.com/vdmitriyev/llmexer/blob/main/HISTORY.rst"
+repository = "https://github.com/vdmitriyev/llmexer.git"
+documentation = "https://vdmitriyev.github.io/llmexer/"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["llmexer*"]
+
+[dependency-groups]
+dev = [
+    "black>=26.3.1",
+    "isort>=8.0.1",
+    "pre-commit>=4.5.1",
+]
