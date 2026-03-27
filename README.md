@@ -54,8 +54,8 @@ Here is a list of examples demonstrating the core features of the utility:
     ```
 
 ## CLI UI
+![alt text](docs/cli-ui.png)
 
-![alt text](https://raw.githubusercontent.com/vdmitriyev/llmexer/main/docs/cli-ui.png)
 
 ## Documentation
 
