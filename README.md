@@ -31,7 +31,7 @@ This guide walks through setting up the project for local development using `uv`
 
 ##  Configuration
 
-This tool requires access to your GitLab repository (*scopes*: `api`, `read_api`). It uses a `.env` file to securely load your API credentials.
+This tool requires access to local or remote running LLMS. It uses a `.env` file to securely load your API credentials, and also set the current experiment.
 
 1.  Create a `.env` file in the root of the project
 

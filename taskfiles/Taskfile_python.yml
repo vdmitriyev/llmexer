@@ -134,3 +134,11 @@ tasks:
     cmds:
       - echo "running pylint (static code analysis)"
       - pylint llmexer
+
+  pytest:
+    desc: runs tests
+    silent: true
+    deps: [check-virtualenv]
+    cmds:
+      - echo "running pytest"
+      - pytest
