@@ -7,6 +7,8 @@ from rich.table import Table
 from rich.text import Text
 from typing_extensions import Annotated
 
+from llmexer.commands import experiment
+from llmexer.common import ensure_directory_exists
 from llmexer.configs import console, settings
 from llmexer.version import package_summary, package_version
 
@@ -14,9 +16,8 @@ app = typer.Typer(
     help="`llmexer` is a framework and CLI utility to plan, design, run and control various LLM experiments."
 )
 
-
-class MigrationConditionChoice(str, Enum):
-    due_date = "due-date"
+app.add_typer(experiment.app, name="experiment")
+app.add_typer(experiment.app, name="exp", hidden=True)
 
 
 @app.callback(invoke_without_command=True)
@@ -78,7 +79,7 @@ def main(
             "Dry run mode:",
             Text(
                 f"{settings.dry_run}",
-                style=f"bold {"red" if not settings.dry_run else "green"}",
+                style=f'bold {"red" if not settings.dry_run else "green"}',
             ),
         )
     elif settings.dry_run:
@@ -98,6 +99,10 @@ def main(
             typer.echo(f"Warning: Could not load variables from {env_file}", err=True)
     else:
         load_dotenv()
+
+    from llmexer.constants import EXPERIMENTS_PATH
+
+    ensure_directory_exists(EXPERIMENTS_PATH)
 
     if version:
         if settings.verbose:

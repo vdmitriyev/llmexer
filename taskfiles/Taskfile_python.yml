@@ -89,7 +89,7 @@ tasks:
     desc: installs "{{.PACKAGE_NAME}}"
     deps: [check-virtualenv]
     cmds:
-      - pip install --editable .
+      - uv pip install -e . --group dev
       - python -c "import {{.PACKAGE_NAME}}"
 
   uninstall:
@@ -124,7 +124,7 @@ tasks:
     silent: true
     cmds:
       - echo "running bandit (static code analysis)"
-      - bandit -x "./.venv,./.tox,./tests" -r .
+      - bandit -x "./.venv,./.dvenv,./.tox,./tests" -r .
 
   pylint:
     desc: runs pylint
@@ -133,4 +133,4 @@ tasks:
     silent: true
     cmds:
       - echo "running pylint (static code analysis)"
-      - pylint src
+      - pylint llmexer

@@ -1,5 +1,7 @@
 # custom files
 .env
+CLAUDE.md
+compose-claude.yaml
 
 # folders
 temp/*
@@ -10,7 +12,9 @@ configs/*
 .configs/*
 .jsons/*
 .venv/*
+.dvenv/*
 llmexer/.jsons/*
+.experiments/*
 
 # extentions
 *.env

@@ -4,6 +4,7 @@
 # folders
 .git/*
 .venv/*
+dvenv/*
 temp/*
 data/*
 *-data/*
@@ -12,6 +13,7 @@ configs/*
 .configs/*
 .jsons/*
 llmexer/.jsons/*
+.experiments/*
 
 # extentions
 *.env

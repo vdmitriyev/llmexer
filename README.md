@@ -53,6 +53,17 @@ Here is a list of examples demonstrating the core features of the utility:
     llmexer version
     ```
 
+## Getting Started
+
+* Create a new experiment — generates a uniquely named folder under `.experiments/` using the format `YYYYMMDD-GUID`:
+    ```
+    llmexer experiment create
+    ```
+    The alias `exp` can be used as a shorthand:
+    ```
+    llmexer exp create
+    ```
+
 ## CLI UI
 ![alt text](docs/cli-ui.png)
 

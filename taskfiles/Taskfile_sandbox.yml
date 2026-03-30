@@ -1,0 +1,17 @@
+version: '3'
+
+tasks:
+
+  up:
+    desc: starts sandbox docker with claude code
+    silent: true
+    aliases: [u]
+    cmds:
+      - docker compose -f compose-claude.yaml up -d
+
+  shell:
+    desc: attaches to the sandbox via terminal shell
+    silent: true
+    aliases: [s]
+    cmds:
+      - docker compose -f compose-claude.yaml exec claude-code /bin/bash

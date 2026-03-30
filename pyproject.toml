@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llmexer"
 description = "It is a framework and CLI utility to plan, design, run and control various LLM experiments"
-version = "0.1.0"
+version = "0.1.1"
 readme = "README.md"
 authors = [
   {name = "vdmitriyev"},
@@ -42,4 +42,6 @@ dev = [
     "black>=26.3.1",
     "isort>=8.0.1",
     "pre-commit>=4.5.1",
+    "bandit>=1.9.4",
+    "pylint>=4.0.5"
 ]
