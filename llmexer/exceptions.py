@@ -15,3 +15,7 @@ class ExperimentNotExistsException(LLMExerException):
 
 class ExperimentIDRequiredException(LLMExerException):
     """Raised an experiment ID has not been passed."""
+
+
+class UnexpectedCLIParamsException(LLMExerException):
+    """Raised then unexpected CLI params are passed ."""

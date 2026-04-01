@@ -2,6 +2,16 @@
 History
 =======
 
+0.1.4 (2026-04-01)
+------------------
+
+* Update `search` and `papers` commands to use current experiment ID as default for `--eid` parameter
+* Rename `search` command to `run` in the `search` category
+* Add `new` command to `search` category to create search configuration YAML files
+* Update `run` command to accept `--file` parameter for loading search parameters from YAML files
+* Implement Semantic Scholar API integration for paper search
+* Export search results to CSV with fields: DOI, TITLE, AUTHORS, ABSTRACT, IsOpenAccess, Year, PaperId
+
 0.1.3 (2026-04-01)
 ------------------
 
