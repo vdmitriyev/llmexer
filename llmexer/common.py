@@ -2,7 +2,7 @@ import json
 import os
 from datetime import datetime
 
-from llmexer.constants import TEMP_FILE_PATH
+from llmexer.constants import TEMP_PATH
 from llmexer.logger import get_logger
 
 logger = get_logger()
@@ -13,6 +13,7 @@ class GlobalFlags:
 
     dry_run: bool = False
     verbose: bool = False
+    experiment_id: str = None
 
 
 def __save_json__(content: dict, filepath: str = None):
@@ -27,11 +28,11 @@ def __save_json__(content: dict, filepath: str = None):
                                     If None, a timestamped filename is used. Defaults to None.
     """
 
-    ensure_directory_exists(TEMP_FILE_PATH)
+    ensure_directory_exists(TEMP_PATH)
 
     if not filepath:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filepath = os.path.join(TEMP_FILE_PATH, f"dump_{timestamp}.json")
+        filepath = os.path.join(TEMP_PATH, f"dump_{timestamp}.json")
 
     try:
         with open(filepath, "w", encoding="utf-8") as f:
@@ -55,6 +56,7 @@ def ensure_directory_exists(path: str):
     Creates the directory if it doesn't exist.
     Handles creation of parent directories if they don't exist.
     """
+
     try:
         if not os.path.exists(path):
             os.makedirs(path, exist_ok=True)

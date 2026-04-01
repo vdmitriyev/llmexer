@@ -9,11 +9,11 @@ import typer
 from rich.table import Table
 
 from llmexer.common import ensure_directory_exists
-from llmexer.configs import console
+from llmexer.configs import console, settings
 from llmexer.constants import EXPERIMENTS_PATH
-from llmexer.exceptions import ExperimentAlreadyExistsException
+from llmexer.exceptions import ExperimentAlreadyExistsException, LLMExerException
 
-app = typer.Typer(help="Commands for managing LLM experiments.")
+app = typer.Typer(help="Manage LLM experiments.")
 
 
 class SortBy(str, Enum):
@@ -46,7 +46,7 @@ def create(
 ) -> None:
     """Create a new experiment folder under .experiments."""
     experiment_id = id if id else generate_experiment_id()
-    experiment_path = f"{EXPERIMENTS_PATH}/{experiment_id}"
+    experiment_path = os.path.join(EXPERIMENTS_PATH, experiment_id)
 
     if os.path.exists(experiment_path):
         raise ExperimentAlreadyExistsException(
@@ -94,3 +94,63 @@ def list_experiments(
         table.add_row(str(i), entry.name, ctime)
 
     console.print(table)
+
+
+@app.command()
+def rename(
+    old_id: str = typer.Option(
+        None,
+        "--old-id",
+        help="Current experiment ID to rename. If not provided, uses EXPERIMENT_ID from .env.",
+    ),
+    new_id: str = typer.Option(
+        ...,
+        "--new-id",
+        help="New experiment ID name.",
+    ),
+) -> None:
+    """Rename an existing experiment."""
+
+    # Use current experiment if old_id not provided
+    if old_id is None:
+        if settings.experiment_id:
+            old_id = settings.experiment_id
+        else:
+            raise LLMExerException(
+                "No experiment ID provided. Use --old-id or set EXPERIMENT_ID in .env file."
+            )
+
+    old_path = os.path.join(EXPERIMENTS_PATH, old_id)
+    new_path = os.path.join(EXPERIMENTS_PATH, new_id)
+
+    if not os.path.exists(old_path):
+        raise LLMExerException(f"Experiment '{old_id}' does not exist.")
+
+    if os.path.exists(new_path):
+        raise ExperimentAlreadyExistsException(f"Experiment '{new_id}' already exists.")
+
+    os.rename(old_path, new_path)
+    console.print(
+        f"Renamed experiment: [bold yellow]{old_id}[/bold yellow] → [bold yellow]{new_id}[/bold yellow]"
+    )
+
+
+@app.command()
+def current() -> None:
+    """Display the current experiment ID loaded from .env."""
+
+    if settings.experiment_id:
+        experiment_path = os.path.join(EXPERIMENTS_PATH, settings.experiment_id)
+        if os.path.exists(experiment_path):
+            console.print(
+                f"Current experiment: [bold yellow]{settings.experiment_id}[/bold yellow]"
+            )
+        else:
+            console.print(
+                f"Current experiment: [bold yellow]{settings.experiment_id}[/bold yellow] "
+                f"[bold red](not found in {EXPERIMENTS_PATH})[/bold red]"
+            )
+    else:
+        console.print(
+            "[bold red]No current experiment set.[/bold red] Set EXPERIMENT_ID in .env file."
+        )

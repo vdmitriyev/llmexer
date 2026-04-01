@@ -2,6 +2,15 @@
 History
 =======
 
+0.1.3 (2026-04-01)
+------------------
+
+* Add categories such as `papers` and `search` to the CLI interface
+* Add `rename` command to rename existing experiments with validation
+* Add `current` command to `experiment` category to display the current experiment ID
+* Add `EXPERIMENT_ID` loading from `.env` file on startup
+* Add further tests
+
 0.1.2 (2026-03-30)
 ------------------
 

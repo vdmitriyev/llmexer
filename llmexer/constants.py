@@ -9,8 +9,11 @@ LOGGER_NAME = "llmexer"
 LOG_FILE_NAME = "llmexer.log"
 APP_LOG_LEVEL = os.environ.get("APP_LOG_LEVEL", "INFO").upper()
 EXPERIMENTS_DIR = ".experiments"
+TEMP_DIR = "temp"
+SEARCHES_DIR = "searches"
+PAPERS_DIR = "papers"
 
 LOG_FILE_PATH = os.path.join(BASEDIR, LOG_FILE_NAME)
-TEMP_FILE_PATH = os.path.join("temp", LOG_FILE_NAME)
 
+TEMP_PATH = os.path.join(BASEDIR, TEMP_DIR)
 EXPERIMENTS_PATH = os.path.join(BASEDIR, EXPERIMENTS_DIR)

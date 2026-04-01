@@ -7,7 +7,7 @@ from rich.table import Table
 from rich.text import Text
 from typing_extensions import Annotated
 
-from llmexer.commands import experiment
+from llmexer.commands import experiment, papers, search
 from llmexer.common import ensure_directory_exists
 from llmexer.configs import console, settings
 from llmexer.version import package_summary, package_version
@@ -18,6 +18,9 @@ app = typer.Typer(
 
 app.add_typer(experiment.app, name="experiment")
 app.add_typer(experiment.app, name="exp", hidden=True)
+
+app.add_typer(search.app, name="search")
+app.add_typer(papers.app, name="papers")
 
 
 @app.callback(invoke_without_command=True)
@@ -99,6 +102,19 @@ def main(
             typer.echo(f"Warning: Could not load variables from {env_file}", err=True)
     else:
         load_dotenv()
+
+    # Load EXPERIMENT_ID from environment
+    import os
+
+    experiment_id = os.getenv("EXPERIMENT_ID")
+    if experiment_id:
+        settings.experiment_id = experiment_id
+        if settings.verbose:
+            console.print(
+                Text("✅", style="bold green"),
+                "Current experiment:",
+                Text(f"{experiment_id}", style="bold yellow"),
+            )
 
     from llmexer.constants import EXPERIMENTS_PATH
 

@@ -34,6 +34,14 @@ This guide walks through setting up the project for local development using `uv`
 This tool requires access to local or remote running LLMS. It uses a `.env` file to securely load your API credentials, and also set the current experiment.
 
 1.  Create a `.env` file in the root of the project
+2.  Set the current experiment ID (optional):
+    ```
+    EXPERIMENT_ID=20260330-3a9adf70
+    ```
+3. You could also pass custom file as `.env`to the CLI:
+    ```
+    llmexer --env-file custom.env
+    ```
 
 ## Usage
 
@@ -62,6 +70,42 @@ Here is a list of examples demonstrating the core features of the utility:
     The alias `exp` can be used as a shorthand:
     ```
     llmexer exp create
+    ```
+
+### CLI category: experiment
+
+The `experiment` (alias: `exp`) category provides commands for managing LLM experiments:
+
+* **Create an experiment** — generates a uniquely named folder under `.experiments/` using the format `YYYYMMDD-GUID`:
+    ```bash
+    llmexer experiment create
+    ```
+    Or with a custom ID:
+    ```bash
+    llmexer experiment create --id my-custom-experiment
+    ```
+
+* **List experiments** — displays all experiments with sorting options:
+    ```bash
+    llmexer experiment list
+    ```
+    Sort by date (newest first):
+    ```bash
+    llmexer experiment list --sort-by date --desc
+    ```
+
+* **Show current experiment** — displays the current experiment ID from `.env`:
+    ```bash
+    llmexer experiment current
+    ```
+
+* **Rename an experiment** — changes the ID of an existing experiment:
+    ```bash
+    llmexer experiment rename --old-id old-experiment-name --new-id new-experiment-name
+    ```
+    If `EXPERIMENT_ID` is set in `.env`, you can omit `--old-id`:
+    ```bash
+    llmexer experiment rename --new-id new-experiment-name
     ```
 
 ## CLI UI
