@@ -126,6 +126,32 @@ You can still override the current experiment by explicitly providing `--eid`:
 llmexer search run --eid different-experiment --query "deep learning"
 ```
 
+### CLI category: papers
+
+The `papers` category provides commands for managing PDF papers within an experiment:
+
+* **Add a paper from a local file**:
+    ```bash
+    llmexer papers add --file /path/to/paper.pdf
+    ```
+
+* **Add all PDFs from a directory** (recursive):
+    ```bash
+    llmexer papers add --directory /path/to/folder
+    ```
+
+* **Download and add a paper from a URL**:
+    ```bash
+    llmexer papers add --url https://example.com/paper.pdf
+    ```
+    Exactly one of `--file`, `--directory`, or `--url` must be provided. Already-existing papers are skipped (not overwritten).
+
+* **Extract text from all PDFs** — reads every PDF in the experiment's `papers/` folder and writes `.txt` and `.md` files alongside each PDF:
+    ```bash
+    llmexer papers extract
+    ```
+    Papers that fail to extract are skipped with a warning; a summary of extracted vs. skipped counts is printed at the end.
+
 ### CLI category: search
 
 The `search` category provides commands for managing and running literature searches using the Semantic Scholar API:
@@ -157,6 +183,46 @@ The `search` category provides commands for managing and running literature sear
     - Results are saved incrementally every 100 papers: `search_YYYYMMDD-GUID_partial_100.csv`, `search_YYYYMMDD-GUID_partial_200.csv`, etc.
     - Final results saved to: `search_YYYYMMDD-GUID_final.csv`
     - CSV fields: `DOI`, `TITLE`, `AUTHORS`, `ABSTRACT`, `IsOpenAccess`, `Year`, `PaperId`
+
+## How to Work
+
+A typical end-to-end workflow for collecting and processing papers inside an experiment:
+
+**1. Create a new experiment**
+```bash
+llmexer experiment create
+# Output: created experiment '20260402-a1b2c3d4'
+```
+
+**2. Give it a meaningful name**
+```bash
+llmexer experiment rename --old-id 20260402-a1b2c3d4 --new-id llm-survey-2026
+```
+Or, if `EXPERIMENT_ID=20260402-a1b2c3d4` is already set in `.env`:
+```bash
+llmexer experiment rename --new-id llm-survey-2026
+```
+
+**3. Add papers to the experiment**
+
+From a local file:
+```bash
+llmexer papers add --eid llm-survey-2026 --file ~/Downloads/attention-is-all-you-need.pdf
+```
+From a directory of PDFs:
+```bash
+llmexer papers add --eid llm-survey-2026 --directory ~/Downloads/papers/
+```
+From a URL:
+```bash
+llmexer papers add --eid llm-survey-2026 --url https://arxiv.org/pdf/1706.03762
+```
+
+**4. Extract text from all added papers**
+```bash
+llmexer papers extract --eid llm-survey-2026
+# Creates .txt and .md files next to each PDF inside .experiments/llm-survey-2026/papers/
+```
 
 ## CLI UI
 ![alt text](docs/cli-ui.png)
