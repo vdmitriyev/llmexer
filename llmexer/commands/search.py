@@ -9,11 +9,14 @@ import typer
 import yaml
 from semanticscholar import SemanticScholar
 
-from llmexer.common import ensure_directory_exists
+from llmexer.common import (
+    ensure_directory_exists,
+    get_experiment_directory_path,
+    get_proper_eid,
+)
 from llmexer.configs import console, settings
 from llmexer.constants import EXPERIMENTS_PATH, SEARCHES_DIR
 from llmexer.exceptions import (
-    ExperimentIDRequiredException,
     ExperimentNotExistsException,
     LLMExerException,
     UnexpectedCLIParamsException,
@@ -43,30 +46,6 @@ def generate_search_id() -> str:
     formatted_datetime = now_utc.strftime("%Y%m%d")
     unique_id = str(uuid.uuid4())[:8]
     return f"{formatted_datetime}-{unique_id}"
-
-
-def get_proper_eid(eid: str) -> str:
-    """Use current experiment if eid not provided.
-
-    Args:
-        eid (str): _description_
-
-    Raises:
-        ExperimentIDRequiredException: _description_
-
-    Returns:
-        str: _description_
-    """
-
-    if eid is None:
-        if settings.experiment_id:
-            eid = settings.experiment_id
-        else:
-            raise ExperimentIDRequiredException(
-                "No experiment ID provided. Use --eid or set EXPERIMENT_ID in .env file."
-            )
-
-    return eid
 
 
 def save_search_query(
@@ -122,10 +101,7 @@ def new(
     """Create a new search configuration YAML file"""
 
     eid = get_proper_eid(eid)
-    experiment_path = os.path.join(EXPERIMENTS_PATH, eid)
-
-    if not os.path.exists(experiment_path):
-        raise ExperimentNotExistsException(f"Experiment '{eid}' does not exist.")
+    experiment_path = get_experiment_directory_path(eid)
 
     search_id, yaml_filename = save_search_query(
         experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM
@@ -164,9 +140,7 @@ def run(
         raise UnexpectedCLIParamsException("Only one can be set: query or file")
 
     eid = get_proper_eid(eid)
-    experiment_path = os.path.join(EXPERIMENTS_PATH, eid)
-    if not os.path.exists(experiment_path):
-        raise ExperimentNotExistsException(f"Experiment '{eid}' does not exist.")
+    experiment_path = get_experiment_directory_path(eid)
 
     if query:
         year = DEFAULT_SEARCH_YEAR_PARAM

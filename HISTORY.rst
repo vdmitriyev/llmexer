@@ -2,6 +2,15 @@
 History
 =======
 
+0.1.6 (2026-04-02)
+------------------
+
+* Add `extract` command to `papers` category to extract full text from PDFs and save as `.txt` and `.md` files
+* Use `pypdf` (transitive dependency) for PDF text extraction
+* Respect `--dry-run` flag; skip unreadable PDFs with a warning instead of failing
+* Add `PaperExtractException` exception class
+* Add tests for `papers extract` command
+
 0.1.5 (2026-04-02)
 ------------------
 

@@ -27,3 +27,7 @@ class PaperAlreadyExistsException(LLMExerException):
 
 class PaperAddException(LLMExerException):
     """Raised when a paper cannot be added (e.g. not a PDF, download failure)."""
+
+
+class PaperExtractException(LLMExerException):
+    """Raised when a paper cannot be extracted."""

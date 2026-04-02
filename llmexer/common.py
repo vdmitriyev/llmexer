@@ -2,18 +2,16 @@ import json
 import os
 from datetime import datetime
 
+import llmexer.constants as _constants
+from llmexer.configs import settings
 from llmexer.constants import TEMP_PATH
+from llmexer.exceptions import (
+    ExperimentIDRequiredException,
+    ExperimentNotExistsException,
+)
 from llmexer.logger import get_logger
 
 logger = get_logger()
-
-
-class GlobalFlags:
-    """Class to hold global configuration state."""
-
-    dry_run: bool = False
-    verbose: bool = False
-    experiment_id: str = None
 
 
 def __save_json__(content: dict, filepath: str = None):
@@ -63,3 +61,39 @@ def ensure_directory_exists(path: str):
             logger.info(f"Directory has been created: {path}")
     except OSError as e:
         logger.error(f"Error creating directory '{path}': {e}")
+
+
+def get_proper_eid(eid: str) -> str:
+    """Use current experiment if eid not provided.
+
+    Args:
+        eid (str): experiment ID
+
+    Raises:
+        ExperimentIDRequiredException: _description_
+
+    Returns:
+        str: _description_
+    """
+
+    if eid is None:
+        if settings.experiment_id:
+            eid = settings.experiment_id
+        else:
+            raise ExperimentIDRequiredException(
+                "No experiment ID provided. Use --eid or set EXPERIMENT_ID in .env file."
+            )
+
+    return eid
+
+
+def get_experiment_directory_path(eid: str):
+    """
+    Ensures a directory exists using the os module.
+    """
+
+    experiment_path = os.path.join(_constants.EXPERIMENTS_PATH, eid)
+    if not os.path.exists(experiment_path):
+        raise ExperimentNotExistsException(f"Experiment '{eid}' does not exist.")
+
+    return experiment_path
