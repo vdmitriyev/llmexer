@@ -192,7 +192,7 @@ def extract(
         help="Experiment ID to extract papers from. If not provided, uses EXPERIMENT_ID from .env.",
     ),
 ) -> None:
-    """Extracts text from all PDFs in the papers subdirectory and saves as .txt and .md files."""
+    """Extracts text from all PDFs in the papers subdirectory and saves as .txt files."""
 
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)
@@ -226,7 +226,6 @@ def extract(
     for pdf_path in pdfs:
         stem = pdf_path.stem
         txt_path = pdf_path.parent / f"{stem}.txt"
-        md_path = pdf_path.parent / f"{stem}.md"
 
         try:
             reader = pypdf.PdfReader(str(pdf_path))
@@ -241,11 +240,10 @@ def extract(
 
         if not settings.dry_run:
             txt_path.write_text(text, encoding="utf-8")
-            md_path.write_text(text, encoding="utf-8")
-            logger.debug("Wrote '%s' and '%s'", txt_path, md_path)
+            logger.debug("Wrote '%s'", txt_path)
 
         console.print(
-            f"[bold green]Extracted[/bold green] '{pdf_path.name}' -> '{stem}.txt', '{stem}.md'"
+            f"[bold green]Extracted[/bold green] '{pdf_path.name}' -> '{stem}.txt'"
         )
         processed += 1
 

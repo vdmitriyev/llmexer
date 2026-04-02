@@ -95,7 +95,7 @@ def test_extract_no_pdfs(experiments_dir, mock_no_dotenv, experiment):
 
 
 def test_extract_happy_path(experiments_dir, mock_no_dotenv, experiment):
-    """When valid PDFs exist, produces .txt and .md files alongside them."""
+    """When valid PDFs exist, produces .txt files alongside them."""
     eid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
@@ -107,7 +107,6 @@ def test_extract_happy_path(experiments_dir, mock_no_dotenv, experiment):
     result = runner.invoke(app, ["papers", "extract", "--eid", eid])
     assert result.exit_code == 0
     assert (papers_path / "mypaper.txt").exists()
-    assert (papers_path / "mypaper.md").exists()
     assert "Extracted" in result.output
     assert "Done:" in result.output
 
@@ -125,7 +124,6 @@ def test_extract_dry_run(experiments_dir, mock_no_dotenv, experiment):
     result = runner.invoke(app, ["--dry-run", "papers", "extract", "--eid", eid])
     assert result.exit_code == 0
     assert not (papers_path / "dryrun.txt").exists()
-    assert not (papers_path / "dryrun.md").exists()
 
 
 def test_extract_pdf_failure(experiments_dir, mock_no_dotenv, experiment):
@@ -145,4 +143,3 @@ def test_extract_pdf_failure(experiments_dir, mock_no_dotenv, experiment):
     assert result.exit_code == 0
     assert "Skipped" in result.output
     assert not (papers_path / "bad.txt").exists()
-    assert not (papers_path / "bad.md").exists()
