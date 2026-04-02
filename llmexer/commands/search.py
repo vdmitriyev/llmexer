@@ -194,6 +194,48 @@ def run_semantic_scholar_search(
     return records
 
 
+def read_search_params(file, experiment_path, query_default: str = None):
+
+    # Derive search_id from the YAML filename stem (strip "search_" prefix and ".yaml" suffix)
+    file_stem = os.path.splitext(os.path.basename(file))[0]
+
+    search_id = (
+        file_stem[len("search_") :] if file_stem.startswith("search_") else file_stem
+    )
+
+    # Load parameters from config file if provided
+    if os.path.isabs(file):
+        search_file_path = file
+    else:
+        search_file_path = os.path.join(experiment_path, SEARCHES_DIR, file)
+
+    if not os.path.exists(search_file_path):
+        raise LLMExerException(f"Search file does not exist: '{file}' ")
+
+    with open(search_file_path, "r", encoding="utf-8") as f:
+        search_params = yaml.safe_load(f)
+
+    query = search_params.get("query", query_default)
+    year = search_params.get("year", DEFAULT_SEARCH_YEAR_PARAM)
+    only_open_access = search_params.get("onlyOpenAccess", DEFAULT_OPEN_ACCESS_PARAM)
+
+    return search_id, query, year, only_open_access
+
+
+def print_search_header(eid, search_id, query, year, only_open_access):
+    header = Table(show_header=False, box=None, padding=(0, 1))
+    header.add_column(style="bold white", no_wrap=True)
+    header.add_column()
+    header.add_row("Experiment:", f"[bold yellow]{eid}[/bold yellow]")
+    header.add_row("Search ID:", f"[bold yellow]{search_id}[/bold yellow]")
+    header.add_row("Query:", f"[bold green]{query}[/bold green]")
+    header.add_row("Year:", f"[bold cyan]{year}[/bold cyan]")
+    header.add_row(
+        "Only Open Access:", f"[bold magenta]{only_open_access}[/bold magenta]"
+    )
+    console.print(header)
+
+
 @app.command()
 def new(
     query: str = typer.Option(
@@ -268,42 +310,15 @@ def run(
             experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM
         )
     if file:
-        # Derive search_id from the YAML filename stem (strip "search_" prefix and ".yaml" suffix)
-        file_stem = os.path.splitext(os.path.basename(file))[0]
-        search_id = (
-            file_stem[len("search_") :]
-            if file_stem.startswith("search_")
-            else file_stem
+        search_id, query, year, only_open_access = read_search_params(
+            file, experiment_path, query
         )
-        # Load parameters from config file if provided
-        if os.path.isabs(file):
-            search_file_path = file
-        else:
-            search_file_path = os.path.join(experiment_path, SEARCHES_DIR, file)
-
-        if not os.path.exists(search_file_path):
-            raise LLMExerException(f"Config file '{file}' does not exist.")
-
-        with open(search_file_path, "r", encoding="utf-8") as f:
-            search_params = yaml.safe_load(f)
-
-        query = search_params.get("query", query)
-        year = search_params.get("year", DEFAULT_SEARCH_YEAR_PARAM)
-        only_open_access = search_params.get(
-            "onlyOpenAccess", DEFAULT_OPEN_ACCESS_PARAM
-        )
-
         console.print(f"Loaded config from: [bold blue]{file}[/bold blue]")
     elif not query:
         raise LLMExerException(
             "No query provided. Use --query or --file with a YAML file."
         )
 
-    console.print(f"Experiment: [bold yellow]{eid}[/bold yellow]")
-    console.print(f"Search ID: [bold yellow]{search_id}[/bold yellow]")
-    console.print(f"Query: [bold green]{query}[/bold green]")
-    console.print(f"Year: [bold cyan]{year}[/bold cyan]")
-    console.print(f"Only Open Access: [bold magenta]{only_open_access}[/bold magenta]")
     console.print(f"Limit: [bold blue]{limit}[/bold blue]")
 
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
@@ -323,6 +338,8 @@ def run(
         console.print(f"[bold yellow]Dry run:[/bold yellow] would write '{json_path}'")
         console.print(f"[bold yellow]Dry run:[/bold yellow] would write '{csv_path}'")
         return
+
+    print_search_header(eid, search_id, query, year, only_open_access)
 
     run_semantic_scholar_search(
         query, year, only_open_access, batch, limit, json_path, csv_path
@@ -350,10 +367,8 @@ def stats(
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)
 
-    file_stem = os.path.splitext(os.path.basename(file))[0]
-    search_id = (
-        file_stem[len("search_") :] if file_stem.startswith("search_") else file_stem
-    )
+    search_id, query, year, only_open_access = read_search_params(file, experiment_path)
+    print_search_header(eid, search_id, query, year, only_open_access)
 
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
     csv_path = os.path.join(searches_path, f"{search_id}_results.csv")

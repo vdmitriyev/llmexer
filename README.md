@@ -89,37 +89,12 @@ llmexer papers extract --eid llm-survey-2026
 
 The `experiment` (alias: `exp`) category provides commands for managing LLM experiments:
 
-* **Create an experiment** — generates a uniquely named folder under `.experiments/` using the format `YYYYMMDD-GUID`:
-    ```bash
-    llmexer experiment create
-    ```
-    Or with a custom ID:
-    ```bash
-    llmexer experiment create --id my-custom-experiment
-    ```
-
-* **List experiments** — displays all experiments with sorting options:
-    ```bash
-    llmexer experiment list
-    ```
-    Sort by date (newest first):
-    ```bash
-    llmexer experiment list --sort-by date --desc
-    ```
-
-* **Show current experiment** — displays the current experiment ID from `.env`:
-    ```bash
-    llmexer experiment current
-    ```
-
-* **Rename an experiment** — changes the ID of an existing experiment:
-    ```bash
-    llmexer experiment rename --old-id old-experiment-name --new-id new-experiment-name
-    ```
-    If `EXPERIMENT_ID` is set in `.env`, you can omit `--old-id`:
-    ```bash
-    llmexer experiment rename --new-id new-experiment-name
-    ```
+| Shortname | Description | Command Example |
+|-----------|-------------|-----------------|
+| `create` | Create a new experiment folder under `.experiments/` using format `YYYYMMDD-GUID`. Accepts an optional custom ID. | `llmexer experiment create --id my-experiment` |
+| `list` | List all experiments with optional sorting by name or date. | `llmexer experiment list --sort-by date --desc` |
+| `current` | Display the current experiment ID loaded from `.env`. | `llmexer experiment current` |
+| `rename` | Rename an existing experiment. Uses `EXPERIMENT_ID` from `.env` if `--old-id` is omitted. | `llmexer experiment rename --old-id old-name --new-id new-name` |
 
 ### Using Current Experiment ID
 
@@ -143,59 +118,23 @@ llmexer search run --eid different-experiment --query "deep learning"
 
 The `papers` category provides commands for managing PDF papers within an experiment:
 
-* **Add a paper from a local file**:
-    ```bash
-    llmexer papers add --file /path/to/paper.pdf
-    ```
-
-* **Add all PDFs from a directory** (recursive):
-    ```bash
-    llmexer papers add --directory /path/to/folder
-    ```
-
-* **Download and add a paper from a URL**:
-    ```bash
-    llmexer papers add --url https://example.com/paper.pdf
-    ```
-    Exactly one of `--file`, `--directory`, or `--url` must be provided. Already-existing papers are skipped (not overwritten).
-
-* **Extract text from all PDFs** — reads every PDF in the experiment's `papers/` folder and writes `.txt` and `.md` files alongside each PDF:
-    ```bash
-    llmexer papers extract
-    ```
-    Papers that fail to extract are skipped with a warning; a summary of extracted vs. skipped counts is printed at the end.
+| Shortname | Description | Command Example |
+|-----------|-------------|-----------------|
+| `add --file` | Copy a single PDF into the experiment's `papers/` folder. | `llmexer papers add --file /path/to/paper.pdf` |
+| `add --directory` | Recursively copy all PDFs from a directory. Already-existing papers are skipped. | `llmexer papers add --directory /path/to/folder` |
+| `add --url` | Download a PDF from a URL into the experiment's `papers/` folder. | `llmexer papers add --url https://example.com/paper.pdf` |
+| `extract` | Extract text from all PDFs in `papers/` and save as `.txt` files. Skips unreadable PDFs with a warning. | `llmexer papers extract --eid my-experiment` |
 
 ### CLI category: search
 
-The `search` category provides commands for managing and running literature searches using the Semantic Scholar API:
+The `search` category provides commands for managing and running literature searches using the Semantic Scholar bulk API:
 
-* **Create a search configuration** — generates a YAML file with search parameters:
-    ```bash
-    llmexer search new --query "machine learning"
-    ```
-    This creates a file like `search_20260401-abc123.yaml` in the experiment's `searches` folder with:
-    ```yaml
-    query: machine learning
-    year: 2020-2026
-    onlyOpenAccess: false
-    ```
-
-* **Run a search with direct query**:
-    ```bash
-    llmexer search run --query "neural networks" --limit 200
-    ```
-    This queries Semantic Scholar and saves results to CSV files in the experiment's `searches` folder.
-
-* **Run a search from a config file**:
-    ```bash
-    llmexer search run --file search_20260401-abc123.yaml --limit 500
-    ```
-
-* **Search results**:
-    - Papers are fetched in batches of 100 (API limit)
-    - Results are saved incrementally every 100 papers: `search_YYYYMMDD-GUID_partial_100.csv`, `search_YYYYMMDD-GUID_partial_200.csv`, etc.
-    - Final results saved to: `search_YYYYMMDD-GUID_final.csv`
-    - CSV fields: `DOI`, `TITLE`, `AUTHORS`, `ABSTRACT`, `IsOpenAccess`, `Year`, `PaperId`
+| Shortname | Description | Command Example |
+|-----------|-------------|-----------------|
+| `new` | Create a search configuration YAML file in the experiment's `searches/` folder. | `llmexer search new --query "machine learning"` |
+| `run --query` | Run a search directly from a query string. Saves `<ID>_results_raw.json` and `<ID>_results.csv` to `searches/`. | `llmexer search run --query "neural networks" --limit 200` |
+| `run --file` | Run a search loading parameters from an existing YAML config. Use `--force-overwrite` to overwrite existing result files. | `llmexer search run --file search_20260401-abc123.yaml` |
+| `stats` | Display statistics for a completed search: publications per year and open access breakdown, shown as side-by-side tables. | `llmexer search stats --file search_20260401-abc123.yaml` |
 
 ## CLI UI
 ![alt text](docs/cli-ui.png)

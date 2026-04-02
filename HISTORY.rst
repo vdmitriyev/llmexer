@@ -10,6 +10,8 @@ History
 * Add `year` field (publication year) as the first column in search result CSV and raw JSON output
 * `stats` reads `<SEARCH_ID>_results.csv`, displays two tables side-by-side: publications per year (descending) and open access breakdown
 * Both tables include a `%` column (percentage of total, rounded to 1 decimal) computed in pandas
+* Extract `read_search_params()` helper to reuse YAML loading and `search_id` derivation across `run` and `stats`
+* Replace plain `print_search_header()` prints with a borderless Rich table for cleaner aligned output
 * Tables rendered side-by-side in an invisible Rich grid with equal widths (`expand=True`, `ratio=1`)
 
 0.1.7 (2026-04-02)

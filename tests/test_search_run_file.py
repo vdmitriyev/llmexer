@@ -69,9 +69,12 @@ def test_search_run_with_query(
 
     result = runner.invoke(app, ["search", "run", "--query", "test query"])
     assert result.exit_code == 0
-    assert "Query: test query" in result.output
-    assert "Year: 2020-2025" in result.output
-    assert "Only Open Access: False" in result.output
+    assert "Query:" in result.output
+    assert "test query" in result.output
+    assert "Year:" in result.output
+    assert "2020-2025" in result.output
+    assert "Only Open Access:" in result.output
+    assert "False" in result.output
 
 
 def test_search_run_with_file_file(
@@ -94,9 +97,12 @@ def test_search_run_with_file_file(
     result = runner.invoke(app, ["search", "run", "--file", str(search_file_path)])
     assert result.exit_code == 0
     assert "Loaded config from:" in result.output
-    assert "Query: neural networks" in result.output
-    assert "Year: 2022-2024" in result.output
-    assert "Only Open Access: True" in result.output
+    assert "Query:" in result.output
+    assert "neural networks" in result.output
+    assert "Year:" in result.output
+    assert "2022-2024" in result.output
+    assert "Only Open Access:" in result.output
+    assert "True" in result.output
 
 
 def test_search_run_nonexistent_file_raises(
@@ -142,9 +148,12 @@ def test_search_run_file_with_missing_fields(
 
     result = runner.invoke(app, ["search", "run", "--file", str(search_file_path)])
     assert result.exit_code == 0
-    assert "Query: minimal query" in result.output
-    assert "Year: 2020-2025" in result.output  # Default
-    assert "Only Open Access: False" in result.output  # Default
+    assert "Query:" in result.output
+    assert "minimal query" in result.output
+    assert "Year:" in result.output
+    assert "2020-2025" in result.output  # Default
+    assert "Only Open Access:" in result.output
+    assert "False" in result.output  # Default
 
 
 def test_search_run_creates_output_files(
