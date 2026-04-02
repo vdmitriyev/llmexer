@@ -135,8 +135,8 @@ def main(
 
     # If a subcommand was provided, don't exit; continue to the subcommand.
     # Otherwise, Typer will handle exiting or showing the help page.
-    if ctx.invoked_subcommand is not None:
-        return
+    if ctx.invoked_subcommand is None:
+        typer.echo(ctx.get_help())
 
 
 if __name__ == "__main__":

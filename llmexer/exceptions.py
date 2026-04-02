@@ -19,3 +19,11 @@ class ExperimentIDRequiredException(LLMExerException):
 
 class UnexpectedCLIParamsException(LLMExerException):
     """Raised then unexpected CLI params are passed ."""
+
+
+class PaperAlreadyExistsException(LLMExerException):
+    """Raised when a paper with the same filename already exists in the papers directory."""
+
+
+class PaperAddException(LLMExerException):
+    """Raised when a paper cannot be added (e.g. not a PDF, download failure)."""

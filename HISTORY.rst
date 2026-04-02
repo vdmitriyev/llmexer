@@ -2,6 +2,18 @@
 History
 =======
 
+0.1.5 (2026-04-02)
+------------------
+
+* Add `add` command to `papers` category to add PDF papers to an experiment's `papers/` subdirectory
+* Support `--file` parameter to copy a single PDF file
+* Support `--directory` parameter to recursively copy all PDFs from a directory
+* Support `--url` parameter to download a PDF from a URL
+* Raise `UnexpectedCLIParamsException` if more than one input source is provided
+* Raise `PaperAlreadyExistsException` if a PDF with the same name already exists
+* Add `requests` as a dependency for URL downloading
+* Fix tests
+
 0.1.4 (2026-04-01)
 ------------------
 

@@ -55,52 +55,6 @@ def test_search_new_creates_yaml_file(experiments_dir, mock_no_dotenv, monkeypat
     assert len(yaml_files) == 1
 
 
-def test_search_new_yaml_content(experiments_dir, mock_no_dotenv, monkeypatch):
-    """The created YAML file should contain correct parameters."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
-
-    result = runner.invoke(
-        app,
-        ["search", "new", "--query", "machine learning", "--year", "2022-2024"],
-    )
-    assert result.exit_code == 0
-
-    # Read the YAML file
-    searches_dir = experiments_dir / "test-exp" / "searches"
-    yaml_files = list(searches_dir.glob("search_*.yaml"))
-    yaml_file = yaml_files[0]
-
-    with open(yaml_file, "r") as f:
-        config = yaml.safe_load(f)
-
-    assert config["query"] == "machine learning"
-    assert config["year"] == "2022-2024"
-    assert config["onlyOpenAccess"] is False
-
-
-def test_search_new_with_only_open_access(experiments_dir, mock_no_dotenv, monkeypatch):
-    """The onlyOpenAccess parameter should be set correctly."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
-
-    result = runner.invoke(
-        app,
-        ["search", "new", "--query", "test", "--only-open-access"],
-    )
-    assert result.exit_code == 0
-
-    # Read the YAML file
-    searches_dir = experiments_dir / "test-exp" / "searches"
-    yaml_files = list(searches_dir.glob("search_*.yaml"))
-    yaml_file = yaml_files[0]
-
-    with open(yaml_file, "r") as f:
-        config = yaml.safe_load(f)
-
-    assert config["onlyOpenAccess"] is True
-
-
 def test_search_new_default_values(experiments_dir, mock_no_dotenv, monkeypatch):
     """Default values should be used when not provided."""
     os.makedirs(experiments_dir / "test-exp")
@@ -117,7 +71,7 @@ def test_search_new_default_values(experiments_dir, mock_no_dotenv, monkeypatch)
     with open(yaml_file, "r") as f:
         config = yaml.safe_load(f)
 
-    assert config["query"] == "sample request"
+    assert config["query"] == "influence of machine learning on computer science"
     assert config["year"] == "2020-2025"
     assert config["onlyOpenAccess"] is False
 

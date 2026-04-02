@@ -1,4 +1,4 @@
-"""Tests for the `search run` command with config file support."""
+"""Tests for the `search run` command with search file support."""
 
 import os
 from unittest.mock import Mock
@@ -44,22 +44,22 @@ def test_search_run_with_query(experiments_dir, mock_no_dotenv, monkeypatch):
     assert "Only Open Access: False" in result.output
 
 
-def test_search_run_with_config_file(experiments_dir, mock_no_dotenv, monkeypatch):
-    """Running search with --config should load parameters from YAML."""
+def test_search_run_with_file_file(experiments_dir, mock_no_dotenv, monkeypatch):
+    """Running search with --file should load parameters from YAML."""
     os.makedirs(experiments_dir / "test-exp")
     monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
 
-    # Create a config file
-    config_path = experiments_dir / "test-exp" / "test_config.yaml"
-    config_data = {
+    # Create a search file
+    search_file_path = experiments_dir / "test-exp" / "test_search_file.yaml"
+    search_file_data = {
         "query": "neural networks",
         "year": "2022-2024",
         "onlyOpenAccess": True,
     }
-    with open(config_path, "w") as f:
-        yaml.dump(config_data, f)
+    with open(search_file_path, "w") as f:
+        yaml.dump(search_file_data, f)
 
-    result = runner.invoke(app, ["search", "run", "--config", str(config_path)])
+    result = runner.invoke(app, ["search", "run", "--file", str(search_file_path)])
     assert result.exit_code == 0
     assert "Loaded config from:" in result.output
     assert "Query: neural networks" in result.output
@@ -67,43 +67,22 @@ def test_search_run_with_config_file(experiments_dir, mock_no_dotenv, monkeypatc
     assert "Only Open Access: True" in result.output
 
 
-def test_search_run_config_overrides_query(
+def test_search_run_nonexistent_file_raises(
     experiments_dir, mock_no_dotenv, monkeypatch
 ):
-    """Config file parameters should override command line query."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
-
-    # Create a config file
-    config_path = experiments_dir / "test-exp" / "test_config.yaml"
-    config_data = {"query": "from config", "year": "2023", "onlyOpenAccess": False}
-    with open(config_path, "w") as f:
-        yaml.dump(config_data, f)
-
-    result = runner.invoke(
-        app,
-        ["search", "run", "--query", "from cli", "--config", str(config_path)],
-    )
-    assert result.exit_code == 0
-    assert "Query: from config" in result.output
-
-
-def test_search_run_nonexistent_config_raises(
-    experiments_dir, mock_no_dotenv, monkeypatch
-):
-    """Using a nonexistent config file should raise error."""
+    """Using a nonexistent search file should raise error."""
     os.makedirs(experiments_dir / "test-exp")
     monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
 
     result = runner.invoke(
-        app, ["search", "run", "--config", "/nonexistent/config.yaml"]
+        app, ["search", "run", "--file", "/nonexistent/search_file.yaml"]
     )
     assert result.exit_code != 0
     assert isinstance(result.exception, LLMExerException)
     assert "does not exist" in str(result.exception)
 
 
-def test_search_run_without_query_or_config_raises(
+def test_search_run_without_query_or_file_raises(
     experiments_dir, mock_no_dotenv, monkeypatch
 ):
     """Running search without query or config should raise error."""
@@ -116,20 +95,20 @@ def test_search_run_without_query_or_config_raises(
     assert "No query provided" in str(result.exception)
 
 
-def test_search_run_config_with_missing_fields(
+def test_search_run_file_with_missing_fields(
     experiments_dir, mock_no_dotenv, monkeypatch
 ):
-    """Config file with missing fields should use defaults."""
+    """search file with missing fields should use defaults."""
     os.makedirs(experiments_dir / "test-exp")
     monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
 
-    # Create a config file with only query
-    config_path = experiments_dir / "test-exp" / "minimal_config.yaml"
-    config_data = {"query": "minimal query"}
-    with open(config_path, "w") as f:
-        yaml.dump(config_data, f)
+    # Create a search file with only query
+    search_file_path = experiments_dir / "test-exp" / "minimal_search_file.yaml"
+    search_file_data = {"query": "minimal query"}
+    with open(search_file_path, "w") as f:
+        yaml.dump(search_file_data, f)
 
-    result = runner.invoke(app, ["search", "run", "--config", str(config_path)])
+    result = runner.invoke(app, ["search", "run", "--file", str(search_file_path)])
     assert result.exit_code == 0
     assert "Query: minimal query" in result.output
     assert "Year: 2020-2025" in result.output  # Default

@@ -24,6 +24,11 @@ logger = get_logger()
 
 app = typer.Typer(help="Search online digital libraries for papers and metadata.")
 
+# Default values
+DEFAULT_QUERY_PARAM = "influence of machine learning on computer science"
+DEFAULT_SEARCH_YEAR_PARAM = "2020-2025"
+DEFAULT_OPEN_ACCESS_PARAM = False
+
 
 def generate_search_id() -> str:
     """
@@ -64,10 +69,47 @@ def get_proper_eid(eid: str) -> str:
     return eid
 
 
+def save_search_query(
+    experiment_path: str,
+    query: str,
+    year: str = DEFAULT_SEARCH_YEAR_PARAM,
+    only_open_access: bool = DEFAULT_OPEN_ACCESS_PARAM,
+) -> str:
+    """_summary_
+
+    Args:
+        query (str): _description_
+        year (str, optional): _description_. Defaults to DEFAULT_SEARCH_YEAR_PARAM.
+        only_open_access (bool, optional): _description_. Defaults to DEFAULT_OPEN_ACCESS_PARAM.
+
+    Returns:
+        str: _description_
+    """
+
+    # Create searches directory inside the experiment folder
+    searches_path = os.path.join(experiment_path, "searches")
+    ensure_directory_exists(searches_path)
+
+    # Generate search ID and filename
+    search_id = generate_search_id()
+
+    yaml_filename = f"search_{search_id}.yaml"
+    yaml_path = os.path.join(searches_path, yaml_filename)
+
+    # Create YAML content
+    search_config = {"query": query, "year": year, "onlyOpenAccess": only_open_access}
+
+    # Write YAML file
+    with open(yaml_path, "w", encoding="utf-8") as f:
+        yaml.dump(search_config, f, default_flow_style=False, sort_keys=False)
+
+    return search_id, yaml_filename
+
+
 @app.command()
 def new(
     query: str = typer.Option(
-        "sample request",
+        DEFAULT_QUERY_PARAM,
         "--query",
         help="Query string for the search",
     ),
@@ -85,24 +127,11 @@ def new(
     if not os.path.exists(experiment_path):
         raise ExperimentNotExistsException(f"Experiment '{eid}' does not exist.")
 
-    # Create searches directory inside the experiment folder
-    searches_path = os.path.join(experiment_path, "searches")
-    ensure_directory_exists(searches_path)
-
-    # Generate search ID and filename
-    search_id = generate_search_id()
-    yaml_filename = f"search_{search_id}.yaml"
-    yaml_path = os.path.join(searches_path, yaml_filename)
-
-    # Create YAML content
-    search_config = {"query": query, "year": "2020-2026", "onlyOpenAccess": False}
-
-    # Write YAML file
-    with open(yaml_path, "w", encoding="utf-8") as f:
-        yaml.dump(search_config, f, default_flow_style=False, sort_keys=False)
+    search_id, yaml_filename = save_search_query(
+        experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM
+    )
 
     console.print(f"Created search config: [bold yellow]{yaml_filename}[/bold yellow]")
-    console.print(f"Location: [bold blue]{yaml_path}[/bold blue]")
     console.print(f"Query: [bold green]{query}[/bold green]")
 
 
@@ -139,16 +168,15 @@ def run(
     if not os.path.exists(experiment_path):
         raise ExperimentNotExistsException(f"Experiment '{eid}' does not exist.")
 
-    # Create searches directory inside the experiment folder
-    searches_path = os.path.join(experiment_path, "searches")
-    ensure_directory_exists(searches_path)
-
-    # Default values
-    year = "2020-2025"
-    only_open_access = False
-
-    # Load parameters from config file if provided
+    if query:
+        year = DEFAULT_SEARCH_YEAR_PARAM
+        only_open_access = DEFAULT_OPEN_ACCESS_PARAM
+        search_id, yaml_filename = save_search_query(
+            experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM
+        )
     if file:
+        search_id = file
+        # Load parameters from config file if provided
         search_file_path = os.path.join(experiment_path, SEARCHES_DIR, file)
 
         if not os.path.exists(search_file_path):
@@ -158,17 +186,16 @@ def run(
             search_params = yaml.safe_load(f)
 
         query = search_params.get("query", query)
-        year = search_params.get("year", "2020-2025")
-        only_open_access = search_params.get("onlyOpenAccess", False)
+        year = search_params.get("year", DEFAULT_SEARCH_YEAR_PARAM)
+        only_open_access = search_params.get(
+            "onlyOpenAccess", DEFAULT_OPEN_ACCESS_PARAM
+        )
 
         console.print(f"Loaded config from: [bold blue]{file}[/bold blue]")
     elif not query:
         raise LLMExerException(
             "No query provided. Use --query or --file with a YAML file."
         )
-
-    # Generate search ID for output file
-    search_id = generate_search_id()
 
     console.print(f"Experiment: [bold yellow]{eid}[/bold yellow]")
     console.print(f"Search ID: [bold yellow]{search_id}[/bold yellow]")
