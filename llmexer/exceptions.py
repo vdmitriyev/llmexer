@@ -31,3 +31,7 @@ class PaperAddException(LLMExerException):
 
 class PaperExtractException(LLMExerException):
     """Raised when a paper cannot be extracted."""
+
+
+class SearchResultsAlreadyExistException(LLMExerException):
+    """Raised when search result files already exist and --force-rewrite is not set."""

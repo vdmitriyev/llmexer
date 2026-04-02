@@ -2,6 +2,20 @@
 History
 =======
 
+0.1.7 (2026-04-02)
+------------------
+
+* Implement Semantic Scholar bulk search API in `search run` using direct HTTP requests (replaces `semanticscholar` SDK)
+* Add `--batch` parameter to `search run` to control the number of papers fetched per API request (default: 1000)
+* Change `--limit` parameter default from 100 to unlimited (`None`)
+* Add `--force-overwrite` flag to `search run` to allow overwriting existing result files
+* Save raw API response as `<SEARCH_ID>_results_raw.json` and flattened results as `<SEARCH_ID>_results.csv` (semicolon-separated) in the experiment's `searches/` directory
+* Raise `SearchResultsAlreadyExistException` if result files already exist and `--force-overwrite` is not set
+* Add `SearchResultsAlreadyExistException` exception class
+* Fix `search run --file` to correctly derive search ID from the YAML filename and support absolute file paths
+* Fix tests for `search run`, `papers extract`, `search eid`, `search new`
+* Remove dependency: `semanticscholar`
+
 0.1.6 (2026-04-02)
 ------------------
 

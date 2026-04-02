@@ -1,7 +1,7 @@
 """Tests for the `search run` command with --eid parameter."""
 
 import os
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -15,14 +15,27 @@ from llmexer.exceptions import (
 runner = CliRunner()
 
 
+def _make_mock_s2_response() -> Mock:
+    mock_resp = Mock()
+    mock_resp.raise_for_status = Mock()
+    mock_resp.json.return_value = {"data": [], "token": None}
+    return mock_resp
+
+
+@pytest.fixture()
+def mock_s2_session():
+    mock_session = Mock()
+    mock_session.get.return_value = _make_mock_s2_response()
+    with patch("llmexer.commands.search.requests.Session", return_value=mock_session):
+        yield mock_session
+
+
 @pytest.fixture()
 def experiments_dir(tmp_path, monkeypatch):
     """Redirect EXPERIMENTS_PATH to a temporary directory for each test."""
-    import llmexer.commands.search as search_module
     import llmexer.constants as constants
 
     monkeypatch.setattr(constants, "EXPERIMENTS_PATH", str(tmp_path))
-    monkeypatch.setattr(search_module, "EXPERIMENTS_PATH", str(tmp_path))
     return tmp_path
 
 
@@ -35,7 +48,7 @@ def mock_no_dotenv(monkeypatch):
 
 
 def test_search_uses_current_experiment_as_default(
-    experiments_dir, mock_no_dotenv, monkeypatch
+    experiments_dir, mock_no_dotenv, mock_s2_session, monkeypatch
 ):
     """When --eid is not provided, should use EXPERIMENT_ID from environment."""
     os.makedirs(experiments_dir / "test-exp")
@@ -61,7 +74,9 @@ def test_search_without_eid_and_no_env_raises(
     assert "No experiment ID provided" in str(result.exception)
 
 
-def test_search_eid_overrides_env(experiments_dir, mock_no_dotenv, monkeypatch):
+def test_search_eid_overrides_env(
+    experiments_dir, mock_no_dotenv, mock_s2_session, monkeypatch
+):
     """When --eid is provided, it should override EXPERIMENT_ID from environment."""
     os.makedirs(experiments_dir / "env-exp")
     os.makedirs(experiments_dir / "cli-exp")

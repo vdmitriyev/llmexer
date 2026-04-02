@@ -1,13 +1,14 @@
 """Search group commands."""
 
+import json
 import os
 import uuid
-from datetime import datetime, timezone
 
 import pandas as pd
+import requests
 import typer
 import yaml
-from semanticscholar import SemanticScholar
+from requests.adapters import HTTPAdapter, Retry
 
 from llmexer.common import (
     ensure_directory_exists,
@@ -15,10 +16,10 @@ from llmexer.common import (
     get_proper_eid,
 )
 from llmexer.configs import console, settings
-from llmexer.constants import EXPERIMENTS_PATH, SEARCHES_DIR
+from llmexer.constants import SEARCHES_DIR
 from llmexer.exceptions import (
-    ExperimentNotExistsException,
     LLMExerException,
+    SearchResultsAlreadyExistException,
     UnexpectedCLIParamsException,
 )
 from llmexer.logger import get_logger
@@ -31,6 +32,18 @@ app = typer.Typer(help="Search online digital libraries for papers and metadata.
 DEFAULT_QUERY_PARAM = "influence of machine learning on computer science"
 DEFAULT_SEARCH_YEAR_PARAM = "2020-2025"
 DEFAULT_OPEN_ACCESS_PARAM = False
+
+# Semantic Scholar API constants
+_S2_BULK_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
+_S2_FIELDS = "paperId,title,authors,abstract,isOpenAccess,externalIds"
+_PAPER_CSV_COLUMNS = [
+    "s2_paper_id",
+    "title",
+    "authors",
+    "abstract",
+    "isOpenAccess",
+    "doi",
+]
 
 
 def generate_search_id() -> str:
@@ -68,8 +81,6 @@ def save_search_query(
     # Create searches directory inside the experiment folder
     searches_path = os.path.join(experiment_path, "searches")
     ensure_directory_exists(searches_path)
-
-    # Generate search ID and filename
     search_id = generate_search_id()
 
     yaml_filename = f"search_{search_id}.yaml"
@@ -83,6 +94,99 @@ def save_search_query(
         yaml.dump(search_config, f, default_flow_style=False, sort_keys=False)
 
     return search_id, yaml_filename
+
+
+def run_semantic_scholar_search(
+    query: str,
+    year: str,
+    only_open_access: bool,
+    batch_size: int,
+    limit_size: int,
+    json_path: str,
+    csv_path: str,
+) -> tuple[list[dict], list[dict]]:
+    """Call the Semantic Scholar bulk search API with pagination.
+
+    Returns:
+        (raw_json_results, records): raw_json_results is a list of raw API response dicts (one per page);
+        records is a list of flattened paper dicts with PAPER_CSV_COLUMNS fields.
+    """
+
+    session = requests.Session()
+    retries = Retry(
+        total=5,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+    )
+    session.mount("https://", HTTPAdapter(max_retries=retries))
+
+    params: dict = {
+        "query": query,
+        "fields": _S2_FIELDS,
+        "limit": min(batch_size, 1000),
+    }
+
+    if year:
+        params["year"] = year
+    if only_open_access:
+        params["openAccessPdf"] = ""
+
+    raw_json_results: list[dict] = []
+    records: list[dict] = []
+
+    while True:
+        response = session.get(_S2_BULK_URL, params=params)
+        response.raise_for_status()
+        data = response.json()
+        raw_json_results.append(data)
+
+        papers = data.get("data", [])
+        for paper in papers:
+            if limit_size is not None and len(records) >= limit_size:
+                break
+            ext_ids = paper.get("externalIds") or {}
+            records.append(
+                {
+                    "s2_paper_id": paper.get("paperId"),
+                    "title": paper.get("title"),
+                    "authors": "; ".join(
+                        a.get("name", "") for a in paper.get("authors", [])
+                    ),
+                    "abstract": paper.get("abstract"),
+                    "isOpenAccess": paper.get("isOpenAccess"),
+                    "doi": ext_ids.get("DOI"),
+                }
+            )
+
+        console.print(f"Retrieved {len(records)} paper(s) so far...")
+        logger.debug(
+            "Page retrieved: %d papers in page, %d total", len(papers), len(records)
+        )
+
+        token = data.get("token")
+        if not token:
+            break
+        params["token"] = token
+
+        with open(json_path, "w", encoding="utf-8") as fh:
+            json.dump(raw_json_results, fh, ensure_ascii=False, indent=4)
+
+        df = pd.DataFrame(records, columns=_PAPER_CSV_COLUMNS)
+        df.to_csv(csv_path, index=False, encoding="utf-8", sep=";")
+
+    with open(json_path, "w", encoding="utf-8") as fh:
+        json.dump(raw_json_results, fh, ensure_ascii=False, indent=4)
+    logger.debug("Wrote raw response to '%s'", json_path)
+
+    df = pd.DataFrame(records, columns=_PAPER_CSV_COLUMNS)
+    df.to_csv(csv_path, index=False, encoding="utf-8", sep=";")
+    logger.debug("Wrote CSV to '%s'", csv_path)
+
+    console.print(f"[bold green]Done:[/bold green] {len(records)} paper(s) saved to:")
+    console.print(f"  {json_path}")
+    console.print(f"  {csv_path}")
+
+    return records
 
 
 @app.command()
@@ -129,9 +233,19 @@ def run(
         help="Experiment ID to be used to store search results. If not provided, uses EXPERIMENT_ID from .env.",
     ),
     limit: int = typer.Option(
-        100,
+        None,
         "--limit",
         help="Maximum number of papers to retrieve (fetched in batches of 100)",
+    ),
+    batch: int = typer.Option(
+        1000,
+        "--batch",
+        help="A number of papers to retrieve at once",
+    ),
+    force_overwrite: bool = typer.Option(
+        False,
+        "--force-overwrite",
+        help="Overwrite existing result files if they already exist.",
     ),
 ) -> None:
     """Runs a new search and saves results"""
@@ -149,9 +263,18 @@ def run(
             experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM
         )
     if file:
-        search_id = file
+        # Derive search_id from the YAML filename stem (strip "search_" prefix and ".yaml" suffix)
+        file_stem = os.path.splitext(os.path.basename(file))[0]
+        search_id = (
+            file_stem[len("search_") :]
+            if file_stem.startswith("search_")
+            else file_stem
+        )
         # Load parameters from config file if provided
-        search_file_path = os.path.join(experiment_path, SEARCHES_DIR, file)
+        if os.path.isabs(file):
+            search_file_path = file
+        else:
+            search_file_path = os.path.join(experiment_path, SEARCHES_DIR, file)
 
         if not os.path.exists(search_file_path):
             raise LLMExerException(f"Config file '{file}' does not exist.")
@@ -178,94 +301,24 @@ def run(
     console.print(f"Only Open Access: [bold magenta]{only_open_access}[/bold magenta]")
     console.print(f"Limit: [bold blue]{limit}[/bold blue]")
 
-    # # Perform search with pagination
-    # console.print("\n[bold cyan]Starting search...[/bold cyan]")
-    # logger.info(f"Searching Semantic Scholar: query='{query}', year='{year}', open_access={only_open_access}")
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+    ensure_directory_exists(searches_path)
 
-    # # Initialize Semantic Scholar client
-    # sch = SemanticScholar()
+    json_path = os.path.join(searches_path, f"{search_id}_results_raw.json")
+    csv_path = os.path.join(searches_path, f"{search_id}_results.csv")
 
-    # papers_data = []
-    # save_interval, total_papers, offset = 100, 0, 0
-    # batch_size = 100  # API limit per request
+    if not force_overwrite:
+        existing = [p for p in [json_path, csv_path] if os.path.exists(p)]
+        if existing:
+            raise SearchResultsAlreadyExistException(
+                f"Result files already exist: {existing}. Use --force-rewrite to overwrite."
+            )
 
-    # import logging
-    # logging.getLogger("semanticscholar").setLevel(logging.DEBUG)
+    if settings.dry_run:
+        console.print(f"[bold yellow]Dry run:[/bold yellow] would write '{json_path}'")
+        console.print(f"[bold yellow]Dry run:[/bold yellow] would write '{csv_path}'")
+        return
 
-    # try:
-    #     while total_papers < limit:
-    #         # Calculate how many papers to fetch in this batch
-    #         current_batch_size = min(batch_size, limit - total_papers)
-
-    #         console.print(f"[bold cyan]Fetching papers {offset + 1} to {offset + current_batch_size}...[/bold cyan]")
-    #         logger.info(f"Fetching batch: offset={offset}, limit={current_batch_size}")
-
-    #         # Fetch batch
-    #         results = sch.search_paper(
-    #             query,
-    #             year=year,
-    #             open_access_pdf=only_open_access,
-    #             limit=1,
-    #             fields=["paperId", "externalIds", "title", "authors", "abstract", "isOpenAccess", "year"],
-    #         )
-    #         print("1")
-    #         batch_count = 0
-    #         for paper in results:
-    #             print("2")
-    #             # Extract DOI from externalIds
-    #             doi = paper.externalIds.get("DOI", "") if paper.externalIds else ""
-
-    #             # Extract author names
-    #             authors = ", ".join([author.name for author in paper.authors]) if paper.authors else ""
-
-    #             paper_data = {
-    #                 "DOI": doi,
-    #                 "TITLE": paper.title or "",
-    #                 "AUTHORS": authors,
-    #                 "ABSTRACT": paper.abstract or "",
-    #                 "IsOpenAccess": paper.isOpenAccess or False,
-    #                 "Year": paper.year or "",
-    #                 "PaperId": paper.paperId or "",
-    #             }
-    #             papers_data.append(paper_data)
-    #             total_papers += 1
-    #             batch_count += 1
-
-    #             # Save every 100 papers
-    #             if total_papers % save_interval == 0:
-    #                 df = pd.DataFrame(papers_data)
-    #                 output_filename = f"search_{search_id}_partial_{total_papers}.csv"
-    #                 output_path = os.path.join(searches_path, output_filename)
-    #                 df.to_csv(output_path, index=False)
-    #                 console.print(f"[bold blue]✓ Saved {total_papers} papers to {output_filename}[/bold blue]")
-    #                 logger.info(f"Saved partial results: {total_papers} papers to {output_filename}")
-
-    #         # If we got fewer results than requested, we've reached the end
-    #         if batch_count < current_batch_size:
-    #             console.print(f"[bold yellow]Reached end of results (found {total_papers} papers)[/bold yellow]")
-    #             break
-
-    #         offset += batch_count
-
-    #         # Stop if we've reached the limit
-    #         if total_papers >= limit:
-    #             break
-
-    # except Exception as e:
-    #     logger.error(f"Error searching Semantic Scholar: {e}")
-    #     raise LLMExerException(f"Search failed: {e}")
-
-    # # Save final results
-    # if papers_data:
-    #     df = pd.DataFrame(papers_data)
-    #     output_filename = f"search_{search_id}_final.csv"
-    #     output_path = os.path.join(searches_path, output_filename)
-    #     df.to_csv(output_path, index=False)
-
-    #     console.print(f"\n[bold green]✓ Search completed![/bold green]")
-    #     console.print(f"Total papers retrieved: [bold yellow]{total_papers}[/bold yellow]")
-    #     console.print(f"Final results saved to: [bold blue]{output_filename}[/bold blue]")
-    #     logger.info(f"Search completed: {total_papers} papers saved to {output_filename}")
-    # else:
-    #     console.print("[bold red]No papers found for this query.[/bold red]")
-    #     logger.warning(f"No papers found for query: {query}")
+    run_semantic_scholar_search(
+        query, year, only_open_access, batch, limit, json_path, csv_path
+    )
