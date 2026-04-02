@@ -222,8 +222,8 @@ def extract(
 
     processed = 0
     skipped = 0
-
-    for pdf_path in pdfs:
+    cnt_pdfs = len(pdfs)
+    for index, pdf_path in enumerate(pdfs):
         stem = pdf_path.stem
         txt_path = pdf_path.parent / f"{stem}.txt"
 
@@ -232,9 +232,19 @@ def extract(
             text = "\n".join(page.extract_text() or "" for page in reader.pages)
         except Exception as exc:
             console.print(
-                f"[bold yellow]Skipped[/bold yellow] '{pdf_path.name}': extraction failed ({exc})."
+                f"[{index+1}/{cnt_pdfs}] [bold yellow]skipped[/bold yellow] '{pdf_path.name}'. Extraction failed ({exc})."
             )
             logger.debug("Extraction failed for '%s': %s", pdf_path, exc)
+            skipped += 1
+            continue
+
+        if not text.strip():
+            console.print(
+                f"[{index+1}/{cnt_pdfs}] [bold yellow]warning:[/bold yellow] '{pdf_path.name}' could not be parsed - no text content found. No .txt file written."
+            )
+            logger.debug(
+                "Empty content after extraction for '%s', skipping write.", pdf_path
+            )
             skipped += 1
             continue
 
@@ -243,10 +253,10 @@ def extract(
             logger.debug("Wrote '%s'", txt_path)
 
         console.print(
-            f"[bold green]Extracted[/bold green] '{pdf_path.name}' -> '{stem}.txt'"
+            f"[{index+1}/{cnt_pdfs}] [bold green]extracted:[/bold green] '{pdf_path.name}'"
         )
         processed += 1
 
     console.print(
-        f"[bold green]Done:[/bold green] {processed} extracted, {skipped} skipped."
+        f"Extracted: [bold green]{processed}[/bold green]. Skipped: [bold red]{skipped}[/bold red]"
     )
