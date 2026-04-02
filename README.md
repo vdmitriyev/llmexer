@@ -131,7 +131,7 @@ The `search` category provides commands for managing and running literature sear
 
 | Shortname | Description | Command Example |
 |-----------|-------------|-----------------|
-| `new` | Create a search configuration YAML file in the experiment's `searches/` folder. | `llmexer search new --query "machine learning"` |
+| `create` | Create a search configuration YAML file in the experiment's `searches/` folder. | `llmexer search create --query "machine learning"` |
 | `run --query` | Run a search directly from a query string. Saves `<ID>_results_raw.json` and `<ID>_results.csv` to `searches/`. | `llmexer search run --query "neural networks" --limit 200` |
 | `run --file` | Run a search loading parameters from an existing YAML config. Use `--force-overwrite` to overwrite existing result files. | `llmexer search run --file search_20260401-abc123.yaml` |
 | `stats` | Display statistics for a completed search: publications per year and open access breakdown, shown as side-by-side tables. | `llmexer search stats --file search_20260401-abc123.yaml` |

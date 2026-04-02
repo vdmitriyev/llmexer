@@ -237,7 +237,7 @@ def print_search_header(eid, search_id, query, year, only_open_access):
 
 
 @app.command()
-def new(
+def create(
     query: str = typer.Option(
         DEFAULT_QUERY_PARAM,
         "--query",

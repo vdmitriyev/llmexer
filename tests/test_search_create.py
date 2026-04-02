@@ -1,4 +1,4 @@
-"""Tests for the `search new` command."""
+"""Tests for the `search create` command."""
 
 import os
 from unittest.mock import Mock
@@ -33,12 +33,12 @@ def mock_no_dotenv(monkeypatch):
     return mock_load
 
 
-def test_search_new_creates_yaml_file(experiments_dir, mock_no_dotenv, monkeypatch):
+def test_search_create_creates_yaml_file(experiments_dir, mock_no_dotenv, monkeypatch):
     """Creating a new search config should create a YAML file in the searches directory."""
     os.makedirs(experiments_dir / "test-exp")
     monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
 
-    result = runner.invoke(app, ["search", "new", "--query", "test query"])
+    result = runner.invoke(app, ["search", "create", "--query", "test query"])
     assert result.exit_code == 0
     assert "Created search config:" in result.output
     assert "search_" in result.output
@@ -53,12 +53,12 @@ def test_search_new_creates_yaml_file(experiments_dir, mock_no_dotenv, monkeypat
     assert len(yaml_files) == 1
 
 
-def test_search_new_default_values(experiments_dir, mock_no_dotenv, monkeypatch):
+def test_search_create_default_values(experiments_dir, mock_no_dotenv, monkeypatch):
     """Default values should be used when not provided."""
     os.makedirs(experiments_dir / "test-exp")
     monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
 
-    result = runner.invoke(app, ["search", "new"])
+    result = runner.invoke(app, ["search", "create"])
     assert result.exit_code == 0
 
     # Read the YAML file
@@ -74,35 +74,35 @@ def test_search_new_default_values(experiments_dir, mock_no_dotenv, monkeypatch)
     assert config["onlyOpenAccess"] is False
 
 
-def test_search_new_without_eid_raises(experiments_dir, mock_no_dotenv, monkeypatch):
+def test_search_create_without_eid_raises(experiments_dir, mock_no_dotenv, monkeypatch):
     """Creating search config without experiment ID should raise error."""
     from llmexer.configs import settings
 
     monkeypatch.setattr(settings, "experiment_id", None)
     monkeypatch.delenv("EXPERIMENT_ID", raising=False)
 
-    result = runner.invoke(app, ["search", "new", "--query", "test"])
+    result = runner.invoke(app, ["search", "create", "--query", "test"])
     assert result.exit_code != 0
     assert isinstance(result.exception, ExperimentIDRequiredException)
 
 
-def test_search_new_nonexistent_experiment_raises(
+def test_search_create_nonexistent_experiment_raises(
     experiments_dir, mock_no_dotenv, monkeypatch
 ):
     """Creating search config for nonexistent experiment should raise error."""
     monkeypatch.setenv("EXPERIMENT_ID", "nonexistent")
 
-    result = runner.invoke(app, ["search", "new", "--query", "test"])
+    result = runner.invoke(app, ["search", "create", "--query", "test"])
     assert result.exit_code != 0
     assert isinstance(result.exception, ExperimentNotExistsException)
 
 
-def test_search_new_filename_format(experiments_dir, mock_no_dotenv, monkeypatch):
+def test_search_create_filename_format(experiments_dir, mock_no_dotenv, monkeypatch):
     """The YAML filename should follow the search_YYYYMMDD-GUID.yaml format."""
     os.makedirs(experiments_dir / "test-exp")
     monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
 
-    result = runner.invoke(app, ["search", "new", "--query", "test"])
+    result = runner.invoke(app, ["search", "create", "--query", "test"])
     assert result.exit_code == 0
 
     searches_dir = experiments_dir / "test-exp" / "searches"

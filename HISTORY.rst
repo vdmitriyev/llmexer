@@ -3,6 +3,11 @@ History
 =======
 
 
+0.1.9 (2026-04-02)
+------------------
+
+* Rename ``search new`` subcommand to ``search create`` for consistency
+
 0.1.8 (2026-04-02)
 ------------------
 
