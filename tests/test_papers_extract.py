@@ -104,11 +104,17 @@ def test_extract_happy_path(experiments_dir, mock_no_dotenv, experiment):
     pdf_file = papers_path / "mypaper.pdf"
     pdf_file.write_bytes(pdf_bytes)
 
-    result = runner.invoke(app, ["papers", "extract", "--eid", eid])
+    with patch("llmexer.commands.papers.pypdf.PdfReader") as mock_reader:
+        mock_page = Mock()
+        mock_page.extract_text.return_value = "Hello extraction world"
+        mock_reader.return_value.pages = [mock_page]
+
+        result = runner.invoke(app, ["papers", "extract", "--eid", eid])
+
     assert result.exit_code == 0
     assert (papers_path / "mypaper.txt").exists()
-    assert "Extracted" in result.output
-    assert "Done:" in result.output
+    assert "extracted:" in result.output
+    assert "Extracted:" in result.output
 
 
 def test_extract_dry_run(experiments_dir, mock_no_dotenv, experiment):
@@ -143,3 +149,26 @@ def test_extract_pdf_failure(experiments_dir, mock_no_dotenv, experiment):
     assert result.exit_code == 0
     assert "Skipped" in result.output
     assert not (papers_path / "bad.txt").exists()
+
+
+def test_extract_empty_content(experiments_dir, mock_no_dotenv, experiment):
+    """When extracted text is empty (whitespace-only), warns and skips writing .txt file."""
+    eid, exp_path = experiment
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+
+    pdf_bytes = _make_pdf("")
+    pdf_file = papers_path / "empty.pdf"
+    pdf_file.write_bytes(pdf_bytes)
+
+    with patch("llmexer.commands.papers.pypdf.PdfReader") as mock_reader:
+        mock_page = Mock()
+        mock_page.extract_text.return_value = "   \n\t  "
+        mock_reader.return_value.pages = [mock_page]
+
+        result = runner.invoke(app, ["papers", "extract", "--eid", eid])
+
+    assert result.exit_code == 0
+    assert "warning:" in result.output
+    assert "could not be parsed" in result.output
+    assert not (papers_path / "empty.txt").exists()
