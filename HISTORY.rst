@@ -3,6 +3,15 @@ History
 =======
 
 
+0.1.10 (2026-04-02)
+-------------------
+
+* Add ``papers download`` command with ``--doi`` (repeatable) and ``--email`` / ``UNPAYWALL_EMAIL`` env var support for Unpaywall API
+* Add ``--search-file`` option to ``papers download`` to read DOIs from a search result CSV (``searches/<FILE>``) and download all papers by DOI via Unpaywall
+* Rename downloaded PDFs from ``--search-file`` using structured ``YEAR_TITLE_DOI.pdf`` scheme
+* Save a ``<search_file_stem>_failed.csv`` (columns: ``doi``, ``url``, ``title``) next to the source CSV when any downloads fail or are skipped
+* Extract ``_download_pdf_from_url`` helper (shared by ``add --url`` and ``download``) supporting both ``fallback_name`` and ``forced_name`` filename modes
+
 0.1.9 (2026-04-02)
 ------------------
 

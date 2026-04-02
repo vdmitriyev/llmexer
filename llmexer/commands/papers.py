@@ -3,8 +3,9 @@
 import os
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
+import pandas as pd
 import pypdf
 import requests
 import typer
@@ -15,15 +16,113 @@ from llmexer.common import (
     get_proper_eid,
 )
 from llmexer.configs import console, logger, settings
-from llmexer.constants import PAPERS_DIR
+from llmexer.constants import PAPERS_DIR, SEARCHES_DIR
 from llmexer.exceptions import (
     ExperimentNotExistsException,
     PaperAddException,
     PaperAlreadyExistsException,
+    PaperDownloadException,
     UnexpectedCLIParamsException,
 )
 
 app = typer.Typer(help="Work with papers.")
+
+
+def _download_pdf_from_url(
+    url: str,
+    papers_path: str,
+    fallback_name: Optional[str] = None,
+    forced_name: Optional[str] = None,
+) -> str:
+    """Download a PDF from `url` into `papers_path`. Returns the resolved filename.
+
+    If `forced_name` is given it is always used as the filename (e.g. structured YEAR_TITLE_DOI.pdf).
+    If `fallback_name` is given it is used only when the URL cannot provide a .pdf filename.
+    Raises PaperAddException on network error or non-PDF filename (when no fallback/forced name).
+    Raises PaperAlreadyExistsException if destination already exists.
+    Respects settings.dry_run (skips write but still returns filename).
+    """
+    try:
+        response = requests.get(url, stream=True, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise PaperAddException(f"Failed to download '{url}': {exc}") from exc
+
+    if forced_name:
+        filename = forced_name
+    else:
+        # Determine filename: Content-Disposition > final URL path > original URL path > fallback
+        filename = None
+        content_disposition = response.headers.get("Content-Disposition", "")
+        if "filename=" in content_disposition:
+            for part in content_disposition.split(";"):
+                part = part.strip()
+                if part.lower().startswith("filename="):
+                    filename = part.split("=", 1)[1].strip().strip('"')
+                    break
+        if not filename:
+            filename = Path(response.url.split("?")[0]).name
+        if not filename:
+            filename = Path(url.split("?")[0]).name
+        if not filename or not filename.lower().endswith(".pdf"):
+            if fallback_name:
+                filename = fallback_name
+            else:
+                raise PaperAddException(
+                    f"Could not resolve a PDF filename from URL '{url}' "
+                    f"(resolved name: '{filename}')."
+                )
+
+    dst = os.path.join(papers_path, filename)
+    if os.path.exists(dst):
+        raise PaperAlreadyExistsException(
+            f"A paper named '{filename}' already exists in the papers directory."
+        )
+    if not settings.dry_run:
+        try:
+            with open(dst, "wb") as fh:
+                for chunk in response.iter_content(chunk_size=8192):
+                    fh.write(chunk)
+        except requests.RequestException as exc:
+            raise PaperAddException(f"Failed to download '{url}': {exc}") from exc
+        logger.debug("Downloaded '%s' -> '%s'", url, dst)
+
+    return filename
+
+
+def _resolve_unpaywall_pdf_url(doi: str, email: str) -> str:
+    """Query Unpaywall for the best open-access PDF URL for the given DOI.
+
+    Raises PaperDownloadException if the API request fails, the response is not valid
+    JSON, there is no open-access location, or the location has no pdf URL.
+    """
+    unpaywall_url = f"https://api.unpaywall.org/v2/{doi}?email={email}"
+    try:
+        response = requests.get(unpaywall_url, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise PaperDownloadException(
+            f"Unpaywall API request failed for DOI '{doi}': {exc}"
+        ) from exc
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise PaperDownloadException(
+            f"Unpaywall returned non-JSON response for DOI '{doi}'."
+        ) from exc
+
+    best_oa = data.get("best_oa_location")
+    if not best_oa:
+        raise PaperDownloadException(f"No open-access location found for DOI '{doi}'.")
+
+    pdf_url = best_oa.get("url_for_pdf")
+    if not pdf_url:
+        raise PaperDownloadException(
+            f"Open-access location found for DOI '{doi}' but no PDF URL is available."
+        )
+
+    return pdf_url
 
 
 @app.command()
@@ -34,13 +133,10 @@ def rename(
         help="Experiment ID to be used to store search results. If not provided, uses EXPERIMENT_ID from .env.",
     ),
 ) -> None:
-    """Renames papers of the given experiment"""
+    """Renames papers of the given experiment."""
 
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)
-
-    if not os.path.exists(experiment_path):
-        raise ExperimentNotExistsException(f"Experiment '{eid}' not exist.")
 
 
 @app.command()
@@ -78,9 +174,6 @@ def add(
 
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)
-
-    if not os.path.exists(experiment_path):
-        raise ExperimentNotExistsException(f"Experiment '{eid}' not exist.")
 
     papers_path = os.path.join(experiment_path, PAPERS_DIR)
     ensure_directory_exists(papers_path)
@@ -138,48 +231,171 @@ def add(
         )
 
     else:  # url
-        try:
-            response = requests.get(url, stream=True, timeout=30)
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            raise PaperAddException(f"Failed to download '{url}': {exc}") from exc
-
-        # Determine filename: Content-Disposition > final URL path > original URL path
-        filename = None
-        content_disposition = response.headers.get("Content-Disposition", "")
-        if "filename=" in content_disposition:
-            for part in content_disposition.split(";"):
-                part = part.strip()
-                if part.lower().startswith("filename="):
-                    filename = part.split("=", 1)[1].strip().strip('"')
-                    break
-        if not filename:
-            filename = Path(response.url.split("?")[0]).name
-        if not filename:
-            filename = Path(url.split("?")[0]).name
-
-        if not filename.lower().endswith(".pdf"):
-            raise PaperAddException(
-                f"Could not resolve a PDF filename from URL '{url}' "
-                f"(resolved name: '{filename}')."
-            )
-
-        dst = os.path.join(papers_path, filename)
-        if os.path.exists(dst):
-            raise PaperAlreadyExistsException(
-                f"A paper named '{filename}' already exists in the papers directory."
-            )
-        if not settings.dry_run:
-            try:
-                with open(dst, "wb") as fh:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        fh.write(chunk)
-            except requests.RequestException as exc:
-                raise PaperAddException(f"Failed to download '{url}': {exc}") from exc
-            logger.debug("Downloaded '%s' -> '%s'", url, dst)
+        filename = _download_pdf_from_url(url, papers_path)
         console.print(
             f"[bold green]Downloaded[/bold green] '{filename}' to experiment '{eid}'."
         )
+
+
+def _make_structured_filename(
+    year: Optional[str], title: Optional[str], doi: Optional[str]
+) -> str:
+    """Build a filename in the form YEAR_TITLE_DOI.pdf, sanitizing each part."""
+
+    def _clean(value: str) -> str:
+        return "".join(
+            c if (c.isalnum() or c in "-_.") else "_" for c in str(value)
+        ).strip("_")
+
+    year_part = _clean(year) if year and str(year).strip() else "unknown_year"
+    title_part = _clean(title)[:80] if title and str(title).strip() else "unknown_title"
+    doi_part = _clean(doi) if doi and str(doi).strip() else "unknown_doi"
+    return f"{year_part}_{title_part}_{doi_part}.pdf"
+
+
+@app.command()
+def download(
+    eid: str = typer.Option(
+        None,
+        "--eid",
+        help="Experiment ID to download papers into. If not provided, uses EXPERIMENT_ID from .env.",
+    ),
+    doi: List[str] = typer.Option(
+        None,
+        "--doi",
+        help="DOI of the paper to download. Can be specified multiple times.",
+    ),
+    search_file: Optional[str] = typer.Option(
+        None,
+        "--search-file",
+        help="Search results CSV filename inside searches/ (e.g. '20260401-bfdd863d_results.csv'). "
+        "Iterates all rows and downloads each paper by DOI.",
+    ),
+    email: Optional[str] = typer.Option(
+        "llmexer.unpaywall@local.local",
+        "--email",
+        help="Email address for Unpaywall API. Falls back to UNPAYWALL_EMAIL env var.",
+    ),
+) -> None:
+    """Download open-access PDF(s) by DOI using the Unpaywall API."""
+
+    provided = sum(p is not None and p != [] for p in [doi or None, search_file])
+    if provided != 1:
+        raise UnexpectedCLIParamsException(
+            "Exactly one of --doi or --search-file must be provided."
+        )
+
+    resolved_email = email or os.getenv("UNPAYWALL_EMAIL")
+    if not resolved_email:
+        raise PaperDownloadException(
+            "Unpaywall email is required. Use --email or set UNPAYWALL_EMAIL in .env."
+        )
+
+    eid = get_proper_eid(eid)
+    experiment_path = get_experiment_directory_path(eid)
+
+    papers_path = os.path.join(experiment_path, PAPERS_DIR)
+    ensure_directory_exists(papers_path)
+
+    # Build the list of (doi, desired_filename, title) triples to process
+    download_items: List[tuple] = []  # (doi_str, desired_filename, title_str)
+
+    use_forced_name = False
+    failed_csv_path: Optional[str] = None
+    if doi:
+        for single_doi in doi:
+            sanitized = "".join(
+                c if (c.isalnum() or c in "-_.") else "_" for c in single_doi
+            )
+            download_items.append((single_doi, f"{sanitized}.pdf", None))
+    else:
+        use_forced_name = True
+        searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+        csv_path = os.path.join(searches_path, search_file)
+        if not os.path.exists(csv_path):
+            raise PaperDownloadException(
+                f"Search file '{search_file}' not found in searches/ directory for experiment '{eid}'."
+            )
+        stem = Path(search_file).stem
+        failed_csv_path = os.path.join(searches_path, f"{stem}_failed.csv")
+        df = pd.read_csv(csv_path, sep=";")
+        for _, row in df.iterrows():
+            single_doi = row.get("doi")
+            if not single_doi or (isinstance(single_doi, float)):
+                continue
+            year = row.get("year")
+            title = row.get("title")
+            structured_name = _make_structured_filename(year, title, single_doi)
+            download_items.append(
+                (str(single_doi), structured_name, str(title) if title else None)
+            )
+
+    succeeded = 0
+    failed = 0
+    cnt = len(download_items)
+    failed_records: List[dict] = []
+
+    for index, (single_doi, desired_filename, item_title) in enumerate(download_items):
+        label = f"[{index+1}/{cnt}]"
+
+        pdf_url = None
+        try:
+            pdf_url = _resolve_unpaywall_pdf_url(single_doi, resolved_email)
+        except PaperDownloadException as exc:
+            console.print(
+                f"{label} [bold yellow]skipped[/bold yellow] '{single_doi}': {exc}"
+            )
+            failed += 1
+            failed_records.append({"doi": single_doi, "url": None, "title": item_title})
+            continue
+
+        download_kwargs = (
+            {"forced_name": desired_filename}
+            if use_forced_name
+            else {"fallback_name": desired_filename}
+        )
+        try:
+            filename = _download_pdf_from_url(pdf_url, papers_path, **download_kwargs)
+        except PaperAlreadyExistsException as exc:
+            console.print(
+                f"{label} [bold yellow]skipped[/bold yellow] '{single_doi}': {exc}"
+            )
+            failed += 1
+            failed_records.append(
+                {"doi": single_doi, "url": pdf_url, "title": item_title}
+            )
+            continue
+        except PaperAddException as exc:
+            console.print(f"{label} [bold red]failed[/bold red] '{single_doi}': {exc}")
+            failed += 1
+            failed_records.append(
+                {"doi": single_doi, "url": pdf_url, "title": item_title}
+            )
+            continue
+
+        logger.debug("Downloaded DOI '%s' -> '%s'", single_doi, filename)
+        console.print(
+            f"{label} [bold green]downloaded[/bold green] '{single_doi}' as '{filename}'."
+        )
+        succeeded += 1
+
+        if failed_csv_path and failed_records and not settings.dry_run:
+            pd.DataFrame(failed_records, columns=["doi", "title", "url"]).to_csv(
+                failed_csv_path, index=False, encoding="utf-8", sep=";"
+            )
+
+    if failed_csv_path and failed_records and not settings.dry_run:
+        pd.DataFrame(failed_records, columns=["doi", "title", "url"]).to_csv(
+            failed_csv_path, index=False, encoding="utf-8", sep=";"
+        )
+        logger.debug("Saved failed records to '%s'", failed_csv_path)
+        console.print(
+            f"Failed list saved to: [bold]{Path(failed_csv_path).name}[/bold]"
+        )
+
+    console.print(
+        f"Downloaded: [bold green]{succeeded}[/bold green]. Skipped/Failed: [bold red]{failed}[/bold red]"
+    )
 
 
 @app.command()

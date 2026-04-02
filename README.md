@@ -79,7 +79,19 @@ From a URL:
 llmexer papers add --eid llm-survey-2026 --url https://arxiv.org/pdf/1706.03762
 ```
 
-**4. Extract text from all added papers**
+**4. Download open-access papers by DOI via Unpaywall**
+
+By DOI (one or more):
+```bash
+llmexer papers download --eid llm-survey-2026 --doi 10.1038/nature12373 --email you@example.com
+```
+From a search result CSV (downloads all papers with a DOI, names each file `YEAR_TITLE_DOI.pdf`):
+```bash
+llmexer papers download --eid llm-survey-2026 --search-file 20260401-bfdd863d_results.csv
+```
+Failed downloads are saved automatically as `20260401-bfdd863d_results_failed.csv` (columns: `doi`, `url`, `title`) next to the source CSV.
+
+**5. Extract text from all added papers**
 ```bash
 llmexer papers extract --eid llm-survey-2026
 # Creates .txt and files next to each PDF inside .experiments/llm-survey-2026/papers/
@@ -123,6 +135,8 @@ The `papers` category provides commands for managing PDF papers within an experi
 | `add --file` | Copy a single PDF into the experiment's `papers/` folder. | `llmexer papers add --file /path/to/paper.pdf` |
 | `add --directory` | Recursively copy all PDFs from a directory. Already-existing papers are skipped. | `llmexer papers add --directory /path/to/folder` |
 | `add --url` | Download a PDF from a URL into the experiment's `papers/` folder. | `llmexer papers add --url https://example.com/paper.pdf` |
+| `download --doi` | Download one or more open-access PDFs by DOI using the Unpaywall API. Email required via `--email` or `UNPAYWALL_EMAIL` env var. | `llmexer papers download --doi 10.1038/nature12373 --email you@example.com` |
+| `download --search-file` | Download all papers from a search result CSV (inside `searches/`). Files are named `YEAR_TITLE_DOI.pdf`. Failures saved as `<stem>_failed.csv`. | `llmexer papers download --search-file 20260401-abc123_results.csv` |
 | `extract` | Extract text from all PDFs in `papers/` and save as `.txt` files. Skips unreadable PDFs with a warning. | `llmexer papers extract --eid my-experiment` |
 
 ## 🔍 CLI category: search

@@ -29,6 +29,11 @@ class PaperAddException(LLMExerException):
     """Raised when a paper cannot be added (e.g. not a PDF, download failure)."""
 
 
+class PaperDownloadException(LLMExerException):
+    """Raised when a DOI cannot be resolved to an open-access PDF via Unpaywall,
+    or when the Unpaywall API call itself fails."""
+
+
 class PaperExtractException(LLMExerException):
     """Raised when a paper cannot be extracted."""
 
