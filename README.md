@@ -29,7 +29,7 @@ This guide walks through setting up the project for local development using `uv`
     uv pip install -e . --group dev
     ```
 
-##  Configuration
+## ⚙️ Configuration
 
 This tool requires access to local or remote running LLMS. It uses a `.env` file to securely load your API credentials, and also set the current experiment.
 
@@ -43,7 +43,7 @@ This tool requires access to local or remote running LLMS. It uses a `.env` file
     llmexer --env-file custom.env
     ```
 
-## Getting Started
+## 🚀 Getting Started
 
 
 Because it's a typer CLI application, you can explore all its commands and options by simply running.
@@ -85,7 +85,7 @@ llmexer papers extract --eid llm-survey-2026
 # Creates .txt and files next to each PDF inside .experiments/llm-survey-2026/papers/
 ```
 
-### CLI category: experiment
+## 🧪 CLI category: experiment
 
 The `experiment` (alias: `exp`) category provides commands for managing LLM experiments:
 
@@ -96,7 +96,7 @@ The `experiment` (alias: `exp`) category provides commands for managing LLM expe
 | `current` | Display the current experiment ID loaded from `.env`. | `llmexer experiment current` |
 | `rename` | Rename an existing experiment. Uses `EXPERIMENT_ID` from `.env` if `--old-id` is omitted. | `llmexer experiment rename --old-id old-name --new-id new-name` |
 
-### Using Current Experiment ID
+#### Using Current Experiment ID
 
 Many commands support the `--eid` parameter to specify which experiment to work with. If you set `EXPERIMENT_ID` in your `.env` file, you can omit this parameter and the commands will use the current experiment automatically:
 
@@ -114,7 +114,7 @@ You can still override the current experiment by explicitly providing `--eid`:
 llmexer search run --eid different-experiment --query "deep learning"
 ```
 
-### CLI category: papers
+## 📑 CLI category: papers
 
 The `papers` category provides commands for managing PDF papers within an experiment:
 
@@ -125,7 +125,7 @@ The `papers` category provides commands for managing PDF papers within an experi
 | `add --url` | Download a PDF from a URL into the experiment's `papers/` folder. | `llmexer papers add --url https://example.com/paper.pdf` |
 | `extract` | Extract text from all PDFs in `papers/` and save as `.txt` files. Skips unreadable PDFs with a warning. | `llmexer papers extract --eid my-experiment` |
 
-### CLI category: search
+## 🔍 CLI category: search
 
 The `search` category provides commands for managing and running literature searches using the Semantic Scholar bulk API:
 
