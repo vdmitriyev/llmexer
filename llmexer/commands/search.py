@@ -9,6 +9,7 @@ import requests
 import typer
 import yaml
 from requests.adapters import HTTPAdapter, Retry
+from rich.table import Table
 
 from llmexer.common import (
     ensure_directory_exists,
@@ -35,9 +36,10 @@ DEFAULT_OPEN_ACCESS_PARAM = False
 
 # Semantic Scholar API constants
 _S2_BULK_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
-_S2_FIELDS = "paperId,title,authors,abstract,isOpenAccess,externalIds"
+_S2_FIELDS = "paperId,title,authors,abstract,isOpenAccess,externalIds,year"
 _PAPER_CSV_COLUMNS = [
     "s2_paper_id",
+    "year",
     "title",
     "authors",
     "abstract",
@@ -148,6 +150,7 @@ def run_semantic_scholar_search(
             records.append(
                 {
                     "s2_paper_id": paper.get("paperId"),
+                    "year": paper.get("year"),
                     "title": paper.get("title"),
                     "authors": "; ".join(
                         a.get("name", "") for a in paper.get("authors", [])
@@ -179,7 +182,9 @@ def run_semantic_scholar_search(
     logger.debug("Wrote raw response to '%s'", json_path)
 
     df = pd.DataFrame(records, columns=_PAPER_CSV_COLUMNS)
-    df.to_csv(csv_path, index=False, encoding="utf-8", sep=";")
+    df.sort_values(by=["year", "title"], ascending=[False, True]).to_csv(
+        csv_path, index=False, encoding="utf-8", sep=";"
+    )
     logger.debug("Wrote CSV to '%s'", csv_path)
 
     console.print(f"[bold green]Done:[/bold green] {len(records)} paper(s) saved to:")
@@ -322,3 +327,72 @@ def run(
     run_semantic_scholar_search(
         query, year, only_open_access, batch, limit, json_path, csv_path
     )
+
+
+@app.command()
+def stats(
+    file: str = typer.Option(
+        None,
+        "--file",
+        help="YAML search config filename or bare search ID.",
+    ),
+    eid: str = typer.Option(
+        None,
+        "--eid",
+        help="Experiment ID to look up results for. If not provided, uses EXPERIMENT_ID from .env.",
+    ),
+) -> None:
+    """Display statistics for a completed search result."""
+
+    if file is None:
+        raise UnexpectedCLIParamsException("--file is required.")
+
+    eid = get_proper_eid(eid)
+    experiment_path = get_experiment_directory_path(eid)
+
+    file_stem = os.path.splitext(os.path.basename(file))[0]
+    search_id = (
+        file_stem[len("search_") :] if file_stem.startswith("search_") else file_stem
+    )
+
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+    csv_path = os.path.join(searches_path, f"{search_id}_results.csv")
+
+    if not os.path.exists(csv_path):
+        console.print(
+            f"[bold yellow]Warning:[/bold yellow] Results file not found: '{csv_path}'"
+        )
+        console.print(
+            f"Run [bold cyan]search run --file {file} --eid {eid}[/bold cyan] first."
+        )
+        return
+
+    df = pd.read_csv(csv_path, sep=";")
+
+    year_counts = (
+        df["year"].dropna().astype(int).value_counts().sort_index(ascending=False)
+    )
+    year_df = year_counts.rename("count").to_frame()
+    year_df["pct"] = (year_df["count"] / year_df["count"].sum() * 100).round(1)
+    table1 = Table(title="Publications per Year", expand=True)
+    table1.add_column("Year     ", style="cyan", no_wrap=True)
+    table1.add_column("Count", style="green", justify="right")
+    table1.add_column("%", style="yellow", justify="right")
+    for year, row in year_df.iterrows():
+        table1.add_row(str(year), str(int(row["count"])), f"{row['pct']}%")
+
+    oa_counts = df["isOpenAccess"].value_counts()
+    oa_df = oa_counts.rename("count").to_frame()
+    oa_df["pct"] = (oa_df["count"] / oa_df["count"].sum() * 100).round(1)
+    table2 = Table(title="Open Access Breakdown", expand=True)
+    table2.add_column("Open Access", style="magenta", no_wrap=True)
+    table2.add_column("Count", style="green", justify="right")
+    table2.add_column("%", style="yellow", justify="right")
+    for label, row in oa_df.iterrows():
+        table2.add_row(str(label), str(int(row["count"])), f"{row['pct']}%")
+
+    layout = Table.grid(padding=(0, 2))
+    layout.add_column(ratio=1)
+    layout.add_column(ratio=1)
+    layout.add_row(table1, table2)
+    console.print(layout)

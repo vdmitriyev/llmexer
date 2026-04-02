@@ -2,6 +2,16 @@
 History
 =======
 
+
+0.1.8 (2026-04-02)
+------------------
+
+* Add `stats` command to `search` category to display statistics for a completed search result CSV
+* Add `year` field (publication year) as the first column in search result CSV and raw JSON output
+* `stats` reads `<SEARCH_ID>_results.csv`, displays two tables side-by-side: publications per year (descending) and open access breakdown
+* Both tables include a `%` column (percentage of total, rounded to 1 decimal) computed in pandas
+* Tables rendered side-by-side in an invisible Rich grid with equal widths (`expand=True`, `ratio=1`)
+
 0.1.7 (2026-04-02)
 ------------------
 

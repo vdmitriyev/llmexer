@@ -45,6 +45,12 @@ This tool requires access to local or remote running LLMS. It uses a `.env` file
 
 ## Getting Started
 
+
+Because it's a typer CLI application, you can explore all its commands and options by simply running.
+```bash
+llmexer --help
+```
+
 A typical end-to-end workflow for collecting and processing papers inside an experiment:
 
 **1. Create a new experiment**
@@ -56,10 +62,6 @@ llmexer experiment create
 **2. Give it a meaningful name**
 ```bash
 llmexer experiment rename --old-id 20260402-a1b2c3d4 --new-id llm-survey-2026
-```
-Or, if `EXPERIMENT_ID=20260402-a1b2c3d4` is already set in `.env`:
-```bash
-llmexer experiment rename --new-id llm-survey-2026
 ```
 
 **3. Add papers to the experiment**
@@ -80,26 +82,8 @@ llmexer papers add --eid llm-survey-2026 --url https://arxiv.org/pdf/1706.03762
 **4. Extract text from all added papers**
 ```bash
 llmexer papers extract --eid llm-survey-2026
-# Creates .txt and .md files next to each PDF inside .experiments/llm-survey-2026/papers/
+# Creates .txt and files next to each PDF inside .experiments/llm-survey-2026/papers/
 ```
-
-## Usage
-
-Once installed, the `llmexer` command is available directly in your terminal.
-
-Because it's a typer application, you can explore all its commands and options by simply running:
-
-* Help
-    ```
-    llmexer --help
-    ```
-
-Here is a list of examples demonstrating the core features of the utility:
-
-* List version
-    ```
-    llmexer version
-    ```
 
 ### CLI category: experiment
 

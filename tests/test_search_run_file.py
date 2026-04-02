@@ -30,6 +30,7 @@ _SAMPLE_PAPER = {
     "abstract": "An abstract.",
     "isOpenAccess": True,
     "externalIds": {"DOI": "10.1234/test"},
+    "year": 2023,
 }
 
 
@@ -172,6 +173,7 @@ def test_search_run_creates_output_files(
 
     df = pd.read_csv(csv_files[0], sep=";")
     assert len(df) == 1
+    assert df.iloc[0]["year"] == 2023
     assert df.iloc[0]["s2_paper_id"] == "abc123"
     assert df.iloc[0]["doi"] == "10.1234/test"
     assert df.iloc[0]["authors"] == "Alice; Bob"
