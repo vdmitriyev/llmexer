@@ -2,6 +2,13 @@
 History
 =======
 
+0.1.11 (2026-04-08)
+-------------------
+
+* Add ``--processor`` option to ``papers extract`` with ``pypdf`` (default, saves ``.txt``) and ``docling`` (saves ``.md``) backends
+* Add docling backend support: uploads PDFs to a remote docling-serve instance via HTTP Basic Auth; reads ``DOCLING_URL`` (default ``http://localhost:5001/``), ``DOCLING_USER``, and ``DOCLING_PASSWORD`` from ``.env``
+* Add ``--docling-url``, ``--docling-user``, ``--docling-password`` options to ``papers extract`` to override ``.env`` values at runtime
+* Add per-file spinner to ``papers extract`` to indicate progress during extraction
 
 0.1.10 (2026-04-02)
 -------------------

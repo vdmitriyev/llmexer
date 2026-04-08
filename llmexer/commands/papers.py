@@ -1,7 +1,9 @@
 """Search group commands."""
 
+import json
 import os
 import shutil
+from enum import Enum
 from pathlib import Path
 from typing import List, Optional
 
@@ -9,6 +11,7 @@ import pandas as pd
 import pypdf
 import requests
 import typer
+import urllib3
 
 from llmexer.common import (
     ensure_directory_exists,
@@ -16,16 +19,83 @@ from llmexer.common import (
     get_proper_eid,
 )
 from llmexer.configs import console, logger, settings
-from llmexer.constants import PAPERS_DIR, SEARCHES_DIR
+from llmexer.constants import DEFAULT_DOCLING_URL, PAPERS_DIR, SEARCHES_DIR
 from llmexer.exceptions import (
     ExperimentNotExistsException,
     PaperAddException,
     PaperAlreadyExistsException,
     PaperDownloadException,
+    PaperExtractException,
     UnexpectedCLIParamsException,
 )
 
 app = typer.Typer(help="Work with papers.")
+DOCLING_TIMEOUT = 300
+
+
+class PDFProcessor(str, Enum):
+    pypdf = "pypdf"
+    docling = "docling"
+
+
+def _extract_via_docling(pdf_path: Path, url: str, auth: tuple) -> str:
+    """Upload a PDF to a docling-serve instance and return the extracted Markdown.
+
+    Raises PaperExtractException on network errors or unexpected response shapes.
+    """
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    endpoint = f"{url.rstrip('/')}/v1/convert/file"
+    payload = {
+        "options": json.dumps(
+            {
+                "to_formats": ["md"],
+                "from_formats": ["pdf"],
+                "do_ocr": True,
+                "pdf_backend": "dlparse_v2",
+                "table_mode": "accurate",
+                "abort_on_error": False,
+            }
+        )
+    }
+
+    try:
+        with pdf_path.open("rb") as fh:
+            files = {"files": (pdf_path.name, fh, "application/pdf")}
+            resp = requests.post(
+                endpoint,
+                auth=auth,
+                files=files,
+                data=payload,
+                verify=False,
+                timeout=DOCLING_TIMEOUT,
+            )
+    except requests.RequestException as exc:
+        raise PaperExtractException(
+            f"Docling request failed for '{pdf_path.name}': {exc}"
+        ) from exc
+
+    if resp.status_code != 200:
+        raise PaperExtractException(
+            f"Docling server returned HTTP {resp.status_code} for '{pdf_path.name}': {resp.text}"
+        )
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise PaperExtractException(
+            f"Docling returned non-JSON response for '{pdf_path.name}'."
+        ) from exc
+
+    docs = data.get("documents") or [data.get("document", {})]
+    for doc in docs:
+        md = doc.get("md_content") or doc.get("markdown") or doc.get("content")
+        if md:
+            return md
+
+    raise PaperExtractException(
+        f"Could not find Markdown content in docling response for '{pdf_path.name}'."
+    )
 
 
 def _download_pdf_from_url(
@@ -405,8 +475,28 @@ def extract(
         "--eid",
         help="Experiment ID to extract papers from. If not provided, uses EXPERIMENT_ID from .env.",
     ),
+    processor: PDFProcessor = typer.Option(
+        PDFProcessor.pypdf,
+        "--processor",
+        help="Extraction backend: 'pypdf' (local, saves .txt) or 'docling' (remote server, saves .md).",
+    ),
+    docling_url: Optional[str] = typer.Option(
+        None,
+        "--docling-url",
+        help=f"Docling server URL. Overrides DOCLING_URL from .env[default: {DEFAULT_DOCLING_URL}].",
+    ),
+    docling_user: Optional[str] = typer.Option(
+        None,
+        "--docling-user",
+        help="Docling server username. Overrides DOCLING_USER from .env.",
+    ),
+    docling_password: Optional[str] = typer.Option(
+        None,
+        "--docling-password",
+        help="Docling server password. Overrides DOCLING_PASSWORD from .env.",
+    ),
 ) -> None:
-    """Extracts text from all PDFs in the papers subdirectory and saves as .txt files."""
+    """Extracts text from all PDFs in the papers subdirectory and saves as .txt (pypdf) or .md (docling) files."""
 
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)
@@ -434,41 +524,85 @@ def extract(
         )
         return
 
+    if processor == PDFProcessor.docling:
+        resolved_url = docling_url or os.getenv("DOCLING_URL") or DEFAULT_DOCLING_URL
+        resolved_user = docling_user or os.getenv("DOCLING_USER") or ""
+        resolved_password = docling_password or os.getenv("DOCLING_PASSWORD") or ""
+        docling_auth = (resolved_user, resolved_password)
+        console.print(f"Processor: [bold blue]docling[/bold blue] ({resolved_url})")
+    else:
+        console.print("Processor: [bold blue]pypdf[/bold blue]")
+
     processed = 0
     skipped = 0
     cnt_pdfs = len(pdfs)
     for index, pdf_path in enumerate(pdfs):
         stem = pdf_path.stem
-        txt_path = pdf_path.parent / f"{stem}.txt"
+        label = f"[{index+1}/{cnt_pdfs}]"
 
-        try:
-            reader = pypdf.PdfReader(str(pdf_path))
-            text = "\n".join(page.extract_text() or "" for page in reader.pages)
-        except Exception as exc:
-            console.print(
-                f"[{index+1}/{cnt_pdfs}] [bold yellow]skipped[/bold yellow] '{pdf_path.name}'. Extraction failed ({exc})."
-            )
-            logger.debug("Extraction failed for '%s': %s", pdf_path, exc)
-            skipped += 1
-            continue
+        with console.status(f"{label} Processing '{pdf_path.name}'..."):
+            if processor == PDFProcessor.pypdf:
+                txt_path = pdf_path.parent / f"{stem}.txt"
 
-        if not text.strip():
-            console.print(
-                f"[{index+1}/{cnt_pdfs}] [bold yellow]warning:[/bold yellow] '{pdf_path.name}' could not be parsed - no text content found. No .txt file written."
-            )
-            logger.debug(
-                "Empty content after extraction for '%s', skipping write.", pdf_path
-            )
-            skipped += 1
-            continue
+                try:
+                    reader = pypdf.PdfReader(str(pdf_path))
+                    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+                except Exception as exc:
+                    console.print(
+                        f"{label} [bold yellow]skipped[/bold yellow] '{pdf_path.name}'. Extraction failed ({exc})."
+                    )
+                    logger.debug("Extraction failed for '%s': %s", pdf_path, exc)
+                    skipped += 1
+                    continue
 
-        if not settings.dry_run:
-            txt_path.write_text(text, encoding="utf-8")
-            logger.debug("Wrote '%s'", txt_path)
+                if not text.strip():
+                    console.print(
+                        f"{label} [bold yellow]warning:[/bold yellow] '{pdf_path.name}' could not be parsed - no text content found. No .txt file written."
+                    )
+                    logger.debug(
+                        "Empty content after extraction for '%s', skipping write.",
+                        pdf_path,
+                    )
+                    skipped += 1
+                    continue
 
-        console.print(
-            f"[{index+1}/{cnt_pdfs}] [bold green]extracted:[/bold green] '{pdf_path.name}'"
-        )
+                if not settings.dry_run:
+                    txt_path.write_text(text, encoding="utf-8")
+                    logger.debug("Wrote '%s'", txt_path)
+
+            else:  # docling
+                md_path = pdf_path.parent / f"{stem}.md"
+
+                try:
+                    md_content = _extract_via_docling(
+                        pdf_path, resolved_url, docling_auth
+                    )
+                except PaperExtractException as exc:
+                    console.print(
+                        f"{label} [bold yellow]skipped[/bold yellow] '{pdf_path.name}'. Extraction failed ({exc})."
+                    )
+                    logger.debug(
+                        "Docling extraction failed for '%s': %s", pdf_path, exc
+                    )
+                    skipped += 1
+                    continue
+
+                if not md_content.strip():
+                    console.print(
+                        f"{label} [bold yellow]warning:[/bold yellow] '{pdf_path.name}' could not be parsed - no text content found. No .md file written."
+                    )
+                    logger.debug(
+                        "Empty content after docling extraction for '%s', skipping write.",
+                        pdf_path,
+                    )
+                    skipped += 1
+                    continue
+
+                if not settings.dry_run:
+                    md_path.write_text(md_content, encoding="utf-8")
+                    logger.debug("Wrote '%s'", md_path)
+
+        console.print(f"{label} [bold green]extracted:[/bold green] '{pdf_path.name}'")
         processed += 1
 
     console.print(

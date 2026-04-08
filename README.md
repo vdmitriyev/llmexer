@@ -38,7 +38,13 @@ This tool requires access to local or remote running LLMS. It uses a `.env` file
     ```
     EXPERIMENT_ID=20260330-3a9adf70
     ```
-3. You could also pass custom file as `.env`to the CLI:
+3.  Configure the docling backend (optional, used by `papers extract --processor docling`):
+    ```
+    DOCLING_URL=http://localhost:5001/
+    DOCLING_USER=myuser
+    DOCLING_PASSWORD=mypassword
+    ```
+4. You could also pass a custom file as `.env` to the CLI:
     ```
     llmexer --env-file custom.env
     ```
@@ -92,9 +98,23 @@ llmexer papers download --eid llm-survey-2026 --search-file 20260401-bfdd863d_re
 Failed downloads are saved automatically as `20260401-bfdd863d_results_failed.csv` (columns: `doi`, `url`, `title`) next to the source CSV.
 
 **5. Extract text from all added papers**
+
+Using the default `pypdf` backend (saves `.txt` files):
 ```bash
 llmexer papers extract --eid llm-survey-2026
-# Creates .txt and files next to each PDF inside .experiments/llm-survey-2026/papers/
+```
+
+Using the `docling` backend for richer Markdown output (saves `.md` files), reading connection details from `.env`:
+```bash
+llmexer papers extract --eid llm-survey-2026 --processor docling
+```
+
+Override `.env` connection settings at runtime:
+```bash
+llmexer papers extract --eid llm-survey-2026 --processor docling \
+  --docling-url http://myserver:5001/ \
+  --docling-user admin \
+  --docling-password secret
 ```
 
 ## 🧪 CLI category: experiment
@@ -137,7 +157,7 @@ The `papers` category provides commands for managing PDF papers within an experi
 | `add --url` | Download a PDF from a URL into the experiment's `papers/` folder. | `llmexer papers add --url https://example.com/paper.pdf` |
 | `download --doi` | Download one or more open-access PDFs by DOI using the Unpaywall API. Email required via `--email` or `UNPAYWALL_EMAIL` env var. | `llmexer papers download --doi 10.1038/nature12373 --email you@example.com` |
 | `download --search-file` | Download all papers from a search result CSV (inside `searches/`). Files are named `YEAR_TITLE_DOI.pdf`. Failures saved as `<stem>_failed.csv`. | `llmexer papers download --search-file 20260401-abc123_results.csv` |
-| `extract` | Extract text from all PDFs in `papers/` and save as `.txt` files. Skips unreadable PDFs with a warning. | `llmexer papers extract --eid my-experiment` |
+| `extract` | Extract text from all PDFs in `papers/`. Default `pypdf` backend saves `.txt`; `docling` backend sends PDFs to a remote docling-serve instance and saves `.md`. Connection details (`DOCLING_URL`, `DOCLING_USER`, `DOCLING_PASSWORD`) read from `.env`; overridable via `--docling-url`, `--docling-user`, `--docling-password`. | `llmexer papers extract --eid my-experiment --processor docling` |
 
 ## 🔍 CLI category: search
 

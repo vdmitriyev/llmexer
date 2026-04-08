@@ -170,3 +170,155 @@ def test_extract_empty_content(experiments_dir, mock_no_dotenv, experiment):
     assert "warning:" in result.output
     assert "could not be parsed" in result.output
     assert not (papers_path / "empty.txt").exists()
+
+
+# ---------------------------------------------------------------------------
+# Docling processor tests
+# ---------------------------------------------------------------------------
+
+
+def _make_docling_response(md_content: str) -> Mock:
+    """Return a mock requests.Response with a docling-style JSON body."""
+    mock_resp = Mock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"documents": [{"md_content": md_content}]}
+    return mock_resp
+
+
+def test_extract_docling_happy_path(
+    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+):
+    """With --processor docling, valid PDF produces a .md file."""
+    eid, exp_path = experiment
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+    (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
+
+    monkeypatch.delenv("DOCLING_URL", raising=False)
+    monkeypatch.delenv("DOCLING_USER", raising=False)
+    monkeypatch.delenv("DOCLING_PASSWORD", raising=False)
+
+    with patch(
+        "llmexer.commands.papers.requests.post",
+        return_value=_make_docling_response("# Title\n\nBody text."),
+    ):
+        result = runner.invoke(
+            app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
+        )
+
+    assert result.exit_code == 0
+    assert (papers_path / "paper.md").exists()
+    assert (papers_path / "paper.md").read_text(
+        encoding="utf-8"
+    ) == "# Title\n\nBody text."
+    assert "extracted:" in result.output
+
+
+def test_extract_docling_dry_run(
+    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+):
+    """With --dry-run and --processor docling, no .md file is written."""
+    eid, exp_path = experiment
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+    (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
+
+    monkeypatch.delenv("DOCLING_URL", raising=False)
+    monkeypatch.delenv("DOCLING_USER", raising=False)
+    monkeypatch.delenv("DOCLING_PASSWORD", raising=False)
+
+    with patch(
+        "llmexer.commands.papers.requests.post",
+        return_value=_make_docling_response("# Title"),
+    ):
+        result = runner.invoke(
+            app,
+            ["--dry-run", "papers", "extract", "--eid", eid, "--processor", "docling"],
+        )
+
+    assert result.exit_code == 0
+    assert not (papers_path / "paper.md").exists()
+
+
+def test_extract_docling_server_error(
+    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+):
+    """When docling server returns HTTP 500, the paper is skipped with a warning."""
+    eid, exp_path = experiment
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+    (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
+
+    monkeypatch.delenv("DOCLING_URL", raising=False)
+
+    mock_resp = Mock()
+    mock_resp.status_code = 500
+    mock_resp.text = "Internal Server Error"
+
+    with patch("llmexer.commands.papers.requests.post", return_value=mock_resp):
+        result = runner.invoke(
+            app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
+        )
+
+    assert result.exit_code == 0
+    assert "skipped" in result.output
+    assert not (papers_path / "paper.md").exists()
+
+
+def test_extract_docling_cli_url_override(
+    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+):
+    """--docling-url overrides the DOCLING_URL env var."""
+    eid, exp_path = experiment
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+    (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
+
+    monkeypatch.setenv("DOCLING_URL", "http://env-server:9999/")
+
+    with patch(
+        "llmexer.commands.papers.requests.post",
+        return_value=_make_docling_response("# CLI URL"),
+    ) as mock_post:
+        result = runner.invoke(
+            app,
+            [
+                "papers",
+                "extract",
+                "--eid",
+                eid,
+                "--processor",
+                "docling",
+                "--docling-url",
+                "http://cli-server:1234/",
+            ],
+        )
+
+    assert result.exit_code == 0
+    call_url = mock_post.call_args[0][0]
+    assert "cli-server:1234" in call_url
+    assert "env-server" not in call_url
+
+
+def test_extract_docling_default_url(
+    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+):
+    """When no DOCLING_URL is set and no --docling-url given, uses http://localhost:5001/."""
+    eid, exp_path = experiment
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+    (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
+
+    monkeypatch.delenv("DOCLING_URL", raising=False)
+
+    with patch(
+        "llmexer.commands.papers.requests.post",
+        return_value=_make_docling_response("# Default"),
+    ) as mock_post:
+        result = runner.invoke(
+            app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
+        )
+
+    assert result.exit_code == 0
+    call_url = mock_post.call_args[0][0]
+    assert "localhost:5001" in call_url
