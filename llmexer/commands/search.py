@@ -60,16 +60,21 @@ _PAPER_CSV_COLUMNS = [
 
 
 def _detect_language(title: str | None, abstract: str | None) -> str:
-    """Detect language from title + abstract using langdetect. Returns 'unknown' on failure."""
+    """Detect language from title and abstract separately.
+    Returns 'unclear' if they disagree or on failure or missing text."""
     from langdetect import LangDetectException, detect
 
-    text = " ".join(filter(None, [title, abstract])).strip()
-    if not text:
-        return "unknown"
     try:
+        if title and str(title).strip() and abstract and str(abstract).strip():
+            lang_title = detect(str(title).strip())
+            lang_abstract = detect(str(abstract).strip())
+            return lang_title if lang_title == lang_abstract else "unclear"
+        text = " ".join(filter(None, [title, abstract])).strip()
+        if not text:
+            return "unclear"
         return detect(text)
     except LangDetectException:
-        return "unknown"
+        return "unclear"
 
 
 def generate_search_id() -> str:
@@ -399,15 +404,37 @@ def _build_stats_grid(df):
     for year, row in year_df.iterrows():
         table1.add_row(str(year), str(int(row["count"])), f"{row['pct']}%")
 
-    oa_counts = df["isOpenAccess"].value_counts()
-    oa_df = oa_counts.rename("count").to_frame()
-    oa_df["pct"] = (oa_df["count"] / oa_df["count"].sum() * 100).round(1)
-    table2 = Table(title="Open Access Breakdown", expand=True)
-    table2.add_column("Open Access", style="magenta", no_wrap=True)
+    total = len(df)
+
+    def _pct(n):
+        return f"{round(n / total * 100, 1)}%" if total else "0%"
+
+    table2 = Table(title="Stats Breakdown", expand=True)
+    table2.add_column("Stat", no_wrap=True)
     table2.add_column("Count", style="green", justify="right")
     table2.add_column("%", style="yellow", justify="right")
-    for label, row in oa_df.iterrows():
-        table2.add_row(str(label), str(int(row["count"])), f"{row['pct']}%")
+
+    oa_true = int(df["isOpenAccess"].sum())
+    table2.add_row(
+        f"[white]Open Access:[/white] [magenta]True[/magenta]",
+        str(oa_true),
+        _pct(oa_true),
+    )
+
+    for lang, cnt in df["language"].value_counts().items():
+        table2.add_row(
+            f"[white]Language:[/white] [magenta]{lang}[/magenta]",
+            str(int(cnt)),
+            _pct(int(cnt)),
+        )
+
+    if "downloaded" in df.columns:
+        dl_true = int(df["downloaded"].sum())
+        table2.add_row(
+            f"[white]Downloaded:[/white] [magenta]True[/magenta]",
+            str(dl_true),
+            _pct(dl_true),
+        )
 
     layout = Table.grid(padding=(0, 2))
     layout.add_column(ratio=1)

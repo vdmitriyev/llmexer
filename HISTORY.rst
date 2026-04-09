@@ -2,6 +2,12 @@
 History
 =======
 
+0.1.17 (2026-04-09)
+-------------------
+
+* Change ``_detect_language`` to detect title and abstract separately; returns ``"unclear"`` when they disagree, when text is missing, or when detection fails (replaces ``"unknown"``)
+* Replace ``Open Access Breakdown`` table in ``search stats`` with a ``Stats Breakdown`` table combining: open access (True only), per-language counts, and downloaded (True only)
+* Colour ``Stats Breakdown`` "Stat" column so label text is white and the parameter value (e.g. ``True``, ``en``, ``unclear``) is magenta
 
 0.1.16 (2026-04-09)
 -------------------
