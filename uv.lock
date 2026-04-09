@@ -14,7 +14,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-03-25T15:47:49.9228203Z"
+exclude-newer = "2026-04-01T10:34:56.0082197Z"
 exclude-newer-span = "P8D"
 
 [[package]]
@@ -475,11 +475,21 @@ wheels = [
 ]
 
 [[package]]
+name = "langdetect"
+version = "1.0.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0e/72/a3add0e4eec4eb9e2569554f7c70f4a3c27712f40e3284d483e88094cc0e/langdetect-1.0.9.tar.gz", hash = "sha256:cbc1fef89f8d062739774bd51eda3da3274006b3661d199c2655f6b3f6d605a0", size = 981474, upload-time = "2021-05-07T07:54:13.562Z" }
+
+[[package]]
 name = "llmexer"
-version = "0.1.8"
+version = "0.1.12"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
+    { name = "langdetect" },
     { name = "pandas" },
     { name = "pdf-renamer" },
     { name = "pypdf" },
@@ -503,6 +513,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
+    { name = "langdetect", specifier = ">=1.0.9" },
     { name = "pandas", specifier = ">=3.0.1" },
     { name = "pdf-renamer", specifier = ">=1.1" },
     { name = "pypdf", specifier = ">=6.9.2" },

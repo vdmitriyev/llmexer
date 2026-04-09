@@ -45,7 +45,21 @@ _PAPER_CSV_COLUMNS = [
     "abstract",
     "isOpenAccess",
     "doi",
+    "language",
 ]
+
+
+def _detect_language(title: str | None, abstract: str | None) -> str:
+    """Detect language from title + abstract using langdetect. Returns 'unknown' on failure."""
+    from langdetect import LangDetectException, detect
+
+    text = " ".join(filter(None, [title, abstract])).strip()
+    if not text:
+        return "unknown"
+    try:
+        return detect(text)
+    except LangDetectException:
+        return "unknown"
 
 
 def generate_search_id() -> str:
@@ -85,7 +99,7 @@ def save_search_query(
     ensure_directory_exists(searches_path)
     search_id = generate_search_id()
 
-    yaml_filename = f"search_{search_id}.yaml"
+    yaml_filename = f"{search_id}.yaml"
     yaml_path = os.path.join(searches_path, yaml_filename)
 
     # Create YAML content
@@ -158,6 +172,9 @@ def run_semantic_scholar_search(
                     "abstract": paper.get("abstract"),
                     "isOpenAccess": paper.get("isOpenAccess"),
                     "doi": ext_ids.get("DOI"),
+                    "language": _detect_language(
+                        paper.get("title"), paper.get("abstract")
+                    ),
                 }
             )
 
@@ -196,12 +213,8 @@ def run_semantic_scholar_search(
 
 def read_search_params(file, experiment_path, query_default: str = None):
 
-    # Derive search_id from the YAML filename stem (strip "search_" prefix and ".yaml" suffix)
     file_stem = os.path.splitext(os.path.basename(file))[0]
-
-    search_id = (
-        file_stem[len("search_") :] if file_stem.startswith("search_") else file_stem
-    )
+    search_id = file_stem
 
     # Load parameters from config file if provided
     if os.path.isabs(file):
@@ -289,9 +302,9 @@ def run(
         "--batch",
         help="A number of papers to retrieve at once",
     ),
-    force_overwrite: bool = typer.Option(
+    rewrite: bool = typer.Option(
         False,
-        "--force-overwrite",
+        "--rewrite",
         help="Overwrite existing result files if they already exist.",
     ),
 ) -> None:
@@ -327,11 +340,11 @@ def run(
     json_path = os.path.join(searches_path, f"{search_id}_results_raw.json")
     csv_path = os.path.join(searches_path, f"{search_id}_results.csv")
 
-    if not force_overwrite:
+    if not rewrite:
         existing = [p for p in [json_path, csv_path] if os.path.exists(p)]
         if existing:
             raise SearchResultsAlreadyExistException(
-                f"Result files already exist: {existing}. Use --force-rewrite to overwrite."
+                f"Result files already exist: {existing}. Use --rewrite to overwrite."
             )
 
     if settings.dry_run:

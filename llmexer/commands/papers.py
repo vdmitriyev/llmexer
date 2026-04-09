@@ -387,7 +387,7 @@ def download(
                 f"Search file '{search_file}' not found in searches/ directory for experiment '{eid}'."
             )
         stem = Path(search_file).stem
-        failed_csv_path = os.path.join(searches_path, f"{stem}_failed.csv")
+        failed_csv_path = os.path.join(searches_path, f"{stem}_download_failed.csv")
         df = pd.read_csv(csv_path, sep=";")
         for _, row in df.iterrows():
             single_doi = row.get("doi")
@@ -416,7 +416,15 @@ def download(
                 f"{label} [bold yellow]skipped[/bold yellow] '{single_doi}': {exc}"
             )
             failed += 1
-            failed_records.append({"doi": single_doi, "url": None, "title": item_title})
+            failed_records.append(
+                {
+                    "doi": single_doi,
+                    "url": None,
+                    "title": item_title,
+                    "desired_filename": desired_filename,
+                    "downloaded": False,
+                }
+            )
             continue
 
         download_kwargs = (
@@ -432,14 +440,26 @@ def download(
             )
             failed += 1
             failed_records.append(
-                {"doi": single_doi, "url": pdf_url, "title": item_title}
+                {
+                    "doi": single_doi,
+                    "url": pdf_url,
+                    "title": item_title,
+                    "desired_filename": desired_filename,
+                    "downloaded": False,
+                }
             )
             continue
         except PaperAddException as exc:
             console.print(f"{label} [bold red]failed[/bold red] '{single_doi}': {exc}")
             failed += 1
             failed_records.append(
-                {"doi": single_doi, "url": pdf_url, "title": item_title}
+                {
+                    "doi": single_doi,
+                    "url": pdf_url,
+                    "title": item_title,
+                    "desired_filename": desired_filename,
+                    "downloaded": False,
+                }
             )
             continue
 
@@ -450,14 +470,16 @@ def download(
         succeeded += 1
 
         if failed_csv_path and failed_records and not settings.dry_run:
-            pd.DataFrame(failed_records, columns=["doi", "title", "url"]).to_csv(
-                failed_csv_path, index=False, encoding="utf-8", sep=";"
-            )
+            pd.DataFrame(
+                failed_records,
+                columns=["doi", "title", "url", "desired_filename", "downloaded"],
+            ).to_csv(failed_csv_path, index=False, encoding="utf-8", sep=";")
 
     if failed_csv_path and failed_records and not settings.dry_run:
-        pd.DataFrame(failed_records, columns=["doi", "title", "url"]).to_csv(
-            failed_csv_path, index=False, encoding="utf-8", sep=";"
-        )
+        pd.DataFrame(
+            failed_records,
+            columns=["doi", "title", "url", "desired_filename", "downloaded"],
+        ).to_csv(failed_csv_path, index=False, encoding="utf-8", sep=";")
         logger.debug("Saved failed records to '%s'", failed_csv_path)
         console.print(
             f"Failed list saved to: [bold]{Path(failed_csv_path).name}[/bold]"
@@ -494,6 +516,11 @@ def extract(
         None,
         "--docling-password",
         help="Docling server password. Overrides DOCLING_PASSWORD from .env.",
+    ),
+    rewrite: bool = typer.Option(
+        False,
+        "--rewrite",
+        help="Force rewrite of existing extracted files. By default, already-extracted files are skipped.",
     ),
 ) -> None:
     """Extracts text from all PDFs in the papers subdirectory and saves as .txt (pypdf) or .md (docling) files."""
@@ -544,6 +571,13 @@ def extract(
             if processor == PDFProcessor.pypdf:
                 txt_path = pdf_path.parent / f"{stem}.txt"
 
+                if not rewrite and txt_path.exists():
+                    console.print(
+                        f"{label} [bold blue]skipped[/bold blue] '{pdf_path.name}' (already extracted)."
+                    )
+                    skipped += 1
+                    continue
+
                 try:
                     reader = pypdf.PdfReader(str(pdf_path))
                     text = "\n".join(page.extract_text() or "" for page in reader.pages)
@@ -572,6 +606,13 @@ def extract(
 
             else:  # docling
                 md_path = pdf_path.parent / f"{stem}.md"
+
+                if not rewrite and md_path.exists():
+                    console.print(
+                        f"{label} [bold blue]skipped[/bold blue] '{pdf_path.name}' (already extracted)."
+                    )
+                    skipped += 1
+                    continue
 
                 try:
                     md_content = _extract_via_docling(

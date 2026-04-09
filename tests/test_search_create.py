@@ -41,7 +41,7 @@ def test_search_create_creates_yaml_file(experiments_dir, mock_no_dotenv, monkey
     result = runner.invoke(app, ["search", "create", "--query", "test query"])
     assert result.exit_code == 0
     assert "Created search config:" in result.output
-    assert "search_" in result.output
+    assert ".yaml" in result.output
     assert ".yaml" in result.output
 
     # Check that searches directory was created
@@ -49,7 +49,7 @@ def test_search_create_creates_yaml_file(experiments_dir, mock_no_dotenv, monkey
     assert searches_dir.exists()
 
     # Check that YAML file was created
-    yaml_files = list(searches_dir.glob("search_*.yaml"))
+    yaml_files = list(searches_dir.glob("*.yaml"))
     assert len(yaml_files) == 1
 
 
@@ -63,7 +63,7 @@ def test_search_create_default_values(experiments_dir, mock_no_dotenv, monkeypat
 
     # Read the YAML file
     searches_dir = experiments_dir / "test-exp" / "searches"
-    yaml_files = list(searches_dir.glob("search_*.yaml"))
+    yaml_files = list(searches_dir.glob("*.yaml"))
     yaml_file = yaml_files[0]
 
     with open(yaml_file, "r") as f:
@@ -98,7 +98,7 @@ def test_search_create_nonexistent_experiment_raises(
 
 
 def test_search_create_filename_format(experiments_dir, mock_no_dotenv, monkeypatch):
-    """The YAML filename should follow the search_YYYYMMDD-GUID.yaml format."""
+    """The YAML filename should follow the YYYYMMDD-GUID.yaml format."""
     os.makedirs(experiments_dir / "test-exp")
     monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
 
@@ -106,13 +106,12 @@ def test_search_create_filename_format(experiments_dir, mock_no_dotenv, monkeypa
     assert result.exit_code == 0
 
     searches_dir = experiments_dir / "test-exp" / "searches"
-    yaml_files = list(searches_dir.glob("search_*.yaml"))
+    yaml_files = list(searches_dir.glob("*.yaml"))
     filename = yaml_files[0].name
 
-    # Check format: search_YYYYMMDD-XXXXXXXX.yaml
-    assert filename.startswith("search_")
+    # Check format: YYYYMMDD-XXXXXXXX.yaml
     assert filename.endswith(".yaml")
-    parts = filename[7:-5].split("-")  # Remove "search_" and ".yaml"
+    parts = filename[:-5].split("-")  # Remove ".yaml"
     assert len(parts) == 2
     assert len(parts[0]) == 8  # YYYYMMDD
     assert len(parts[1]) == 8  # GUID

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llmexer"
 description = "It is a framework and CLI utility to plan, design, run and control various LLM experiments"
-version = "0.1.11"
+version = "0.1.12"
 readme = "README.md"
 authors = [
   {name = "vdmitriyev"},
@@ -25,6 +25,7 @@ dependencies = [
     "pandas>=3.0.1",
     "requests>=2.31.0",
     "pypdf>=6.9.2",
+    "langdetect>=1.0.9",
 ]
 
 [project.scripts]

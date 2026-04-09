@@ -2,6 +2,15 @@
 History
 =======
 
+0.1.12 (2026-04-09)
+-------------------
+
+* Add ``--rewrite`` flag to ``papers extract`` (default: ``False``) to force re-extraction of already-extracted files; without it, papers with an existing ``.txt`` or ``.md`` file are skipped
+* Add ``language`` column to search CSV output, detected offline from title + abstract using ``langdetect`` (ISO code, e.g. ``en``; falls back to ``unknown`` when text is empty or detection fails)
+* Rename all search-related files to use a consistent ``<ID>``-only naming scheme (no ``search_`` prefix): ``<ID>.yaml``, ``<ID>_results_raw.json``, ``<ID>_results.csv``
+* Rename ``--force-overwrite`` to ``--rewrite`` in ``search run`` for consistency
+* Rename failed-downloads CSV from ``<stem>_failed.csv`` to ``<stem>_download_failed.csv``; add ``desired_filename`` and ``downloaded`` (always ``False``) columns
+
 0.1.11 (2026-04-08)
 -------------------
 
@@ -16,7 +25,7 @@ History
 * Add ``papers download`` command with ``--doi`` (repeatable) and ``--email`` / ``UNPAYWALL_EMAIL`` env var support for Unpaywall API
 * Add ``--search-file`` option to ``papers download`` to read DOIs from a search result CSV (``searches/<FILE>``) and download all papers by DOI via Unpaywall
 * Rename downloaded PDFs from ``--search-file`` using structured ``YEAR_TITLE_DOI.pdf`` scheme
-* Save a ``<search_file_stem>_failed.csv`` (columns: ``doi``, ``url``, ``title``) next to the source CSV when any downloads fail or are skipped
+* Save a ``<search_file_stem>_download_failed.csv`` (columns: ``doi``, ``url``, ``title``, ``desired_filename``, ``downloaded``) next to the source CSV when any downloads fail or are skipped
 * Extract ``_download_pdf_from_url`` helper (shared by ``add --url`` and ``download``) supporting both ``fallback_name`` and ``forced_name`` filename modes
 
 0.1.9 (2026-04-02)

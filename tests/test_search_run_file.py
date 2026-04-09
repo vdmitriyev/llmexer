@@ -186,6 +186,8 @@ def test_search_run_creates_output_files(
     assert df.iloc[0]["s2_paper_id"] == "abc123"
     assert df.iloc[0]["doi"] == "10.1234/test"
     assert df.iloc[0]["authors"] == "Alice; Bob"
+    assert "language" in df.columns
+    assert df.iloc[0]["language"] == "en"
 
 
 def test_search_run_fails_if_files_exist(
@@ -200,7 +202,7 @@ def test_search_run_fails_if_files_exist(
     assert result1.exit_code == 0
 
     searches_dir = experiments_dir / "test-exp" / "searches"
-    yaml_files = list(searches_dir.glob("search_*.yaml"))
+    yaml_files = list(searches_dir.glob("*.yaml"))
     assert yaml_files, "Expected a search YAML file to have been created"
 
     # Second run with same YAML file → should fail because output files exist
@@ -210,10 +212,10 @@ def test_search_run_fails_if_files_exist(
     assert isinstance(result2.exception, SearchResultsAlreadyExistException)
 
 
-def test_search_run_force_overwrite_overwrites(
+def test_search_run_rewrite_overwrites(
     experiments_dir, mock_no_dotenv, mock_s2_session, monkeypatch
 ):
-    """--force-overwrite allows overwriting existing result files."""
+    """--rewrite allows overwriting existing result files."""
     os.makedirs(experiments_dir / "test-exp" / "searches", exist_ok=True)
     monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
 
@@ -221,15 +223,44 @@ def test_search_run_force_overwrite_overwrites(
     assert result1.exit_code == 0
 
     searches_dir = experiments_dir / "test-exp" / "searches"
-    yaml_files = list(searches_dir.glob("search_*.yaml"))
+    yaml_files = list(searches_dir.glob("*.yaml"))
 
     result2 = runner.invoke(
         app,
-        ["search", "run", "--file", yaml_files[0].name, "--force-overwrite"],
+        ["search", "run", "--file", yaml_files[0].name, "--rewrite"],
     )
 
     assert result2.exit_code == 0
     assert "Done:" in result2.output
+
+
+def test_search_run_language_unknown_on_empty(
+    experiments_dir, mock_no_dotenv, monkeypatch
+):
+    """Paper with no title and no abstract gets language='unknown'."""
+    os.makedirs(experiments_dir / "test-exp")
+    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+
+    empty_paper = {
+        "paperId": "empty1",
+        "title": None,
+        "authors": [],
+        "abstract": None,
+        "isOpenAccess": False,
+        "externalIds": {},
+        "year": 2024,
+    }
+    mock_session = Mock()
+    mock_session.get.return_value = _make_mock_s2_response([empty_paper])
+    with patch("llmexer.commands.search.requests.Session", return_value=mock_session):
+        result = runner.invoke(app, ["search", "run", "--query", "test"])
+
+    assert result.exit_code == 0
+    searches_dir = experiments_dir / "test-exp" / "searches"
+    csv_files = list(searches_dir.glob("*_results.csv"))
+    assert len(csv_files) == 1
+    df = pd.read_csv(csv_files[0], sep=";")
+    assert df.iloc[0]["language"] == "unknown"
 
 
 def test_search_run_dry_run_no_files(experiments_dir, mock_no_dotenv, monkeypatch):

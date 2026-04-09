@@ -173,6 +173,57 @@ def test_extract_empty_content(experiments_dir, mock_no_dotenv, experiment):
 
 
 # ---------------------------------------------------------------------------
+# --rewrite flag tests (pypdf)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_skips_existing_txt(experiments_dir, mock_no_dotenv, experiment):
+    """Without --rewrite, a pre-existing .txt file is skipped."""
+    eid, exp_path = experiment
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+
+    pdf_file = papers_path / "mypaper.pdf"
+    pdf_file.write_bytes(_make_pdf("content"))
+    txt_file = papers_path / "mypaper.txt"
+    txt_file.write_text("original content", encoding="utf-8")
+
+    with patch("llmexer.commands.papers.pypdf.PdfReader") as mock_reader:
+        mock_page = Mock()
+        mock_page.extract_text.return_value = "new content"
+        mock_reader.return_value.pages = [mock_page]
+
+        result = runner.invoke(app, ["papers", "extract", "--eid", eid])
+
+    assert result.exit_code == 0
+    assert "skipped" in result.output
+    assert txt_file.read_text(encoding="utf-8") == "original content"
+
+
+def test_extract_rewrite_overwrites_txt(experiments_dir, mock_no_dotenv, experiment):
+    """With --rewrite, a pre-existing .txt file is overwritten."""
+    eid, exp_path = experiment
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+
+    pdf_file = papers_path / "mypaper.pdf"
+    pdf_file.write_bytes(_make_pdf("content"))
+    txt_file = papers_path / "mypaper.txt"
+    txt_file.write_text("original content", encoding="utf-8")
+
+    with patch("llmexer.commands.papers.pypdf.PdfReader") as mock_reader:
+        mock_page = Mock()
+        mock_page.extract_text.return_value = "new content"
+        mock_reader.return_value.pages = [mock_page]
+
+        result = runner.invoke(app, ["papers", "extract", "--eid", eid, "--rewrite"])
+
+    assert result.exit_code == 0
+    assert "extracted:" in result.output
+    assert txt_file.read_text(encoding="utf-8") == "new content"
+
+
+# ---------------------------------------------------------------------------
 # Docling processor tests
 # ---------------------------------------------------------------------------
 
@@ -322,3 +373,60 @@ def test_extract_docling_default_url(
     assert result.exit_code == 0
     call_url = mock_post.call_args[0][0]
     assert "localhost:5001" in call_url
+
+
+def test_extract_docling_skips_existing_md(
+    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+):
+    """Without --rewrite, a pre-existing .md file is skipped (docling processor)."""
+    eid, exp_path = experiment
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+    (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
+    md_file = papers_path / "paper.md"
+    md_file.write_text("# Original", encoding="utf-8")
+
+    monkeypatch.delenv("DOCLING_URL", raising=False)
+    monkeypatch.delenv("DOCLING_USER", raising=False)
+    monkeypatch.delenv("DOCLING_PASSWORD", raising=False)
+
+    with patch(
+        "llmexer.commands.papers.requests.post",
+        return_value=_make_docling_response("# New Content"),
+    ):
+        result = runner.invoke(
+            app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
+        )
+
+    assert result.exit_code == 0
+    assert "skipped" in result.output
+    assert md_file.read_text(encoding="utf-8") == "# Original"
+
+
+def test_extract_docling_rewrite_overwrites_md(
+    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+):
+    """With --rewrite, a pre-existing .md file is overwritten (docling processor)."""
+    eid, exp_path = experiment
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+    (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
+    md_file = papers_path / "paper.md"
+    md_file.write_text("# Original", encoding="utf-8")
+
+    monkeypatch.delenv("DOCLING_URL", raising=False)
+    monkeypatch.delenv("DOCLING_USER", raising=False)
+    monkeypatch.delenv("DOCLING_PASSWORD", raising=False)
+
+    with patch(
+        "llmexer.commands.papers.requests.post",
+        return_value=_make_docling_response("# New Content"),
+    ):
+        result = runner.invoke(
+            app,
+            ["papers", "extract", "--eid", eid, "--processor", "docling", "--rewrite"],
+        )
+
+    assert result.exit_code == 0
+    assert "extracted:" in result.output
+    assert md_file.read_text(encoding="utf-8") == "# New Content"
