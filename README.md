@@ -85,7 +85,22 @@ From a URL:
 llmexer papers add --eid llm-survey-2026 --url https://arxiv.org/pdf/1706.03762
 ```
 
-**4. Filter search results by language (optional)**
+**4. Run a literature search**
+
+Create a search configuration and run it:
+```bash
+llmexer search create --eid llm-survey-2026 --query "large language models"
+llmexer search run --eid llm-survey-2026 --file 20260401-bfdd863d.yaml
+```
+
+Or run directly from a query string:
+```bash
+llmexer search run --eid llm-survey-2026 --query "large language models" --limit 500
+```
+
+Results are saved as `<ID>_results.csv` and `<ID>_results_raw.json` in `searches/`.
+
+**5. Filter search results by language (optional)**
 
 Filter to English-only papers before downloading (default language is `en`):
 ```bash
@@ -93,7 +108,7 @@ llmexer search filter --eid llm-survey-2026 --file 20260401-bfdd863d.yaml
 ```
 This produces `20260401-bfdd863d_filtered.csv` with only the matching rows.
 
-**5. Download open-access papers by DOI via Unpaywall**
+**6. Download open-access papers by DOI via Unpaywall**
 
 By DOI (one or more):
 ```bash
@@ -109,7 +124,7 @@ llmexer papers download --eid llm-survey-2026 --search-file 20260401-bfdd863d_fi
 ```
 Failed downloads are saved automatically as `20260401-bfdd863d_results_download_failed.csv` (columns: `doi`, `url`, `title`, `desired_filename`, `downloaded`) next to the source CSV.
 
-**6. Extract text from all added papers**
+**7. Extract text from all added papers**
 
 Using the default `pypdf` backend (saves `.txt` files):
 ```bash
