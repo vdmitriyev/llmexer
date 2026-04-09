@@ -2,6 +2,12 @@
 History
 =======
 
+0.1.13 (2026-04-09)
+-------------------
+
+* Add ``search filter`` command: filters ``<ID>_results.csv`` by ``--language`` (default: ``en``) and saves matching rows to ``<ID>_filtered.csv``; prints total, filtered-out, and remaining counts on separate lines
+* Modify ``search stats`` to respect filtered CSV
+
 0.1.12 (2026-04-09)
 -------------------
 

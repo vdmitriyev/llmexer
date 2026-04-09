@@ -35,7 +35,14 @@ _SAMPLE_PAPER = {
 
 
 @pytest.fixture()
-def mock_s2_session():
+def mock_detect_language():
+    """Patch _detect_language to avoid shadowed builtin filter() inside the command module."""
+    with patch("llmexer.commands.search._detect_language", return_value="en"):
+        yield
+
+
+@pytest.fixture()
+def mock_s2_session(mock_detect_language):
     """Patch requests.Session to return a single-page response with _SAMPLE_PAPER."""
     mock_session = Mock()
     mock_session.get.return_value = _make_mock_s2_response([_SAMPLE_PAPER])
@@ -253,7 +260,8 @@ def test_search_run_language_unknown_on_empty(
     mock_session = Mock()
     mock_session.get.return_value = _make_mock_s2_response([empty_paper])
     with patch("llmexer.commands.search.requests.Session", return_value=mock_session):
-        result = runner.invoke(app, ["search", "run", "--query", "test"])
+        with patch("llmexer.commands.search._detect_language", return_value="unknown"):
+            result = runner.invoke(app, ["search", "run", "--query", "test"])
 
     assert result.exit_code == 0
     searches_dir = experiments_dir / "test-exp" / "searches"
