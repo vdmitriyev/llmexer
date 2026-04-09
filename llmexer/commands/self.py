@@ -7,7 +7,7 @@ from rich.text import Text
 from llmexer.configs import console
 from llmexer.version import package_version
 
-app = typer.Typer(help="Introspection commands for the llmexer CLI.")
+app = typer.Typer(help="Helps with the self-manage of the llmexer CLI.")
 
 LLMEXER_ENV_VARS = [
     ("EXPERIMENT_ID", "bold cyan", False),
