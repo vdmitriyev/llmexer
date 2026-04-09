@@ -2,6 +2,13 @@
 History
 =======
 
+
+0.1.14 (2026-04-09)
+-------------------
+
+* Add ``self`` command group with two subcommands: ``self version`` (prints the current package version)
+* ``self envs`` (displays llmexer-relevant environment variables as a Rich table)
+
 0.1.13 (2026-04-09)
 -------------------
 

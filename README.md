@@ -188,6 +188,15 @@ The `search` category provides commands for managing and running literature sear
 | `stats` | Display statistics for a completed search: publications per year and open access breakdown, shown as side-by-side tables. | `llmexer search stats --file 20260401-abc123.yaml` |
 | `filter` | Filter `<ID>_results.csv` by language (default: `en`) and save matching rows to `<ID>_filtered.csv`. Prints total entries, filtered-out count, and remaining count. | `llmexer search filter --file 20260401-abc123.yaml --language en` |
 
+## 🔎 CLI category: self
+
+The `self` category provides introspection commands for the llmexer CLI itself:
+
+| Shortname | Description | Command Example |
+|-----------|-------------|-----------------|
+| `version` | Print the current llmexer package version. | `llmexer self version` |
+| `envs` | Display all llmexer-relevant environment variables as a table. `EXPERIMENT_ID` is highlighted in bold cyan; `DOCLING_PASSWORD` is masked as `********` when set. | `llmexer self envs` |
+
 ## CLI UI
 ![alt text](docs/cli-ui.png)
 

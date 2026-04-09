@@ -8,6 +8,7 @@ from rich.text import Text
 from typing_extensions import Annotated
 
 from llmexer.commands import experiment, papers, search
+from llmexer.commands import self as self_module
 from llmexer.common import ensure_directory_exists
 from llmexer.configs import console, settings
 from llmexer.version import package_summary, package_version
@@ -21,6 +22,7 @@ app.add_typer(experiment.app, name="exp", hidden=True)
 
 app.add_typer(search.app, name="search")
 app.add_typer(papers.app, name="papers")
+app.add_typer(self_module.app, name="self")
 
 
 @app.callback(invoke_without_command=True)
