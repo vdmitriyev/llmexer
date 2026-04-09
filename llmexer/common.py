@@ -2,6 +2,8 @@ import json
 import os
 from datetime import datetime
 
+import requests
+
 import llmexer.constants as _constants
 from llmexer.configs import settings
 from llmexer.constants import TEMP_PATH
@@ -10,8 +12,22 @@ from llmexer.exceptions import (
     ExperimentNotExistsException,
 )
 from llmexer.logger import get_logger
+from llmexer.version import package_version
 
 logger = get_logger()
+
+
+def get_user_agent():
+    return f"{_constants.CLI_NAME}/{package_version()} (python-requests/{requests.__version__})"
+
+
+def make_http_session() -> requests.Session:
+    """Return a new requests.Session with the llmexer User-Agent header set."""
+
+    ua_custom = get_user_agent()
+    session = requests.Session()
+    session.headers.update({"User-Agent": ua_custom})
+    return session
 
 
 def __save_json__(content: dict, filepath: str = None):

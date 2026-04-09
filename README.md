@@ -203,6 +203,8 @@ The `search` category provides commands for managing and running literature sear
 | `stats` | Display statistics for a completed search: publications per year and open access breakdown, shown as side-by-side tables. | `llmexer search stats --file 20260401-abc123.yaml` |
 | `filter` | Filter `<ID>_results.csv` by language (default: `en`) and save matching rows to `<ID>_filtered.csv`. Prints total entries, filtered-out count, and remaining count. | `llmexer search filter --file 20260401-abc123.yaml --language en` |
 
+Semantic Scholar API Documentation: [Paper bulk search](https://api.semanticscholar.org/api-docs/#tag/Paper-Data/operation/get_graph_paper_bulk_search) -> this can be used to formulate more sophisticated query string
+
 ## 🔎 CLI category: self
 
 The `self` category provides introspection commands for the llmexer CLI itself:

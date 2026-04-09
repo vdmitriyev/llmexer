@@ -16,6 +16,7 @@ from llmexer.common import (
     ensure_directory_exists,
     get_experiment_directory_path,
     get_proper_eid,
+    make_http_session,
 )
 from llmexer.configs import console, settings
 from llmexer.constants import SEARCHES_DIR
@@ -129,7 +130,7 @@ def run_semantic_scholar_search(
         records is a list of flattened paper dicts with PAPER_CSV_COLUMNS fields.
     """
 
-    session = requests.Session()
+    session = make_http_session()
     retries = Retry(
         total=5,
         backoff_factor=1,

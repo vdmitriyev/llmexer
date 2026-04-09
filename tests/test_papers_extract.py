@@ -2,7 +2,7 @@
 
 import os
 from io import BytesIO
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pypdf
 import pytest
@@ -249,10 +249,9 @@ def test_extract_docling_happy_path(
     monkeypatch.delenv("DOCLING_USER", raising=False)
     monkeypatch.delenv("DOCLING_PASSWORD", raising=False)
 
-    with patch(
-        "llmexer.commands.papers.requests.post",
-        return_value=_make_docling_response("# Title\n\nBody text."),
-    ):
+    mock_session = MagicMock()
+    mock_session.post.return_value = _make_docling_response("# Title\n\nBody text.")
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
         )
@@ -278,10 +277,9 @@ def test_extract_docling_dry_run(
     monkeypatch.delenv("DOCLING_USER", raising=False)
     monkeypatch.delenv("DOCLING_PASSWORD", raising=False)
 
-    with patch(
-        "llmexer.commands.papers.requests.post",
-        return_value=_make_docling_response("# Title"),
-    ):
+    mock_session = MagicMock()
+    mock_session.post.return_value = _make_docling_response("# Title")
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
             ["--dry-run", "papers", "extract", "--eid", eid, "--processor", "docling"],
@@ -306,7 +304,9 @@ def test_extract_docling_server_error(
     mock_resp.status_code = 500
     mock_resp.text = "Internal Server Error"
 
-    with patch("llmexer.commands.papers.requests.post", return_value=mock_resp):
+    mock_session = MagicMock()
+    mock_session.post.return_value = mock_resp
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
         )
@@ -327,10 +327,9 @@ def test_extract_docling_cli_url_override(
 
     monkeypatch.setenv("DOCLING_URL", "http://env-server:9999/")
 
-    with patch(
-        "llmexer.commands.papers.requests.post",
-        return_value=_make_docling_response("# CLI URL"),
-    ) as mock_post:
+    mock_session = MagicMock()
+    mock_session.post.return_value = _make_docling_response("# CLI URL")
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
             [
@@ -346,7 +345,7 @@ def test_extract_docling_cli_url_override(
         )
 
     assert result.exit_code == 0
-    call_url = mock_post.call_args[0][0]
+    call_url = mock_session.post.call_args[0][0]
     assert "cli-server:1234" in call_url
     assert "env-server" not in call_url
 
@@ -362,16 +361,15 @@ def test_extract_docling_default_url(
 
     monkeypatch.delenv("DOCLING_URL", raising=False)
 
-    with patch(
-        "llmexer.commands.papers.requests.post",
-        return_value=_make_docling_response("# Default"),
-    ) as mock_post:
+    mock_session = MagicMock()
+    mock_session.post.return_value = _make_docling_response("# Default")
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
         )
 
     assert result.exit_code == 0
-    call_url = mock_post.call_args[0][0]
+    call_url = mock_session.post.call_args[0][0]
     assert "localhost:5001" in call_url
 
 
@@ -390,10 +388,9 @@ def test_extract_docling_skips_existing_md(
     monkeypatch.delenv("DOCLING_USER", raising=False)
     monkeypatch.delenv("DOCLING_PASSWORD", raising=False)
 
-    with patch(
-        "llmexer.commands.papers.requests.post",
-        return_value=_make_docling_response("# New Content"),
-    ):
+    mock_session = MagicMock()
+    mock_session.post.return_value = _make_docling_response("# New Content")
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
         )
@@ -418,10 +415,9 @@ def test_extract_docling_rewrite_overwrites_md(
     monkeypatch.delenv("DOCLING_USER", raising=False)
     monkeypatch.delenv("DOCLING_PASSWORD", raising=False)
 
-    with patch(
-        "llmexer.commands.papers.requests.post",
-        return_value=_make_docling_response("# New Content"),
-    ):
+    mock_session = MagicMock()
+    mock_session.post.return_value = _make_docling_response("# New Content")
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
             ["papers", "extract", "--eid", eid, "--processor", "docling", "--rewrite"],

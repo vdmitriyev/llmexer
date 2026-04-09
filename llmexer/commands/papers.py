@@ -17,9 +17,14 @@ from llmexer.common import (
     ensure_directory_exists,
     get_experiment_directory_path,
     get_proper_eid,
+    make_http_session,
 )
 from llmexer.configs import console, logger, settings
-from llmexer.constants import DEFAULT_DOCLING_URL, PAPERS_DIR, SEARCHES_DIR
+from llmexer.constants import (
+    DEFAULT_DOCLING_URL,
+    PAPERS_DIR,
+    SEARCHES_DIR,
+)
 from llmexer.exceptions import (
     ExperimentNotExistsException,
     PaperAddException,
@@ -30,7 +35,9 @@ from llmexer.exceptions import (
 )
 
 app = typer.Typer(help="Work with papers.")
+
 DOCLING_TIMEOUT = 300
+UNPAYWALL_EMAIL = "llmexer.unpaywall@local.local"
 
 
 class PDFProcessor(str, Enum):
@@ -62,7 +69,8 @@ def _extract_via_docling(pdf_path: Path, url: str, auth: tuple) -> str:
     try:
         with pdf_path.open("rb") as fh:
             files = {"files": (pdf_path.name, fh, "application/pdf")}
-            resp = requests.post(
+            session = make_http_session()
+            resp = session.post(
                 endpoint,
                 auth=auth,
                 files=files,
@@ -113,7 +121,8 @@ def _download_pdf_from_url(
     Respects settings.dry_run (skips write but still returns filename).
     """
     try:
-        response = requests.get(url, stream=True, timeout=30)
+        session = make_http_session()
+        response = session.get(url, stream=True, timeout=30)
         response.raise_for_status()
     except requests.RequestException as exc:
         raise PaperAddException(f"Failed to download '{url}': {exc}") from exc
@@ -168,7 +177,8 @@ def _resolve_unpaywall_pdf_url(doi: str, email: str) -> str:
     """
     unpaywall_url = f"https://api.unpaywall.org/v2/{doi}?email={email}"
     try:
-        response = requests.get(unpaywall_url, timeout=30)
+        session = make_http_session()
+        response = session.get(unpaywall_url, timeout=30)
         response.raise_for_status()
     except requests.RequestException as exc:
         raise PaperDownloadException(
@@ -342,7 +352,7 @@ def download(
         "Iterates all rows and downloads each paper by DOI.",
     ),
     email: Optional[str] = typer.Option(
-        "llmexer.unpaywall@local.local",
+        UNPAYWALL_EMAIL,
         "--email",
         help="Email address for Unpaywall API. Falls back to UNPAYWALL_EMAIL env var.",
     ),

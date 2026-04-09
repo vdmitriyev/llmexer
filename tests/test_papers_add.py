@@ -238,7 +238,9 @@ def test_add_url_happy_path(experiments_dir, mock_no_dotenv, experiment):
     eid, exp_path = experiment
     mock_response = _make_mock_response()
 
-    with patch("llmexer.commands.papers.requests.get", return_value=mock_response):
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_response
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
             ["papers", "add", "--eid", eid, "--url", "http://example.com/paper.pdf"],
@@ -253,7 +255,9 @@ def test_add_url_resolved_via_final_url(experiments_dir, mock_no_dotenv, experim
     eid, exp_path = experiment
     mock_response = _make_mock_response(url="http://example.com/redirected/mypaper.pdf")
 
-    with patch("llmexer.commands.papers.requests.get", return_value=mock_response):
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_response
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
             [
@@ -280,7 +284,9 @@ def test_add_url_resolved_via_content_disposition(
         content_disposition='attachment; filename="article.pdf"',
     )
 
-    with patch("llmexer.commands.papers.requests.get", return_value=mock_response):
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_response
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
             [
@@ -305,7 +311,9 @@ def test_add_url_duplicate_raises(experiments_dir, mock_no_dotenv, experiment):
     (papers_path / "paper.pdf").write_bytes(b"%PDF-1.4")
 
     mock_response = _make_mock_response()
-    with patch("llmexer.commands.papers.requests.get", return_value=mock_response):
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_response
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
             ["papers", "add", "--eid", eid, "--url", "http://example.com/paper.pdf"],
@@ -319,7 +327,9 @@ def test_add_url_not_pdf_raises(experiments_dir, mock_no_dotenv, experiment):
     eid, _ = experiment
     mock_response = _make_mock_response(url="http://example.com/file.zip")
 
-    with patch("llmexer.commands.papers.requests.get", return_value=mock_response):
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_response
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app, ["papers", "add", "--eid", eid, "--url", "http://example.com/file.zip"]
         )
@@ -332,10 +342,9 @@ def test_add_url_request_failure_raises(experiments_dir, mock_no_dotenv, experim
     import requests as req
 
     eid, _ = experiment
-    with patch(
-        "llmexer.commands.papers.requests.get",
-        side_effect=req.RequestException("timeout"),
-    ):
+    mock_session = MagicMock()
+    mock_session.get.side_effect = req.RequestException("timeout")
+    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
             ["papers", "add", "--eid", eid, "--url", "http://example.com/paper.pdf"],

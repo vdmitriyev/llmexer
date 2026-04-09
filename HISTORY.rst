@@ -3,6 +3,11 @@ History
 =======
 
 
+0.1.15 (2026-04-09)
+-------------------
+
+* Add ``self user-agent`` command to print the HTTP User-Agent string used by llmexer for API requests (example: llmexer/<version> (python-request/<version>))
+
 0.1.14 (2026-04-09)
 -------------------
 
