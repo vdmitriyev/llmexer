@@ -52,7 +52,7 @@ def experiment_with_search(experiments_dir, monkeypatch):
     df = pd.DataFrame(
         [
             {
-                "s2_paper_id": "p1",
+                "sem_scholar_paper_id": "p1",
                 "year": 2023,
                 "title": "English Paper",
                 "authors": "Alice",
@@ -60,9 +60,11 @@ def experiment_with_search(experiments_dir, monkeypatch):
                 "isOpenAccess": True,
                 "doi": "10.1/en1",
                 "language": "en",
+                "desired_filename": "2023_English_Paper_10.1_en1.pdf",
+                "downloaded": False,
             },
             {
-                "s2_paper_id": "p2",
+                "sem_scholar_paper_id": "p2",
                 "year": 2022,
                 "title": "German Paper",
                 "authors": "Bob",
@@ -70,9 +72,11 @@ def experiment_with_search(experiments_dir, monkeypatch):
                 "isOpenAccess": False,
                 "doi": "10.1/de1",
                 "language": "de",
+                "desired_filename": "2022_German_Paper_10.1_de1.pdf",
+                "downloaded": False,
             },
             {
-                "s2_paper_id": "p3",
+                "sem_scholar_paper_id": "p3",
                 "year": 2021,
                 "title": "Another English Paper",
                 "authors": "Carol",
@@ -80,6 +84,8 @@ def experiment_with_search(experiments_dir, monkeypatch):
                 "isOpenAccess": True,
                 "doi": "10.1/en2",
                 "language": "en",
+                "desired_filename": "2021_Another_English_Paper_10.1_en2.pdf",
+                "downloaded": False,
             },
         ]
     )

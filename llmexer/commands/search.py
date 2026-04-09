@@ -12,6 +12,7 @@ import yaml
 from requests.adapters import HTTPAdapter, Retry
 from rich.table import Table
 
+from llmexer.commands.papers import _make_structured_filename
 from llmexer.common import (
     ensure_directory_exists,
     get_experiment_directory_path,
@@ -37,10 +38,13 @@ DEFAULT_SEARCH_YEAR_PARAM = "2020-2025"
 DEFAULT_OPEN_ACCESS_PARAM = False
 
 # Semantic Scholar API constants
-_S2_BULK_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
-_S2_FIELDS = "paperId,title,authors,abstract,isOpenAccess,externalIds,year"
+_SEM_SCHOLAR_BULK_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
+_SEM_SCHOLAR_FIELDS = (
+    "paperId,title,authors,abstract,isOpenAccess,externalIds,year,"
+    "referenceCount,citationCount,fieldsOfStudy,citationStyles,publicationTypes"
+)
 _PAPER_CSV_COLUMNS = [
-    "s2_paper_id",
+    "sem_scholar_paper_id",
     "year",
     "title",
     "authors",
@@ -48,6 +52,10 @@ _PAPER_CSV_COLUMNS = [
     "isOpenAccess",
     "doi",
     "language",
+    "citationCount",
+    "referenceCount",
+    "desired_filename",
+    "downloaded",
 ]
 
 
@@ -140,7 +148,7 @@ def run_semantic_scholar_search(
 
     params: dict = {
         "query": query,
-        "fields": _S2_FIELDS,
+        "fields": _SEM_SCHOLAR_FIELDS,
         "limit": min(batch_size, 1000),
     }
 
@@ -153,7 +161,7 @@ def run_semantic_scholar_search(
     records: list[dict] = []
 
     while True:
-        response = session.get(_S2_BULK_URL, params=params)
+        response = session.get(_SEM_SCHOLAR_BULK_URL, params=params)
         response.raise_for_status()
         data = response.json()
         raw_json_results.append(data)
@@ -165,7 +173,7 @@ def run_semantic_scholar_search(
             ext_ids = paper.get("externalIds") or {}
             records.append(
                 {
-                    "s2_paper_id": paper.get("paperId"),
+                    "sem_scholar_paper_id": paper.get("paperId"),
                     "year": paper.get("year"),
                     "title": paper.get("title"),
                     "authors": "; ".join(
@@ -177,6 +185,22 @@ def run_semantic_scholar_search(
                     "language": _detect_language(
                         paper.get("title"), paper.get("abstract")
                     ),
+                    "referenceCount": paper.get("referenceCount"),
+                    "citationCount": paper.get("citationCount"),
+                    "desired_filename": _make_structured_filename(
+                        paper.get("year"),
+                        next(
+                            (
+                                (a.get("name") or "").strip().split()[-1]
+                                for a in (paper.get("authors") or [])
+                                if (a.get("name") or "").strip()
+                            ),
+                            None,
+                        ),
+                        paper.get("title"),
+                        ext_ids.get("DOI"),
+                    ),
+                    "downloaded": False,
                 }
             )
 
@@ -452,8 +476,8 @@ def stats(
     console.print(layout)
 
 
-@app.command()
-def filter(
+@app.command(name="filter")
+def filter_results(
     file: str = typer.Option(
         None,
         "--file",

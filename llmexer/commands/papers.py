@@ -318,19 +318,27 @@ def add(
 
 
 def _make_structured_filename(
-    year: Optional[str], title: Optional[str], doi: Optional[str]
+    year: Optional[str],
+    author: Optional[str],
+    title: Optional[str],
+    doi: Optional[str],
 ) -> str:
-    """Build a filename in the form YEAR_TITLE_DOI.pdf, sanitizing each part."""
+    """Build a filename in the form YEAR_AUTHOR_TITLE_DOI.pdf, sanitizing each part."""
 
     def _clean(value: str) -> str:
         return "".join(
             c if (c.isalnum() or c in "-_.") else "_" for c in str(value)
         ).strip("_")
 
-    year_part = _clean(year) if year and str(year).strip() else "unknown_year"
-    title_part = _clean(title)[:80] if title and str(title).strip() else "unknown_title"
-    doi_part = _clean(doi) if doi and str(doi).strip() else "unknown_doi"
-    return f"{year_part}_{title_part}_{doi_part}.pdf"
+    year_part = _clean(year) if year and str(year).strip() else "NO_year"
+    author_part = _clean(author) if author and str(author).strip() else "NO_author"
+    title_part = (
+        _clean(title).lower()[:60].title()
+        if title and str(title).strip()
+        else "NO_title"
+    )
+    doi_part = _clean(doi).lower() if doi and str(doi).strip() else "NO_doi"
+    return f"{year_part}_{author_part}_{title_part}_{doi_part}.pdf"
 
 
 @app.command()
@@ -403,17 +411,17 @@ def download(
             single_doi = row.get("doi")
             if not single_doi or (isinstance(single_doi, float)):
                 continue
-            year = row.get("year")
             title = row.get("title")
-            structured_name = _make_structured_filename(year, title, single_doi)
+            desired_filename = str(row.get("desired_filename"))
             download_items.append(
-                (str(single_doi), structured_name, str(title) if title else None)
+                (str(single_doi), desired_filename, str(title) if title else None)
             )
 
     succeeded = 0
     failed = 0
     cnt = len(download_items)
     failed_records: List[dict] = []
+    succeeded_dois: set[str] = set()
 
     for index, (single_doi, desired_filename, item_title) in enumerate(download_items):
         label = f"[{index+1}/{cnt}]"
@@ -478,22 +486,22 @@ def download(
             f"{label} [bold green]downloaded[/bold green] '{single_doi}' as '{filename}'."
         )
         succeeded += 1
+        succeeded_dois.add(single_doi)
 
-        if failed_csv_path and failed_records and not settings.dry_run:
+    if failed_csv_path and not settings.dry_run:
+        if failed_records:
             pd.DataFrame(
                 failed_records,
                 columns=["doi", "title", "url", "desired_filename", "downloaded"],
             ).to_csv(failed_csv_path, index=False, encoding="utf-8", sep=";")
-
-    if failed_csv_path and failed_records and not settings.dry_run:
-        pd.DataFrame(
-            failed_records,
-            columns=["doi", "title", "url", "desired_filename", "downloaded"],
-        ).to_csv(failed_csv_path, index=False, encoding="utf-8", sep=";")
-        logger.debug("Saved failed records to '%s'", failed_csv_path)
-        console.print(
-            f"Failed list saved to: [bold]{Path(failed_csv_path).name}[/bold]"
-        )
+            logger.debug("Saved failed records to '%s'", failed_csv_path)
+            console.print(
+                f"Failed list saved to: [bold]{Path(failed_csv_path).name}[/bold]"
+            )
+        if succeeded_dois:
+            df.loc[df["doi"].isin(succeeded_dois), "downloaded"] = True
+            df.to_csv(csv_path, index=False, encoding="utf-8", sep=";")
+            logger.debug("Updated 'downloaded' status in '%s'", csv_path)
 
     console.print(
         f"Downloaded: [bold green]{succeeded}[/bold green]. Skipped/Failed: [bold red]{failed}[/bold red]"

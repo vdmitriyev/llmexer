@@ -3,6 +3,17 @@ History
 =======
 
 
+0.1.16 (2026-04-09)
+-------------------
+
+* Add ``desired_filename`` and ``downloaded`` columns to ``_results.csv``; ``desired_filename`` is pre-computed using ``_make_structured_filename`` at search time, ``downloaded`` is initialised to ``False``
+* Rename ``s2_paper_id`` column to ``sem_scholar_paper_id``
+* Request additional Semantic Scholar fields: ``referenceCount``, ``citationCount``, ``fieldsOfStudy``, ``citationStyles``, ``publicationTypes``; all five are stored in ``_results_raw.json``
+* Fileds ``referenceCount`` and ``citationCount`` are added as CSV columns
+* Update ``papers download --search-file`` to read ``desired_filename`` from the CSV instead of recomputing it, and to write ``downloaded=True`` back to ``_results.csv`` for each successfully downloaded paper
+* Fix name collision: rename CLI command function ``filter`` to ``filter_results``
+* Change ``_make_structured_filename`` output format from ``YEAR_TITLE_DOI.pdf`` to ``YEAR_AUTHOR_TITLE_DOI.pdf``. Title and DOI are lowercased (title is truncated to 60 characters)
+
 0.1.15 (2026-04-09)
 -------------------
 
