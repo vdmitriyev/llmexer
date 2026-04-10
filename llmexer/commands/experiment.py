@@ -1,19 +1,53 @@
 """Experiment group commands."""
 
+import hashlib
+import json
 import os
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
+import pandas as pd
 import typer
+from jinja2 import BaseLoader, DebugUndefined, Environment
 from rich.table import Table
 
-from llmexer.common import ensure_directory_exists
+from llmexer.common import (
+    ensure_directory_exists,
+    get_experiment_directory_path,
+    get_proper_eid,
+)
 from llmexer.configs import console, settings
 from llmexer.constants import EXPERIMENTS_PATH
 from llmexer.exceptions import ExperimentAlreadyExistsException, LLMExerException
 
 app = typer.Typer(help="Manage LLM experiments.")
+
+_OUTPUT_COLUMNS = [
+    "ID",
+    "code",
+    "prompt",
+    "original_data",
+    "model_name",
+    "provider_name",
+    "prompt_hash",
+    "original_data_hash",
+    "json_params",
+]
+
+
+def _parse_json_params(notes) -> str:
+    """Parse the notes field from models.csv as a JSON string.
+
+    Returns the notes as a JSON string if it is valid JSON,
+    otherwise returns '{}' (empty object).
+    """
+    if notes and str(notes).strip():
+        try:
+            return json.dumps(json.loads(str(notes).strip()), ensure_ascii=False)
+        except (json.JSONDecodeError, ValueError):
+            return "{}"
+    return "{}"
 
 
 class SortBy(str, Enum):
@@ -132,6 +166,195 @@ def rename(
     os.rename(old_path, new_path)
     console.print(
         f"Renamed experiment: [bold yellow]{old_id}[/bold yellow] → [bold yellow]{new_id}[/bold yellow]"
+    )
+
+
+@app.command()
+def init(
+    eid: str = typer.Option(
+        None,
+        "--eid",
+        help="Experiment ID to initialise. If not provided, uses EXPERIMENT_ID from .env.",
+    )
+) -> None:
+    """Initialise an experiment with a standard folder structure and template files."""
+
+    eid = get_proper_eid(eid)
+    experiment_path = get_experiment_directory_path(eid)
+
+    # Raise if already initialised
+    exp_subdir = os.path.join(experiment_path, "experiment")
+    if os.path.exists(exp_subdir):
+        raise LLMExerException(f"Experiment '{eid}' has already been initialised.")
+
+    # Create subfolders
+    prompts_subdir = os.path.join(exp_subdir, "prompts")
+    ensure_directory_exists(exp_subdir)
+    ensure_directory_exists(prompts_subdir)
+
+    # models.csv
+    models_path = os.path.join(exp_subdir, "models.csv")
+    with open(models_path, "w", encoding="utf-8") as f:
+        f.write("name;provider;notes\n")
+        f.write("llama3.3:latest;ollama;local model\n")
+        f.write("phi4:14b;ollama;local model\n")
+        f.write("gemma3:12b;ollama;local model\n")
+        f.write("gemma3:27b;ollama;local model\n")
+
+    # data.csv
+    data_path = os.path.join(exp_subdir, "data.csv")
+    with open(data_path, "w", encoding="utf-8") as f:
+        f.write("ID;Title;Abstract\n")
+        f.write(
+            "D01;Sample Paper Title One;This is the abstract of the first sample paper.\n"
+        )
+        f.write(
+            "D02;Sample Paper Title Two;This is the abstract of the second sample paper.\n"
+        )
+
+    # mapping.csv
+    mapping_path = os.path.join(exp_subdir, "mapping.csv")
+    with open(mapping_path, "w", encoding="utf-8") as f:
+        f.write("data_id;prompt_id\n")
+        f.write("D01;prompt01\n")
+        f.write("D02;prompt01\n")
+
+    # prompts/prompt01.txt
+    prompt_path = os.path.join(prompts_subdir, "prompt01.txt")
+    with open(prompt_path, "w", encoding="utf-8") as f:
+        f.write(
+            "Here is the title: {{title}}.\n\n"
+            "Here is the abstract: {{abstract}}.\n\n"
+            "Count number of words in the both title and abstract."
+        )
+
+    console.print(
+        f"Init experiment [bold yellow]{eid}[/bold yellow] with standard structure."
+    )
+
+
+@app.command()
+def generate(
+    eid: str = typer.Option(
+        None,
+        "--eid",
+        help="Experiment ID to generate prompts for. If not provided, uses EXPERIMENT_ID from .env.",
+    ),
+) -> None:
+    """Generate rendered prompts for all data-model combinations defined in the experiment."""
+
+    eid = get_proper_eid(eid)
+    experiment_path = get_experiment_directory_path(eid)
+
+    exp_subdir = os.path.join(experiment_path, "experiment")
+    if not os.path.exists(exp_subdir):
+        raise LLMExerException(
+            f"Experiment '{eid}' has not been initialised. Run `experiment init --eid {eid}` first."
+        )
+
+    models_path = os.path.join(exp_subdir, "models.csv")
+    data_path = os.path.join(exp_subdir, "data.csv")
+    mapping_path = os.path.join(exp_subdir, "mapping.csv")
+    prompts_subdir = os.path.join(exp_subdir, "prompts")
+
+    for label, path in [
+        ("models.csv", models_path),
+        ("data.csv", data_path),
+        ("mapping.csv", mapping_path),
+        ("prompts/", prompts_subdir),
+    ]:
+        if not os.path.exists(path):
+            raise LLMExerException(
+                f"Required file or directory not found for experiment '{eid}': {label}"
+            )
+
+    models_df = pd.read_csv(models_path, sep=";", encoding="utf-8")
+    data_df = pd.read_csv(data_path, sep=";", encoding="utf-8")
+    mapping_df = pd.read_csv(mapping_path, sep=";", encoding="utf-8")
+
+    data_lookup = data_df.set_index("ID").to_dict(orient="index")
+    env = Environment(loader=BaseLoader(), undefined=DebugUndefined)
+
+    rows = []
+    row_counter = 1
+
+    for _, mapping_row in mapping_df.iterrows():
+        data_id = str(mapping_row["data_id"]).strip()
+        prompt_id = str(mapping_row["prompt_id"]).strip()
+
+        if data_id not in data_lookup:
+            console.print(
+                f"[bold yellow]Warning:[/bold yellow] data_id '{data_id}' not found in data.csv — skipping."
+            )
+            continue
+
+        data_row = data_lookup[data_id]
+        context = {k.lower(): v for k, v in data_row.items()}
+        context["id"] = data_id
+
+        original_data_dict = {"ID": data_id, **data_row}
+        original_data_str = json.dumps(original_data_dict, ensure_ascii=False)
+        original_data_hash = hashlib.sha256(
+            original_data_str.encode("utf-8")
+        ).hexdigest()
+
+        prompt_file_path = os.path.join(prompts_subdir, f"{prompt_id}.txt")
+        if not os.path.exists(prompt_file_path):
+            console.print(
+                f"[bold yellow]Warning:[/bold yellow] prompt file '{prompt_id}.txt' not found — skipping."
+            )
+            continue
+
+        with open(prompt_file_path, "r", encoding="utf-8") as f:
+            template_str = f.read()
+
+        rendered_prompt = env.from_string(template_str).render(**context)
+        prompt_hash = hashlib.sha256(rendered_prompt.encode("utf-8")).hexdigest()
+
+        for _, model_row in models_df.iterrows():
+            rows.append(
+                {
+                    "ID": row_counter,
+                    "code": f"{data_id}_{prompt_id}_{str(model_row['name'])}",
+                    "prompt": rendered_prompt,
+                    "original_data": original_data_str,
+                    "model_name": str(model_row["name"]),
+                    "provider_name": str(model_row["provider"]),
+                    "prompt_hash": prompt_hash,
+                    "original_data_hash": original_data_hash,
+                    "json_params": _parse_json_params(model_row.get("notes", "")),
+                }
+            )
+            row_counter += 1
+
+    if not rows:
+        console.print(
+            "[bold yellow]Warning:[/bold yellow] No rows were generated. Check your mapping.csv and data.csv."
+        )
+        return
+
+    result_df = pd.DataFrame(rows, columns=_OUTPUT_COLUMNS)
+    model_order = list(models_df["name"].astype(str))
+    result_df["model_name"] = pd.Categorical(
+        result_df["model_name"], categories=model_order, ordered=True
+    )
+    result_df = result_df.sort_values("model_name").reset_index(drop=True)
+    result_df["model_name"] = result_df["model_name"].astype(str)
+    result_df["ID"] = range(1, len(result_df) + 1)
+    output_filename = f"experiment_{generate_experiment_id()}.csv"
+    output_path = os.path.join(exp_subdir, output_filename)
+
+    if settings.dry_run:
+        console.print(
+            f"[bold yellow]Dry run:[/bold yellow] would write {len(result_df)} row(s) to '{output_path}'"
+        )
+        console.print(f"Columns: {_OUTPUT_COLUMNS}")
+        return
+
+    result_df.to_csv(output_path, index=False, encoding="utf-8", sep=";")
+    console.print(
+        f"Generated [bold green]{len(result_df)}[/bold green] row(s) → "
+        f"[bold yellow]{output_filename}[/bold yellow]"
     )
 
 

@@ -70,7 +70,19 @@ llmexer experiment create
 llmexer experiment rename --old-id 20260402-a1b2c3d4 --new-id llm-survey-2026
 ```
 
-**3. Add papers to the experiment**
+**3. Initialise the experiment structure (optional)**
+
+Scaffold a standard `experiment/` subfolder with template CSVs and a prompt file:
+```bash
+llmexer experiment init --eid llm-survey-2026
+```
+This creates:
+- `experiment/models.csv` — list of models to use (name, provider, notes); pre-filled with `llama3.3:latest`, `phi4:14b`, `gemma3:12b`, `gemma3:27b`
+- `experiment/data.csv` — input data rows (ID, Title, Abstract)
+- `experiment/mapping.csv` — maps data IDs to prompt IDs; pre-filled with `D01;prompt01` and `D02;prompt01`
+- `experiment/prompts/prompt01.txt` — a starter Jinja2 prompt template using `{{title}}` and `{{abstract}}`
+
+**4. Add papers to the experiment**
 
 From a local file:
 ```bash
@@ -85,7 +97,7 @@ From a URL:
 llmexer papers add --eid llm-survey-2026 --url https://arxiv.org/pdf/1706.03762
 ```
 
-**4. Run a literature search**
+**5. Run a literature search**
 
 Create a search configuration and run it:
 ```bash
@@ -100,7 +112,7 @@ llmexer search run --eid llm-survey-2026 --query "large language models" --limit
 
 Results are saved as `<ID>_results.csv` and `<ID>_results_raw.json` in `searches/`.
 
-**5. Filter search results by language (optional)**
+**6. Filter search results by language (optional)**
 
 Filter to English-only papers before downloading (default language is `en`):
 ```bash
@@ -108,7 +120,7 @@ llmexer search filter --eid llm-survey-2026 --file 20260401-bfdd863d.yaml
 ```
 This produces `20260401-bfdd863d_filtered.csv` with only the matching rows.
 
-**6. Download open-access papers by DOI via Unpaywall**
+**7. Download open-access papers by DOI via Unpaywall**
 
 By DOI (one or more):
 ```bash
@@ -124,7 +136,7 @@ llmexer papers download --eid llm-survey-2026 --search-file 20260401-bfdd863d_fi
 ```
 Failed downloads are saved automatically as `20260401-bfdd863d_results_download_failed.csv` (columns: `doi`, `url`, `title`, `desired_filename`, `downloaded`) next to the source CSV.
 
-**7. Extract text from all added papers**
+**8. Extract text from all added papers**
 
 Using the default `pypdf` backend (saves `.txt` files):
 ```bash
@@ -149,6 +161,17 @@ By default, papers that already have an extracted file are skipped. Use `--rewri
 llmexer papers extract --eid llm-survey-2026 --rewrite
 ```
 
+**9. Generate rendered prompts for all data-model combinations**
+
+After filling in `experiment/models.csv`, `experiment/data.csv`, `experiment/mapping.csv`, and your Jinja2 prompt templates:
+```bash
+llmexer experiment generate --eid llm-survey-2026
+```
+This renders every (data row, prompt, model) combination and writes the results to `experiment/experiment_YYYYMMDD-GUID.csv`. Use `--dry-run` to preview the row count without writing:
+```bash
+llmexer --dry-run experiment generate --eid llm-survey-2026
+```
+
 ## 🧪 CLI category: experiment
 
 The `experiment` (alias: `exp`) category provides commands for managing LLM experiments:
@@ -156,6 +179,8 @@ The `experiment` (alias: `exp`) category provides commands for managing LLM expe
 | Shortname | Description | Command Example |
 |-----------|-------------|-----------------|
 | `create` | Create a new experiment folder under `.experiments/` using format `YYYYMMDD-GUID`. Accepts an optional custom ID. | `llmexer experiment create --id my-experiment` |
+| `init` | Initialise an existing experiment with a standard folder structure (`experiment/`, `experiment/prompts/`) and template files: `models.csv` (pre-filled with 4 ollama models), `data.csv`, `mapping.csv` (pre-filled with D01 and D02 rows), `prompts/prompt01.txt` (Jinja2 template using `{{title}}` and `{{abstract}}`). Raises an error if already initialised. | `llmexer experiment init --eid my-experiment` |
+| `generate` | Render all (data row × prompt × model) combinations defined in `experiment/` and write the result to `experiment/experiment_YYYYMMDD-GUID.csv`. Output columns: `ID`, `code`, `prompt`, `original_data`, `model_name`, `provider_name`, `prompt_hash`, `original_data_hash`, `json_params`. Rows are sorted by model order from `models.csv`. Supports `--dry-run`. | `llmexer experiment generate --eid my-experiment` |
 | `list` | List all experiments with optional sorting by name or date. | `llmexer experiment list --sort-by date --desc` |
 | `current` | Display the current experiment ID loaded from `.env`. | `llmexer experiment current` |
 | `rename` | Rename an existing experiment. Uses `EXPERIMENT_ID` from `.env` if `--old-id` is omitted. | `llmexer experiment rename --old-id old-name --new-id new-name` |
