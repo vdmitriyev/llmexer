@@ -45,7 +45,7 @@ class PDFProcessor(str, Enum):
     docling = "docling"
 
 
-def _extract_via_docling(pdf_path: Path, url: str, auth: tuple) -> str:
+def extract_via_docling(pdf_path: Path, url: str, auth: tuple) -> str:
     """Upload a PDF to a docling-serve instance and return the extracted Markdown.
 
     Raises PaperExtractException on network errors or unexpected response shapes.
@@ -106,7 +106,7 @@ def _extract_via_docling(pdf_path: Path, url: str, auth: tuple) -> str:
     )
 
 
-def _download_pdf_from_url(
+def download_pdf_from_url(
     url: str,
     papers_path: str,
     fallback_name: Optional[str] = None,
@@ -169,7 +169,7 @@ def _download_pdf_from_url(
     return filename
 
 
-def _resolve_unpaywall_pdf_url(doi: str, email: str) -> str:
+def resolve_unpaywall_pdf_url(doi: str, email: str) -> str:
     """Query Unpaywall for the best open-access PDF URL for the given DOI.
 
     Raises PaperDownloadException if the API request fails, the response is not valid
@@ -203,6 +203,38 @@ def _resolve_unpaywall_pdf_url(doi: str, email: str) -> str:
         )
 
     return pdf_url
+
+
+def get_first_author_last_name(paper: dict) -> str | None:
+    for author in paper.get("authors") or []:
+        name = (author.get("name") or "").strip()
+        if name:
+            return name.split()[-1]
+    return None
+
+
+def make_structured_filename(
+    year: Optional[str],
+    author: Optional[str],
+    title: Optional[str],
+    doi: Optional[str],
+) -> str:
+    """Build a filename in the form YEAR_AUTHOR_TITLE_DOI.pdf, sanitizing each part."""
+
+    def _clean(value: str) -> str:
+        return "".join(
+            c if (c.isalnum() or c in "-_.") else "_" for c in str(value)
+        ).strip("_")
+
+    year_part = _clean(year) if year and str(year).strip() else "NO_year"
+    author_part = _clean(author) if author and str(author).strip() else "NO_author"
+    title_part = (
+        _clean(title).lower()[:60].title()
+        if title and str(title).strip()
+        else "NO_title"
+    )
+    doi_part = _clean(doi).lower() if doi and str(doi).strip() else "NO_doi"
+    return f"{year_part}_{author_part}_{title_part}_{doi_part}.pdf"
 
 
 @app.command()
@@ -311,34 +343,10 @@ def add(
         )
 
     else:  # url
-        filename = _download_pdf_from_url(url, papers_path)
+        filename = download_pdf_from_url(url, papers_path)
         console.print(
             f"[bold green]Downloaded[/bold green] '{filename}' to experiment '{eid}'."
         )
-
-
-def _make_structured_filename(
-    year: Optional[str],
-    author: Optional[str],
-    title: Optional[str],
-    doi: Optional[str],
-) -> str:
-    """Build a filename in the form YEAR_AUTHOR_TITLE_DOI.pdf, sanitizing each part."""
-
-    def _clean(value: str) -> str:
-        return "".join(
-            c if (c.isalnum() or c in "-_.") else "_" for c in str(value)
-        ).strip("_")
-
-    year_part = _clean(year) if year and str(year).strip() else "NO_year"
-    author_part = _clean(author) if author and str(author).strip() else "NO_author"
-    title_part = (
-        _clean(title).lower()[:60].title()
-        if title and str(title).strip()
-        else "NO_title"
-    )
-    doi_part = _clean(doi).lower() if doi and str(doi).strip() else "NO_doi"
-    return f"{year_part}_{author_part}_{title_part}_{doi_part}.pdf"
 
 
 @app.command()
@@ -428,7 +436,7 @@ def download(
 
         pdf_url = None
         try:
-            pdf_url = _resolve_unpaywall_pdf_url(single_doi, resolved_email)
+            pdf_url = resolve_unpaywall_pdf_url(single_doi, resolved_email)
         except PaperDownloadException as exc:
             console.print(
                 f"{label} [bold yellow]skipped[/bold yellow] '{single_doi}': {exc}"
@@ -451,7 +459,7 @@ def download(
             else {"fallback_name": pdf_filename}
         )
         try:
-            filename = _download_pdf_from_url(pdf_url, papers_path, **download_kwargs)
+            filename = download_pdf_from_url(pdf_url, papers_path, **download_kwargs)
         except PaperAlreadyExistsException as exc:
             console.print(
                 f"{label} [bold yellow]skipped[/bold yellow] '{single_doi}': {exc}"
@@ -633,7 +641,7 @@ def extract(
                     continue
 
                 try:
-                    md_content = _extract_via_docling(
+                    md_content = extract_via_docling(
                         pdf_path, resolved_url, docling_auth
                     )
                 except PaperExtractException as exc:

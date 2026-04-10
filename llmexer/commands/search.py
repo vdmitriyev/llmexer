@@ -12,7 +12,7 @@ import yaml
 from requests.adapters import HTTPAdapter, Retry
 from rich.table import Table
 
-from llmexer.commands.papers import _make_structured_filename
+from llmexer.commands.papers import get_first_author_last_name, make_structured_filename
 from llmexer.common import (
     ensure_directory_exists,
     get_experiment_directory_path,
@@ -181,16 +181,9 @@ def run_semantic_scholar_search(
             if limit_size is not None and len(records) >= limit_size:
                 break
             ext_ids = paper.get("externalIds") or {}
-            pdf_filename = _make_structured_filename(
+            pdf_filename = make_structured_filename(
                 paper.get("year"),
-                next(
-                    (
-                        (a.get("name") or "").strip().split()[-1]
-                        for a in (paper.get("authors") or [])
-                        if (a.get("name") or "").strip()
-                    ),
-                    None,
-                ),
+                get_first_author_last_name(paper),
                 paper.get("title"),
                 ext_ids.get("DOI"),
             )
@@ -423,6 +416,12 @@ def _build_stats_grid(df):
     table2.add_column("Stat", no_wrap=True)
     table2.add_column("Count", style="green", justify="right")
     table2.add_column("%", style="yellow", justify="right")
+
+    table2.add_row(
+        "[white]Total:[/white] [bold white]papers[/bold white]",
+        str(total),
+        "100%",
+    )
 
     oa_true = int(df["isOpenAccess"].sum())
     table2.add_row(

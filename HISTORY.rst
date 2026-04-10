@@ -2,6 +2,12 @@
 History
 =======
 
+0.1.20 (2026-04-10)
+-------------------
+
+* Add a ``Total: papers`` row at the top of the ``Stats Breakdown`` table in ``search stats``, showing the total paper count and ``100%``
+* Extract first-author last-name logic from ``search run`` into a standalone ``_get_first_author_last_name`` helper in ``papers.py``, co-located with ``_make_structured_filename``
+
 0.1.19 (2026-04-10)
 -------------------
 
