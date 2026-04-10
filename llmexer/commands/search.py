@@ -37,6 +37,8 @@ DEFAULT_QUERY_PARAM = "influence of machine learning on computer science"
 DEFAULT_SEARCH_YEAR_PARAM = "2020-2025"
 DEFAULT_OPEN_ACCESS_PARAM = False
 
+DEFAULT_VALUE_ENTRY_SOURCE = "Semantic Scholar"
+
 # Semantic Scholar API constants
 _SEM_SCHOLAR_BULK_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
 _SEM_SCHOLAR_FIELDS = (
@@ -54,8 +56,11 @@ _PAPER_CSV_COLUMNS = [
     "language",
     "citationCount",
     "referenceCount",
-    "desired_filename",
-    "downloaded",
+    "entry_source",
+    "pdf_filename",
+    "txt_filename",
+    "markdown_filename",
+    "pdf_downloaded",
 ]
 
 
@@ -176,6 +181,19 @@ def run_semantic_scholar_search(
             if limit_size is not None and len(records) >= limit_size:
                 break
             ext_ids = paper.get("externalIds") or {}
+            pdf_filename = _make_structured_filename(
+                paper.get("year"),
+                next(
+                    (
+                        (a.get("name") or "").strip().split()[-1]
+                        for a in (paper.get("authors") or [])
+                        if (a.get("name") or "").strip()
+                    ),
+                    None,
+                ),
+                paper.get("title"),
+                ext_ids.get("DOI"),
+            )
             records.append(
                 {
                     "sem_scholar_paper_id": paper.get("paperId"),
@@ -192,20 +210,11 @@ def run_semantic_scholar_search(
                     ),
                     "referenceCount": paper.get("referenceCount"),
                     "citationCount": paper.get("citationCount"),
-                    "desired_filename": _make_structured_filename(
-                        paper.get("year"),
-                        next(
-                            (
-                                (a.get("name") or "").strip().split()[-1]
-                                for a in (paper.get("authors") or [])
-                                if (a.get("name") or "").strip()
-                            ),
-                            None,
-                        ),
-                        paper.get("title"),
-                        ext_ids.get("DOI"),
-                    ),
-                    "downloaded": False,
+                    "entry_source": DEFAULT_VALUE_ENTRY_SOURCE,
+                    "pdf_filename": pdf_filename,
+                    "txt_filename": "",
+                    "markdown_filename": "",
+                    "pdf_downloaded": False,
                 }
             )
 
@@ -235,9 +244,9 @@ def run_semantic_scholar_search(
     )
     logger.debug("Wrote CSV to '%s'", csv_path)
 
-    console.print(f"[bold green]Done:[/bold green] {len(records)} paper(s) saved to:")
-    console.print(f"  {json_path}")
-    console.print(f"  {csv_path}")
+    console.print(f"[bold green]Total retrieved:[/bold green] {len(records)} paper(s)")
+    console.print(f"File with raw responses ([magenta]JSON[/magenta]):\n  {json_path}")
+    console.print(f"File with results ([magenta]CSV[/magenta]):\n  {csv_path}")
 
     return records
 
@@ -353,6 +362,7 @@ def run(
         search_id, yaml_filename = save_search_query(
             experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM
         )
+        console.print(f"Query saved to: [bold blue]{yaml_filename}[/bold blue]")
     if file:
         search_id, query, year, only_open_access = read_search_params(
             file, experiment_path, query
@@ -428,8 +438,8 @@ def _build_stats_grid(df):
             _pct(int(cnt)),
         )
 
-    if "downloaded" in df.columns:
-        dl_true = int(df["downloaded"].sum())
+    if "pdf_downloaded" in df.columns:
+        dl_true = int(df["pdf_downloaded"].sum())
         table2.add_row(
             f"[white]Downloaded:[/white] [magenta]True[/magenta]",
             str(dl_true),

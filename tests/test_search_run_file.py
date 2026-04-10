@@ -175,7 +175,7 @@ def test_search_run_creates_output_files(
     )
 
     assert result.exit_code == 0
-    assert "Done:" in result.output
+    assert "File with results" in result.output
 
     searches_dir = experiments_dir / "test-exp" / "searches"
     json_files = list(searches_dir.glob("*_results_raw.json"))
@@ -238,7 +238,7 @@ def test_search_run_rewrite_overwrites(
     )
 
     assert result2.exit_code == 0
-    assert "Done:" in result2.output
+    assert "File with results" in result2.output
 
 
 def test_search_run_language_unknown_on_empty(

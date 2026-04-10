@@ -60,8 +60,8 @@ def experiment_with_search(experiments_dir, monkeypatch):
                 "isOpenAccess": True,
                 "doi": "10.1/en1",
                 "language": "en",
-                "desired_filename": "2023_English_Paper_10.1_en1.pdf",
-                "downloaded": False,
+                "pdf_filename": "2023_English_Paper_10.1_en1.pdf",
+                "pdf_downloaded": False,
             },
             {
                 "sem_scholar_paper_id": "p2",
@@ -72,8 +72,8 @@ def experiment_with_search(experiments_dir, monkeypatch):
                 "isOpenAccess": False,
                 "doi": "10.1/de1",
                 "language": "de",
-                "desired_filename": "2022_German_Paper_10.1_de1.pdf",
-                "downloaded": False,
+                "pdf_filename": "2022_German_Paper_10.1_de1.pdf",
+                "pdf_downloaded": False,
             },
             {
                 "sem_scholar_paper_id": "p3",
@@ -84,8 +84,8 @@ def experiment_with_search(experiments_dir, monkeypatch):
                 "isOpenAccess": True,
                 "doi": "10.1/en2",
                 "language": "en",
-                "desired_filename": "2021_Another_English_Paper_10.1_en2.pdf",
-                "downloaded": False,
+                "pdf_filename": "2021_Another_English_Paper_10.1_en2.pdf",
+                "pdf_downloaded": False,
             },
         ]
     )

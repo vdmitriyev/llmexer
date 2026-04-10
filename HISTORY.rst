@@ -2,6 +2,14 @@
 History
 =======
 
+0.1.18 (2026-04-10)
+-------------------
+
+* Rename ``desired_filename`` column to ``pdf_filename`` in search CSV output, papers download failed CSV, and all related code
+* Rename ``downloaded`` column to ``pdf_downloaded`` in search CSV output, papers download failed CSV, and all related code
+* Add ``entry_source``, ``txt_filename``, and ``markdown_filename`` columns to search CSV output; ``entry_source`` is set to ``Semantic Scholar`` at search time, the other two are left blank
+* Print ``Query saved to: <yaml_filename>`` notification in ``search run`` when ``--query`` is passed, before the search begins
+
 0.1.17 (2026-04-09)
 -------------------
 

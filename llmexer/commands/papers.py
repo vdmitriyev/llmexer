@@ -385,8 +385,8 @@ def download(
     papers_path = os.path.join(experiment_path, PAPERS_DIR)
     ensure_directory_exists(papers_path)
 
-    # Build the list of (doi, desired_filename, title) triples to process
-    download_items: List[tuple] = []  # (doi_str, desired_filename, title_str)
+    # Build the list of (doi, pdf_filename, title) triples to process
+    download_items: List[tuple] = []  # (doi_str, pdf_filename, title_str)
 
     use_forced_name = False
     failed_csv_path: Optional[str] = None
@@ -412,9 +412,9 @@ def download(
             if not single_doi or (isinstance(single_doi, float)):
                 continue
             title = row.get("title")
-            desired_filename = str(row.get("desired_filename"))
+            pdf_filename = str(row.get("pdf_filename"))
             download_items.append(
-                (str(single_doi), desired_filename, str(title) if title else None)
+                (str(single_doi), pdf_filename, str(title) if title else None)
             )
 
     succeeded = 0
@@ -423,7 +423,7 @@ def download(
     failed_records: List[dict] = []
     succeeded_dois: set[str] = set()
 
-    for index, (single_doi, desired_filename, item_title) in enumerate(download_items):
+    for index, (single_doi, pdf_filename, item_title) in enumerate(download_items):
         label = f"[{index+1}/{cnt}]"
 
         pdf_url = None
@@ -439,16 +439,16 @@ def download(
                     "doi": single_doi,
                     "url": None,
                     "title": item_title,
-                    "desired_filename": desired_filename,
-                    "downloaded": False,
+                    "pdf_filename": pdf_filename,
+                    "pdf_downloaded": False,
                 }
             )
             continue
 
         download_kwargs = (
-            {"forced_name": desired_filename}
+            {"forced_name": pdf_filename}
             if use_forced_name
-            else {"fallback_name": desired_filename}
+            else {"fallback_name": pdf_filename}
         )
         try:
             filename = _download_pdf_from_url(pdf_url, papers_path, **download_kwargs)
@@ -462,8 +462,8 @@ def download(
                     "doi": single_doi,
                     "url": pdf_url,
                     "title": item_title,
-                    "desired_filename": desired_filename,
-                    "downloaded": False,
+                    "pdf_filename": pdf_filename,
+                    "pdf_downloaded": False,
                 }
             )
             continue
@@ -475,8 +475,8 @@ def download(
                     "doi": single_doi,
                     "url": pdf_url,
                     "title": item_title,
-                    "desired_filename": desired_filename,
-                    "downloaded": False,
+                    "pdf_filename": pdf_filename,
+                    "pdf_downloaded": False,
                 }
             )
             continue
@@ -492,14 +492,14 @@ def download(
         if failed_records:
             pd.DataFrame(
                 failed_records,
-                columns=["doi", "title", "url", "desired_filename", "downloaded"],
+                columns=["doi", "title", "url", "pdf_filename", "pdf_downloaded"],
             ).to_csv(failed_csv_path, index=False, encoding="utf-8", sep=";")
             logger.debug("Saved failed records to '%s'", failed_csv_path)
             console.print(
                 f"Failed list saved to: [bold]{Path(failed_csv_path).name}[/bold]"
             )
         if succeeded_dois:
-            df.loc[df["doi"].isin(succeeded_dois), "downloaded"] = True
+            df.loc[df["doi"].isin(succeeded_dois), "pdf_downloaded"] = True
             df.to_csv(csv_path, index=False, encoding="utf-8", sep=";")
             logger.debug("Updated 'downloaded' status in '%s'", csv_path)
 
