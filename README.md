@@ -241,7 +241,20 @@ The `self` category provides introspection commands for the llmexer CLI itself:
 | `envs` | Display all llmexer-relevant environment variables as a table. `EXPERIMENT_ID` is highlighted in bold cyan; `DOCLING_PASSWORD` is masked as `********` when set. | `llmexer self envs` |
 
 ## CLI UI
+
+CLI feature overview:
+```
+llmexer --help
+```
+
 ![alt text](docs/cli-ui.png)
+
+Checking the statistics of a performed search query directly in CLI:
+```
+llmexer search stats --file <filename>
+```
+
+![alt text](docs/cli-ui-search-stats.png)
 
 
 ## Documentation
