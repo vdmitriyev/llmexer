@@ -20,7 +20,7 @@ from llmexer.common import (
     make_http_session,
 )
 from llmexer.configs import console, settings
-from llmexer.constants import SEARCHES_DIR
+from llmexer.constants import PAPERS_DIR, SEARCHES_DIR
 from llmexer.exceptions import (
     LLMExerException,
     SearchResultsAlreadyExistException,
@@ -407,9 +407,9 @@ def _build_stats_grid(df):
     )
     year_df = year_counts.rename("count").to_frame()
     year_df["pct"] = (year_df["count"] / year_df["count"].sum() * 100).round(1)
-    table1 = Table(title="Publications per Year", expand=True)
-    table1.add_column("Year     ", style="cyan", no_wrap=True)
-    table1.add_column("Count", style="green", justify="right")
+    table1 = Table(title="Papers by Year", expand=True)
+    table1.add_column("Year", style="cyan", no_wrap=True, min_width=6)
+    table1.add_column("Count", style="green", justify="right", min_width=5)
     table1.add_column("%", style="yellow", justify="right")
     for year, row in year_df.iterrows():
         table1.add_row(str(year), str(int(row["count"])), f"{row['pct']}%")
@@ -431,6 +431,14 @@ def _build_stats_grid(df):
         _pct(oa_true),
     )
 
+    if "entry_source" in df.columns:
+        for src, cnt in df["entry_source"].fillna("").value_counts().items():
+            table2.add_row(
+                f"[white]Entry Source:[/white] [magenta]{src}[/magenta]",
+                str(int(cnt)),
+                _pct(int(cnt)),
+            )
+
     for lang, cnt in df["language"].value_counts().items():
         table2.add_row(
             f"[white]Language:[/white] [magenta]{lang}[/magenta]",
@@ -439,11 +447,49 @@ def _build_stats_grid(df):
         )
 
     if "pdf_downloaded" in df.columns:
-        dl_true = int(df["pdf_downloaded"].sum())
+        dl_existing = int(df["pdf_downloaded"].fillna(False).astype(bool).sum())
+        dl_missing = total - dl_existing
         table2.add_row(
-            f"[white]Downloaded:[/white] [magenta]True[/magenta]",
-            str(dl_true),
-            _pct(dl_true),
+            "[white]PDF:[/white] [bold green]existing[/bold green]",
+            str(dl_existing),
+            _pct(dl_existing),
+        )
+        table2.add_row(
+            "[white]PDF:[/white] [bold red]missing[/bold red]",
+            str(dl_missing),
+            _pct(dl_missing),
+        )
+
+    if "txt_filename" in df.columns:
+        txt_existing = int(
+            df["txt_filename"].fillna("").astype(str).str.strip().ne("").sum()
+        )
+        txt_missing = total - txt_existing
+        table2.add_row(
+            "[white]TXT:[/white] [bold green]existing[/bold green]",
+            str(txt_existing),
+            _pct(txt_existing),
+        )
+        table2.add_row(
+            "[white]TXT:[/white] [bold red]missing[/bold red]",
+            str(txt_missing),
+            _pct(txt_missing),
+        )
+
+    if "markdown_filename" in df.columns:
+        md_existing = int(
+            df["markdown_filename"].fillna("").astype(str).str.strip().ne("").sum()
+        )
+        md_missing = total - md_existing
+        table2.add_row(
+            "[white]Markdown:[/white] [bold green]existing[/bold green]",
+            str(md_existing),
+            _pct(md_existing),
+        )
+        table2.add_row(
+            "[white]Markdown:[/white] [bold red]missing[/bold red]",
+            str(md_missing),
+            _pct(md_missing),
         )
 
     layout = Table.grid(padding=(0, 2))
@@ -502,15 +548,16 @@ def stats(
     else:
         filtered_df = []
 
-    layout = Table.grid(padding=(0, 2))
-    layout.add_column(ratio=1)
-    layout.add_column(ratio=1)
-    layout.add_row(
-        f"[bold]Results:[/bold] [yellow]{Path(csv_path).name}[/yellow] ({len(df)} papers)\n",
-        f"[bold]Filtered:[/bold] [green]{Path(filtered_path).name}[/green] ({len(filtered_df)} papers)\n",
+    console.print(
+        f"[bold]Results:[/bold] [yellow]{Path(csv_path).name}[/yellow] ({len(df)} papers)"
     )
-    layout.add_row(tbl_original, tbl_filtered)
-    console.print(layout)
+    console.print(tbl_original)
+    if tbl_filtered is not None:
+        console.print()
+        console.print(
+            f"[bold]Filtered:[/bold] [green]{Path(filtered_path).name}[/green] ({len(filtered_df)} papers)"
+        )
+        console.print(tbl_filtered)
 
 
 @app.command(name="filter")
@@ -577,3 +624,146 @@ def filter_results(
         console.print(
             f"[bold yellow]Dry run:[/bold yellow] would write '{filtered_path}'"
         )
+
+
+def _sync_df(df: pd.DataFrame, papers_path: str) -> tuple[pd.DataFrame, int, int]:
+    """Sync pdf_downloaded, txt_filename, markdown_filename for existing rows and
+    append new rows for PDFs found in papers_path that are not yet in the DataFrame.
+
+    Returns:
+        (updated_df, updated_count, added_count)
+    """
+    papers_dir = Path(papers_path)
+    updated_count = 0
+
+    # Ensure string columns stay as object dtype even when all values are NaN
+    for col in ("txt_filename", "markdown_filename", "pdf_filename", "entry_source"):
+        if col in df.columns and df[col].dtype != object:
+            df[col] = df[col].astype(object)
+
+    known_pdf_filenames = set(
+        df["pdf_filename"].dropna().astype(str).str.strip().loc[lambda s: s != ""]
+    )
+
+    for idx, row in df.iterrows():
+        pdf_filename = str(row.get("pdf_filename", "") or "").strip()
+        if not pdf_filename:
+            continue
+        stem = (
+            pdf_filename[:-4] if pdf_filename.lower().endswith(".pdf") else pdf_filename
+        )
+
+        changed = False
+        if (papers_dir / pdf_filename).exists():
+            if not df.at[idx, "pdf_downloaded"]:
+                df.at[idx, "pdf_downloaded"] = True
+                changed = True
+
+        txt_val = row.get("txt_filename", "")
+        txt_empty = pd.isna(txt_val) or str(txt_val).strip() == ""
+        txt_candidate = f"{stem}.txt"
+        if txt_empty and (papers_dir / txt_candidate).exists():
+            df.at[idx, "txt_filename"] = txt_candidate
+            changed = True
+
+        md_val = row.get("markdown_filename", "")
+        md_empty = pd.isna(md_val) or str(md_val).strip() == ""
+        md_candidate = f"{stem}.md"
+        if md_empty and (papers_dir / md_candidate).exists():
+            df.at[idx, "markdown_filename"] = md_candidate
+            changed = True
+
+        if changed:
+            updated_count += 1
+
+    new_rows = []
+    if papers_dir.exists():
+        for pdf_path in sorted(papers_dir.glob("*.pdf")):
+            pdf_name = pdf_path.name
+            if pdf_name in known_pdf_filenames:
+                continue
+            stem = pdf_path.stem
+            txt_exists = (papers_dir / f"{stem}.txt").exists()
+            md_exists = (papers_dir / f"{stem}.md").exists()
+            new_row = {col: "" for col in _PAPER_CSV_COLUMNS}
+            new_row["pdf_filename"] = pdf_name
+            new_row["pdf_downloaded"] = True
+            new_row["entry_source"] = "manually added"
+            new_row["txt_filename"] = f"{stem}.txt" if txt_exists else ""
+            new_row["markdown_filename"] = f"{stem}.md" if md_exists else ""
+            new_rows.append(new_row)
+
+    added_count = len(new_rows)
+    if new_rows:
+        df = pd.concat(
+            [df, pd.DataFrame(new_rows, columns=_PAPER_CSV_COLUMNS)], ignore_index=True
+        )
+
+    return df, updated_count, added_count
+
+
+@app.command()
+def sync(
+    file: str = typer.Option(
+        None,
+        "--file",
+        help="YAML search config filename or bare search ID.",
+    ),
+    eid: str = typer.Option(
+        None,
+        "--eid",
+        help="Experiment ID. If not provided, uses EXPERIMENT_ID from .env.",
+    ),
+) -> None:
+    """Sync CSV result files against the papers/ folder of the experiment."""
+
+    if file is None:
+        raise UnexpectedCLIParamsException("--file is required.")
+
+    eid = get_proper_eid(eid)
+    experiment_path = get_experiment_directory_path(eid)
+
+    search_id, query, year, only_open_access = read_search_params(file, experiment_path)
+    print_search_header(eid, search_id, query, year, only_open_access)
+
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+    papers_path = os.path.join(experiment_path, PAPERS_DIR)
+    results_csv = os.path.join(searches_path, f"{search_id}_results.csv")
+    filtered_csv = os.path.join(searches_path, f"{search_id}_filtered.csv")
+
+    if not os.path.exists(results_csv):
+        console.print(
+            f"[bold yellow]Warning:[/bold yellow] Results file not found: '{results_csv}'"
+        )
+        console.print(
+            f"Run [bold cyan]search run --file {file} --eid {eid}[/bold cyan] first."
+        )
+        return
+
+    df = pd.read_csv(results_csv, sep=";")
+    updated_df, updated_count, added_count = _sync_df(df, papers_path)
+
+    if not settings.dry_run:
+        updated_df.to_csv(results_csv, index=False, encoding="utf-8", sep=";")
+        logger.debug("Synced results CSV: '%s'", results_csv)
+    else:
+        console.print(
+            f"[bold yellow]Dry run:[/bold yellow] would write '{results_csv}'"
+        )
+
+    if os.path.exists(filtered_csv):
+        filtered_df = pd.read_csv(filtered_csv, sep=";")
+        updated_filtered_df, f_updated, f_added = _sync_df(filtered_df, papers_path)
+        if not settings.dry_run:
+            updated_filtered_df.to_csv(
+                filtered_csv, index=False, encoding="utf-8", sep=";"
+            )
+            logger.debug("Synced filtered CSV: '%s'", filtered_csv)
+        else:
+            console.print(
+                f"[bold yellow]Dry run:[/bold yellow] would write '{filtered_csv}'"
+            )
+
+    console.print(f"Rows updated: [bold cyan]{updated_count}[/bold cyan]")
+    console.print(f"New rows added: [bold green]{added_count}[/bold green]")
+    console.print("[bold]Sync complete.[/bold]")

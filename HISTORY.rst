@@ -2,6 +2,18 @@
 History
 =======
 
+0.1.19 (2026-04-10)
+-------------------
+
+* Extend ``Stats Breakdown`` table in ``search stats`` with three new sections: per-value ``Entry Source`` counts, ``TXT existing/missing`` counts, and ``Markdown existing/missing`` counts
+* Rename ``Publications per Year`` table to ``Papers by Year``; narrow Year and Count columns using ``min_width`` instead of padded column name strings
+* Stack results and filtered stats tables vertically (results on top, filtered below) instead of side by side; filtered section is omitted when no filtered CSV exists
+* Change ``Downloaded`` rows in ``Stats Breakdown`` to ``PDF: existing/missing`` pattern, matching TXT and Markdown
+* Add ``search sync`` command: reconciles ``<ID>_results.csv`` (and ``<ID>_filtered.csv`` if present) against the experiment's ``papers/`` folder
+* Sync sets ``pdf_downloaded=True`` for rows whose ``pdf_filename`` is found in ``papers/``, fills ``txt_filename`` when a matching ``.txt`` file exists, and fills ``markdown_filename`` when a matching ``.md`` file exists
+* Appends new rows for PDFs in ``papers/`` not listed in the CSV; new rows have ``entry_source="manually added"``, ``pdf_downloaded=True``, and ``txt_filename``/``markdown_filename`` set if the companion files exist; all other fields are left blank
+* Respects ``--dry-run``: prints what would be written without modifying any files
+
 0.1.18 (2026-04-10)
 -------------------
 
