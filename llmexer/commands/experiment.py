@@ -17,7 +17,7 @@ from llmexer.common import (
     get_experiment_directory_path,
     get_proper_eid,
 )
-from llmexer.configs import console, settings
+from llmexer.configs import console, cprint, settings
 from llmexer.constants import EXPERIMENTS_PATH
 from llmexer.exceptions import ExperimentAlreadyExistsException, LLMExerException
 
@@ -100,7 +100,7 @@ def create(
         )
 
     ensure_directory_exists(experiment_path)
-    console.print(f"Created experiment: [bold yellow]{experiment_id}[/bold yellow]")
+    cprint(f"Created experiment: [bold yellow]{experiment_id}[/bold yellow]")
 
 
 @app.command(name="list")
@@ -114,13 +114,13 @@ def list_experiments(
 ) -> None:
     """List all experiments in the experiments folder."""
     if not os.path.exists(EXPERIMENTS_PATH):
-        console.print("No experiments found.")
+        cprint("No experiments found.")
         return
 
     entries = [e for e in os.scandir(EXPERIMENTS_PATH) if e.is_dir()]
 
     if not entries:
-        console.print("No experiments found.")
+        cprint("No experiments found.")
         return
 
     if sort_by == SortBy.date:
@@ -176,7 +176,7 @@ def rename(
         raise ExperimentAlreadyExistsException(f"Experiment '{new_id}' already exists.")
 
     os.rename(old_path, new_path)
-    console.print(
+    cprint(
         f"Renamed experiment: [bold yellow]{old_id}[/bold yellow] → [bold yellow]{new_id}[/bold yellow]"
     )
 
@@ -253,9 +253,7 @@ def init(
         f.write("vllm-default;meta-llama/Llama-3-8b;vllm;0.7;0.9;512;;;0.05;1;;\n")
         f.write("gemini-default;gemini-2.0-flash;gemini;0.7;1.0;512;;;;;standard\n")
 
-    console.print(
-        f"Init experiment [bold yellow]{eid}[/bold yellow] with standard structure."
-    )
+    cprint(f"Init experiment [bold yellow]{eid}[/bold yellow] with standard structure.")
 
 
 @app.command()
@@ -301,7 +299,7 @@ def generate(
     params_df = pd.read_csv(llm_params_path, sep=";", encoding="utf-8")
 
     if params_df.empty:
-        console.print(
+        cprint(
             "[bold yellow]Warning:[/bold yellow] llm-params.csv is empty — no rows will be generated."
         )
         return
@@ -321,7 +319,7 @@ def generate(
         prompt_id = str(mapping_row["prompt_id"]).strip()
 
         if data_id not in data_lookup:
-            console.print(
+            cprint(
                 f"[bold yellow]Warning:[/bold yellow] data_id '{data_id}' not found in data.csv — skipping."
             )
             continue
@@ -338,7 +336,7 @@ def generate(
 
         prompt_file_path = os.path.join(prompts_subdir, f"{prompt_id}.txt")
         if not os.path.exists(prompt_file_path):
-            console.print(
+            cprint(
                 f"[bold yellow]Warning:[/bold yellow] prompt file '{prompt_id}.txt' not found — skipping."
             )
             continue
@@ -368,7 +366,7 @@ def generate(
                     row_counter += 1
 
     if not rows:
-        console.print(
+        cprint(
             "[bold yellow]Warning:[/bold yellow] No rows were generated. Check your mapping.csv and data.csv."
         )
         return
@@ -385,14 +383,14 @@ def generate(
     output_path = os.path.join(exp_subdir, output_filename)
 
     if settings.dry_run:
-        console.print(
+        cprint(
             f"[bold yellow]Dry run:[/bold yellow] would write {len(result_df)} row(s) to '{output_path}'"
         )
-        console.print(f"Columns: {_OUTPUT_COLUMNS}")
+        cprint(f"Columns: {_OUTPUT_COLUMNS}")
         return
 
     result_df.to_csv(output_path, index=False, encoding="utf-8", sep=";")
-    console.print(
+    cprint(
         f"Generated [bold green]{len(result_df)}[/bold green] row(s) → "
         f"[bold yellow]{output_filename}[/bold yellow]"
     )
@@ -405,16 +403,16 @@ def current() -> None:
     if settings.experiment_id:
         experiment_path = os.path.join(EXPERIMENTS_PATH, settings.experiment_id)
         if os.path.exists(experiment_path):
-            console.print(
+            cprint(
                 f"Current experiment: [bold yellow]{settings.experiment_id}[/bold yellow]"
             )
         else:
-            console.print(
+            cprint(
                 f"Current experiment: [bold yellow]{settings.experiment_id}[/bold yellow] "
                 f"[bold red](not found in {EXPERIMENTS_PATH})[/bold red]"
             )
     else:
-        console.print(
+        cprint(
             "[bold red]No current experiment set.[/bold red] Set EXPERIMENT_ID in .env file."
         )
 
@@ -488,7 +486,7 @@ def run(
     prompts_df = pd.read_csv(file_path, sep=";", encoding="utf-8")
 
     if prompts_df.empty:
-        console.print(
+        cprint(
             "[bold yellow]Warning:[/bold yellow] Experiment CSV is empty — nothing to run."
         )
         return
@@ -497,14 +495,14 @@ def run(
         mask = prompts_df["param_provider"].str.lower() == filter_provider.lower()
         prompts_df = prompts_df[mask].reset_index(drop=True)
         if prompts_df.empty:
-            console.print(
+            cprint(
                 f"[bold yellow]Warning:[/bold yellow] No rows found for provider "
                 f"'{filter_provider}' — nothing to run."
             )
             return
 
     total = len(prompts_df)
-    console.print(f"Running [bold green]{total}[/bold green] call(s)")
+    cprint(f"Running [bold green]{total}[/bold green] call(s)")
 
     # Resolve output path
     if output is None:
@@ -512,7 +510,7 @@ def run(
         output = os.path.join(exp_subdir, f"experiment_{eid}_results_{ts}.csv")
 
     if settings.dry_run:
-        console.print(
+        cprint(
             f"[bold yellow]Dry run:[/bold yellow] would write {total} row(s) to '{output}'"
         )
         return
@@ -559,7 +557,7 @@ def run(
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(result.model_dump(), f, indent=2, ensure_ascii=False)
 
-        console.print(
+        cprint(
             f"  [bold]{'green' if result.status == 'success' else 'red'}]{result.status}[/bold] "
             f"{p_row['code']} / {p_row['profile_name']} / {p_row['param_model_name']}"
         )
@@ -567,7 +565,7 @@ def run(
     results_df = pd.DataFrame(all_rows)
     results_df.to_csv(output, index=False, sep=";", encoding="utf-8")
     output_filename = os.path.basename(output)
-    console.print(
+    cprint(
         f"Saved [bold green]{len(all_rows)}[/bold green] result(s) → "
         f"[bold yellow]{output_filename}[/bold yellow]"
     )

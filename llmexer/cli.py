@@ -10,7 +10,7 @@ from typing_extensions import Annotated
 from llmexer.commands import experiment, papers, search
 from llmexer.commands import self as self_module
 from llmexer.common import ensure_directory_exists
-from llmexer.configs import console, settings
+from llmexer.configs import console, cprint, settings
 from llmexer.version import package_summary, package_version
 
 app = typer.Typer(
@@ -74,12 +74,12 @@ def main(
     settings.verbose = verbose
 
     if settings.verbose:
-        console.print(
+        cprint(
             Text("✅", style="bold green"),
             "Verbose mode:",
             Text("enabled", style="bold green"),
         )
-        console.print(
+        cprint(
             Text("✅", style="bold green"),
             "Dry run mode:",
             Text(
@@ -88,14 +88,14 @@ def main(
             ),
         )
     elif settings.dry_run:
-        console.print(
+        cprint(
             Text("✅", style="bold green"),
             "Dry run mode:",
             Text("enabled", style="bold green"),
         )
 
     if env_file:
-        console.print(
+        cprint(
             "Loading environment variables from:",
             Text(f"{env_file}", style="bold blue"),
         )
@@ -112,7 +112,7 @@ def main(
     if experiment_id:
         settings.experiment_id = experiment_id
         if settings.verbose:
-            console.print(
+            cprint(
                 Text("✅", style="bold green"),
                 "Current experiment:",
                 Text(f"{experiment_id}", style="bold yellow"),
@@ -132,7 +132,7 @@ def main(
                 table.add_row(item["field"], item["value"])
             console.print(table)
         else:
-            console.print(f"{package_version()}", style="yellow")
+            cprint(f"{package_version()}", style="yellow")
         exit(0)
 
     # If a subcommand was provided, don't exit; continue to the subcommand.

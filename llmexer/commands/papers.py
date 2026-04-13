@@ -19,7 +19,7 @@ from llmexer.common import (
     get_proper_eid,
     make_http_session,
 )
-from llmexer.configs import console, logger, settings
+from llmexer.configs import console, cprint, logger, settings
 from llmexer.constants import (
     DEFAULT_DOCLING_URL,
     PAPERS_DIR,
@@ -297,7 +297,7 @@ def add(
 
         dst = os.path.join(papers_path, src.name)
         if os.path.exists(dst):
-            console.print(
+            cprint(
                 f"A paper already exists in the papers directory: [bold yellow]{src.name}[/bold yellow]"
             )
             return
@@ -306,9 +306,7 @@ def add(
             shutil.copy2(str(src), dst)
 
         logger.debug("Copied '%s' -> '%s'", src, dst)
-        console.print(
-            f"[bold green]Added[/bold green] '{src.name}' to experiment '{eid}'."
-        )
+        cprint(f"[bold green]Added[/bold green] '{src.name}' to experiment '{eid}'.")
 
     elif directory is not None:
         dir_path = Path(directory).resolve()
@@ -324,7 +322,7 @@ def add(
         for index, src in enumerate(pdfs):
             dst = os.path.join(papers_path, src.name)
             if os.path.exists(dst):
-                console.print(
+                cprint(
                     f"A paper already exists in the papers directory [{index+1}/{len(pdfs)}]: [bold yellow]{src.name}[/bold yellow]"
                 )
                 already_exists.append(src.name)
@@ -332,19 +330,19 @@ def add(
         if not settings.dry_run:
             for src in pdfs:
                 if src.name not in already_exists:
-                    console.print(f"Copying paper: [bold green]{src.name}[/bold green]")
+                    cprint(f"Copying paper: [bold green]{src.name}[/bold green]")
                     dst = os.path.join(papers_path, src.name)
                     shutil.copy2(str(src), dst)
                     logger.debug("Copied '%s' -> '%s'", src, dst)
                     copied_papers_cnt += 1
 
-        console.print(
+        cprint(
             f"[bold green]Added[/bold green] {copied_papers_cnt} PDF(s) to experiment '{eid}'."
         )
 
     else:  # url
         filename = download_pdf_from_url(url, papers_path)
-        console.print(
+        cprint(
             f"[bold green]Downloaded[/bold green] '{filename}' to experiment '{eid}'."
         )
 
@@ -438,9 +436,7 @@ def download(
         try:
             pdf_url = resolve_unpaywall_pdf_url(single_doi, resolved_email)
         except PaperDownloadException as exc:
-            console.print(
-                f"{label} [bold yellow]skipped[/bold yellow] '{single_doi}': {exc}"
-            )
+            cprint(f"{label} [bold yellow]skipped[/bold yellow] '{single_doi}': {exc}")
             failed += 1
             failed_records.append(
                 {
@@ -461,9 +457,7 @@ def download(
         try:
             filename = download_pdf_from_url(pdf_url, papers_path, **download_kwargs)
         except PaperAlreadyExistsException as exc:
-            console.print(
-                f"{label} [bold yellow]skipped[/bold yellow] '{single_doi}': {exc}"
-            )
+            cprint(f"{label} [bold yellow]skipped[/bold yellow] '{single_doi}': {exc}")
             failed += 1
             failed_records.append(
                 {
@@ -476,7 +470,7 @@ def download(
             )
             continue
         except PaperAddException as exc:
-            console.print(f"{label} [bold red]failed[/bold red] '{single_doi}': {exc}")
+            cprint(f"{label} [bold red]failed[/bold red] '{single_doi}': {exc}")
             failed += 1
             failed_records.append(
                 {
@@ -490,7 +484,7 @@ def download(
             continue
 
         logger.debug("Downloaded DOI '%s' -> '%s'", single_doi, filename)
-        console.print(
+        cprint(
             f"{label} [bold green]downloaded[/bold green] '{single_doi}' as '{filename}'."
         )
         succeeded += 1
@@ -503,15 +497,13 @@ def download(
                 columns=["doi", "title", "url", "pdf_filename", "pdf_downloaded"],
             ).to_csv(failed_csv_path, index=False, encoding="utf-8", sep=";")
             logger.debug("Saved failed records to '%s'", failed_csv_path)
-            console.print(
-                f"Failed list saved to: [bold]{Path(failed_csv_path).name}[/bold]"
-            )
+            cprint(f"Failed list saved to: [bold]{Path(failed_csv_path).name}[/bold]")
         if succeeded_dois:
             df.loc[df["doi"].isin(succeeded_dois), "pdf_downloaded"] = True
             df.to_csv(csv_path, index=False, encoding="utf-8", sep=";")
             logger.debug("Updated 'downloaded' status in '%s'", csv_path)
 
-    console.print(
+    cprint(
         f"Downloaded: [bold green]{succeeded}[/bold green]. Skipped/Failed: [bold red]{failed}[/bold red]"
     )
 
@@ -560,7 +552,7 @@ def extract(
     papers_path = os.path.join(experiment_path, PAPERS_DIR)
 
     if not os.path.exists(papers_path):
-        console.print(
+        cprint(
             f"[bold yellow]Warning:[/bold yellow] No papers directory found for experiment '{eid}'."
         )
         return
@@ -572,7 +564,7 @@ def extract(
     ]
 
     if not pdfs:
-        console.print(
+        cprint(
             f"[bold yellow]Warning:[/bold yellow] No PDF files found in papers directory for experiment '{eid}'."
         )
         return
@@ -582,9 +574,9 @@ def extract(
         resolved_user = docling_user or os.getenv("DOCLING_USER") or ""
         resolved_password = docling_password or os.getenv("DOCLING_PASSWORD") or ""
         docling_auth = (resolved_user, resolved_password)
-        console.print(f"Processor: [bold blue]docling[/bold blue] ({resolved_url})")
+        cprint(f"Processor: [bold blue]docling[/bold blue] ({resolved_url})")
     else:
-        console.print("Processor: [bold blue]pypdf[/bold blue]")
+        cprint("Processor: [bold blue]pypdf[/bold blue]")
 
     processed = 0
     skipped = 0
@@ -598,7 +590,7 @@ def extract(
                 txt_path = pdf_path.parent / f"{stem}.txt"
 
                 if not rewrite and txt_path.exists():
-                    console.print(
+                    cprint(
                         f"{label} [bold blue]skipped[/bold blue] '{pdf_path.name}' (already extracted)."
                     )
                     skipped += 1
@@ -608,7 +600,7 @@ def extract(
                     reader = pypdf.PdfReader(str(pdf_path))
                     text = "\n".join(page.extract_text() or "" for page in reader.pages)
                 except Exception as exc:
-                    console.print(
+                    cprint(
                         f"{label} [bold yellow]skipped[/bold yellow] '{pdf_path.name}'. Extraction failed ({exc})."
                     )
                     logger.debug("Extraction failed for '%s': %s", pdf_path, exc)
@@ -616,7 +608,7 @@ def extract(
                     continue
 
                 if not text.strip():
-                    console.print(
+                    cprint(
                         f"{label} [bold yellow]warning:[/bold yellow] '{pdf_path.name}' could not be parsed - no text content found. No .txt file written."
                     )
                     logger.debug(
@@ -634,7 +626,7 @@ def extract(
                 md_path = pdf_path.parent / f"{stem}.md"
 
                 if not rewrite and md_path.exists():
-                    console.print(
+                    cprint(
                         f"{label} [bold blue]skipped[/bold blue] '{pdf_path.name}' (already extracted)."
                     )
                     skipped += 1
@@ -645,7 +637,7 @@ def extract(
                         pdf_path, resolved_url, docling_auth
                     )
                 except PaperExtractException as exc:
-                    console.print(
+                    cprint(
                         f"{label} [bold yellow]skipped[/bold yellow] '{pdf_path.name}'. Extraction failed ({exc})."
                     )
                     logger.debug(
@@ -655,7 +647,7 @@ def extract(
                     continue
 
                 if not md_content.strip():
-                    console.print(
+                    cprint(
                         f"{label} [bold yellow]warning:[/bold yellow] '{pdf_path.name}' could not be parsed - no text content found. No .md file written."
                     )
                     logger.debug(
@@ -669,9 +661,9 @@ def extract(
                     md_path.write_text(md_content, encoding="utf-8")
                     logger.debug("Wrote '%s'", md_path)
 
-        console.print(f"{label} [bold green]extracted:[/bold green] '{pdf_path.name}'")
+        cprint(f"{label} [bold green]extracted:[/bold green] '{pdf_path.name}'")
         processed += 1
 
-    console.print(
+    cprint(
         f"Extracted: [bold green]{processed}[/bold green]. Skipped: [bold red]{skipped}[/bold red]"
     )

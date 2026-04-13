@@ -5,7 +5,7 @@ from rich.table import Table
 from rich.text import Text
 
 from llmexer.common import get_user_agent
-from llmexer.configs import console
+from llmexer.configs import console, cprint
 from llmexer.version import package_version
 
 app = typer.Typer(help="Helps with the self-manage of the llmexer CLI.")
@@ -22,13 +22,13 @@ LLMEXER_ENV_VARS = [
 @app.command()
 def version():
     """Print the current llmexer version."""
-    console.print(package_version())
+    cprint(package_version())
 
 
 @app.command()
 def user_agent():
     """Print the User-Agent string used by llmexer for HTTP requests."""
-    console.print("User-Agent:", Text(get_user_agent(), style="bold green"))
+    cprint("User-Agent:", Text(get_user_agent(), style="bold green"))
 
 
 @app.command()

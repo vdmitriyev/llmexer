@@ -9,6 +9,13 @@ tasks:
     cmds:
       - docker compose -f compose-claude.yaml up -d
 
+  down:
+    desc: stop sandbox docker with claude code
+    silent: true
+    aliases: [d]
+    cmds:
+      - docker compose -f compose-claude.yaml down
+
   shell:
     desc: attaches to the sandbox via terminal shell
     silent: true

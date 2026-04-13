@@ -2,6 +2,14 @@
 History
 =======
 
+0.2.4 (2026-04-14)
+-------------------
+
+* Refactor: add ``cprint()`` utility function to ``configs.py``: always prints to the Rich console and additionally writes a plain-text entry to the log file when ``APP_LOG_LEVEL=DEBUG`` or ``--verbose`` is passed; accepts the same ``*args``/``**kwargs`` as ``console.print()`` plus an optional ``log_level`` parameter (default: ``"debug"``)
+* Remove ``StreamHandler`` from the logger so that ``logger.*()`` calls write only to ``llmexer.log`` (no duplicate unformatted lines in the terminal)
+* Replace all notification-style ``console.print()`` calls across ``experiment.py``, ``papers.py``, ``search.py``, ``self.py``, and ``cli.py`` with ``cprint()``; structural Rich ``Table`` and layout renders remain as ``console.print()``
+* Fix ``test_experiment_generate.py``: update ``llm-params.csv`` fixtures in tests that used ``model-a``/``model-b``/``m`` model names to include matching param profile rows so the generate command produces output
+
 0.2.3 (2026-04-13)
 -------------------
 

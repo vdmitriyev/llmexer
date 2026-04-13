@@ -19,7 +19,7 @@ from llmexer.common import (
     get_proper_eid,
     make_http_session,
 )
-from llmexer.configs import console, settings
+from llmexer.configs import console, cprint, settings
 from llmexer.constants import PAPERS_DIR, SEARCHES_DIR
 from llmexer.exceptions import (
     LLMExerException,
@@ -211,7 +211,7 @@ def run_semantic_scholar_search(
                 }
             )
 
-        console.print(f"Retrieved {len(records)} paper(s) so far...")
+        cprint(f"Retrieved {len(records)} paper(s) so far...")
         logger.debug(
             "Page retrieved: %d papers in page, %d total", len(papers), len(records)
         )
@@ -237,9 +237,9 @@ def run_semantic_scholar_search(
     )
     logger.debug("Wrote CSV to '%s'", csv_path)
 
-    console.print(f"[bold green]Total retrieved:[/bold green] {len(records)} paper(s)")
-    console.print(f"File with raw responses ([magenta]JSON[/magenta]):\n  {json_path}")
-    console.print(f"File with results ([magenta]CSV[/magenta]):\n  {csv_path}")
+    cprint(f"[bold green]Total retrieved:[/bold green] {len(records)} paper(s)")
+    cprint(f"File with raw responses ([magenta]JSON[/magenta]):\n  {json_path}")
+    cprint(f"File with results ([magenta]CSV[/magenta]):\n  {csv_path}")
 
     return records
 
@@ -304,8 +304,8 @@ def create(
         experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM
     )
 
-    console.print(f"Created search config: [bold yellow]{yaml_filename}[/bold yellow]")
-    console.print(f"Query: [bold green]{query}[/bold green]")
+    cprint(f"Created search config: [bold yellow]{yaml_filename}[/bold yellow]")
+    cprint(f"Query: [bold green]{query}[/bold green]")
 
 
 @app.command()
@@ -355,18 +355,18 @@ def run(
         search_id, yaml_filename = save_search_query(
             experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM
         )
-        console.print(f"Query saved to: [bold blue]{yaml_filename}[/bold blue]")
+        cprint(f"Query saved to: [bold blue]{yaml_filename}[/bold blue]")
     if file:
         search_id, query, year, only_open_access = read_search_params(
             file, experiment_path, query
         )
-        console.print(f"Loaded config from: [bold blue]{file}[/bold blue]")
+        cprint(f"Loaded config from: [bold blue]{file}[/bold blue]")
     elif not query:
         raise LLMExerException(
             "No query provided. Use --query or --file with a YAML file."
         )
 
-    console.print(f"Limit: [bold blue]{limit}[/bold blue]")
+    cprint(f"Limit: [bold blue]{limit}[/bold blue]")
 
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
     ensure_directory_exists(searches_path)
@@ -382,8 +382,8 @@ def run(
             )
 
     if settings.dry_run:
-        console.print(f"[bold yellow]Dry run:[/bold yellow] would write '{json_path}'")
-        console.print(f"[bold yellow]Dry run:[/bold yellow] would write '{csv_path}'")
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{json_path}'")
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{csv_path}'")
         return
 
     print_search_header(eid, search_id, query, year, only_open_access)
@@ -527,16 +527,16 @@ def stats(
     csv_path = os.path.join(searches_path, f"{search_id}_results.csv")
 
     if not os.path.exists(csv_path):
-        console.print(
+        cprint(
             f"[bold yellow]Warning:[/bold yellow] Results file not found: '{csv_path}'"
         )
-        console.print(
+        cprint(
             f"Run [bold cyan]search run --file {file} --eid {eid}[/bold cyan] first."
         )
         return
 
     df = pd.read_csv(csv_path, sep=";")
-    console.print()
+    cprint()
     tbl_original = _build_stats_grid(df)
 
     filtered_path = os.path.join(searches_path, f"{search_id}_filtered.csv")
@@ -547,13 +547,13 @@ def stats(
     else:
         filtered_df = []
 
-    console.print(
+    cprint(
         f"[bold]Results:[/bold] [yellow]{Path(csv_path).name}[/yellow] ({len(df)} papers)"
     )
     console.print(tbl_original)
     if tbl_filtered is not None:
-        console.print()
-        console.print(
+        cprint()
+        cprint(
             f"[bold]Filtered:[/bold] [green]{Path(filtered_path).name}[/green] ({len(filtered_df)} papers)"
         )
         console.print(tbl_filtered)
@@ -592,10 +592,10 @@ def filter_results(
     csv_path = os.path.join(searches_path, f"{search_id}_results.csv")
 
     if not os.path.exists(csv_path):
-        console.print(
+        cprint(
             f"[bold yellow]Warning:[/bold yellow] Results file not found: '{csv_path}'"
         )
-        console.print(
+        cprint(
             f"Run [bold cyan]search run --file {file} --eid {eid}[/bold cyan] first."
         )
         return
@@ -606,23 +606,19 @@ def filter_results(
     total = len(df)
     remaining = len(filtered_df)
     filtered_out = total - remaining
-    console.print(f"Language filter: [bold cyan]{language}[/bold cyan]")
-    console.print(f"Total: [bold white]{total}[/bold white]")
-    console.print(f"Filtered out: [bold red]{filtered_out}[/bold red]")
-    console.print(f"Remaining: [bold green]{remaining}[/bold green]")
+    cprint(f"Language filter: [bold cyan]{language}[/bold cyan]")
+    cprint(f"Total: [bold white]{total}[/bold white]")
+    cprint(f"Filtered out: [bold red]{filtered_out}[/bold red]")
+    cprint(f"Remaining: [bold green]{remaining}[/bold green]")
 
     filtered_path = os.path.join(searches_path, f"{search_id}_filtered.csv")
 
     if not settings.dry_run:
         filtered_df.to_csv(filtered_path, index=False, encoding="utf-8", sep=";")
         logger.debug("Wrote filtered results to '%s'", filtered_path)
-        console.print(
-            f"Saved filtered results to: [bold]{Path(filtered_path).name}[/bold]"
-        )
+        cprint(f"Saved filtered results to: [bold]{Path(filtered_path).name}[/bold]")
     else:
-        console.print(
-            f"[bold yellow]Dry run:[/bold yellow] would write '{filtered_path}'"
-        )
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{filtered_path}'")
 
 
 def _sync_df(df: pd.DataFrame, papers_path: str) -> tuple[pd.DataFrame, int, int]:
@@ -731,10 +727,10 @@ def sync(
     filtered_csv = os.path.join(searches_path, f"{search_id}_filtered.csv")
 
     if not os.path.exists(results_csv):
-        console.print(
+        cprint(
             f"[bold yellow]Warning:[/bold yellow] Results file not found: '{results_csv}'"
         )
-        console.print(
+        cprint(
             f"Run [bold cyan]search run --file {file} --eid {eid}[/bold cyan] first."
         )
         return
@@ -746,9 +742,7 @@ def sync(
         updated_df.to_csv(results_csv, index=False, encoding="utf-8", sep=";")
         logger.debug("Synced results CSV: '%s'", results_csv)
     else:
-        console.print(
-            f"[bold yellow]Dry run:[/bold yellow] would write '{results_csv}'"
-        )
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{results_csv}'")
 
     if os.path.exists(filtered_csv):
         filtered_df = pd.read_csv(filtered_csv, sep=";")
@@ -759,10 +753,8 @@ def sync(
             )
             logger.debug("Synced filtered CSV: '%s'", filtered_csv)
         else:
-            console.print(
-                f"[bold yellow]Dry run:[/bold yellow] would write '{filtered_csv}'"
-            )
+            cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{filtered_csv}'")
 
-    console.print(f"Rows updated: [bold cyan]{updated_count}[/bold cyan]")
-    console.print(f"New rows added: [bold green]{added_count}[/bold green]")
-    console.print("[bold]Sync complete.[/bold]")
+    cprint(f"Rows updated: [bold cyan]{updated_count}[/bold cyan]")
+    cprint(f"New rows added: [bold green]{added_count}[/bold green]")
+    cprint("[bold]Sync complete.[/bold]")

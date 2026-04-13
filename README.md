@@ -146,7 +146,7 @@ llmexer experiment run --eid llm-survey-2026 \
 The API key is read from `LLM_API_KEY` (or `PROVIDER_<PROVIDER_UPPER>_KEY`) in `.env`.
 
 
-## 🚀 Getting Started: Gathering Data for Experiments
+## ⚡ Getting Started: Gathering Data for Experiments
 
 **1. Add papers to the experiment**
 

@@ -23,11 +23,7 @@ def get_logger(logger_name: str = None, logging_level: str = APP_LOG_LEVEL) -> N
         file_handler = logging.FileHandler(LOG_FILE_NAME)
         file_handler.setFormatter(formatter)
 
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-
         logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
         logger.setLevel(logging.INFO)
 
     if logging_level is not None:

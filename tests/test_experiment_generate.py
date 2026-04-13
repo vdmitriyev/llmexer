@@ -242,7 +242,9 @@ def test_generate_multiple_models_multiple_rows(experiments_dir):
     )
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
-        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW,
+        _LLM_PARAMS_HEADER
+        + "profile-a;model-a;provider-a;0.7;1.0;512;4096;1.1;;;;\n"
+        + "profile-b;model-b;provider-b;0.7;1.0;512;4096;1.1;;;;\n",
         encoding="utf-8",
     )
 
@@ -279,7 +281,9 @@ def test_generate_sorted_by_model_order(experiments_dir):
     )
     (prompts_dir / "prompt01.txt").write_text("{{title}}", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
-        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW,
+        _LLM_PARAMS_HEADER
+        + "profile-a;model-a;p;0.7;1.0;512;4096;1.1;;;;\n"
+        + "profile-b;model-b;p;0.7;1.0;512;4096;1.1;;;;\n",
         encoding="utf-8",
     )
 
@@ -347,7 +351,9 @@ def test_generate_prompt_hash_deterministic(experiments_dir):
     )
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
-        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW,
+        _LLM_PARAMS_HEADER
+        + "profile-a;model-a;p;0.7;1.0;512;4096;1.1;;;;\n"
+        + "profile-b;model-b;p;0.7;1.0;512;4096;1.1;;;;\n",
         encoding="utf-8",
     )
 
@@ -494,7 +500,7 @@ def test_generate_missing_data_id_skips_row(experiments_dir):
     )
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
-        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8"
+        _LLM_PARAMS_HEADER + "default;m;p;0.7;1.0;512;4096;1.1;;;;\n", encoding="utf-8"
     )
 
     result = runner.invoke(app, ["experiment", "generate", "--eid", eid])
@@ -553,7 +559,7 @@ def test_generate_uses_current_experiment_from_env(
     )
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
-        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8"
+        _LLM_PARAMS_HEADER + "default;m;p;0.7;1.0;512;4096;1.1;;;;\n", encoding="utf-8"
     )
 
     monkeypatch.setenv("EXPERIMENT_ID", eid)
