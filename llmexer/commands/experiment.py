@@ -351,20 +351,21 @@ def generate(
 
         for _, model_row in models_df.iterrows():
             for _, param_row in params_df.iterrows():
-                rows.append(
-                    {
-                        "ID": row_counter,
-                        "code": f"{data_id}_{prompt_id}_{str(model_row['name'])}_{param_row['profile_name']}",
-                        "prompt": rendered_prompt,
-                        "original_data": original_data_str,
-                        "model_name": str(model_row["name"]),
-                        "provider_name": str(model_row["provider"]),
-                        "prompt_hash": prompt_hash,
-                        "original_data_hash": original_data_hash,
-                        **{k: param_row.get(k) for k in _PARAM_COLUMNS},
-                    }
-                )
-                row_counter += 1
+                if model_row["name"] == param_row["param_model_name"]:
+                    rows.append(
+                        {
+                            "ID": row_counter,
+                            "code": f"{data_id}_{prompt_id}_{str(model_row['name'])}_{param_row['profile_name']}",
+                            "prompt": rendered_prompt,
+                            "original_data": original_data_str,
+                            "model_name": str(model_row["name"]),
+                            "provider_name": str(model_row["provider"]),
+                            "prompt_hash": prompt_hash,
+                            "original_data_hash": original_data_hash,
+                            **{k: param_row.get(k) for k in _PARAM_COLUMNS},
+                        }
+                    )
+                    row_counter += 1
 
     if not rows:
         console.print(
@@ -559,8 +560,8 @@ def run(
             json.dump(result.model_dump(), f, indent=2, ensure_ascii=False)
 
         console.print(
-            f"  [[bold]{'green' if result.status == 'success' else 'red'}]{result.status}[/bold]] "
-            f"{p_row['profile_name']} / {p_row['param_model_name']}"
+            f"  [bold]{'green' if result.status == 'success' else 'red'}]{result.status}[/bold] "
+            f"{p_row['code']} / {p_row['profile_name']} / {p_row['param_model_name']}"
         )
 
     results_df = pd.DataFrame(all_rows)

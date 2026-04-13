@@ -2,6 +2,11 @@
 History
 =======
 
+0.2.3 (2026-04-13)
+-------------------
+
+* Fix mapping between LLM models and LLM params
+
 0.2.2 (2026-04-13)
 -------------------
 
