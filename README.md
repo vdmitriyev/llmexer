@@ -1,6 +1,6 @@
 ## About
 
-> `llmexer` `llmexer` is a framework and CLI utility to plan, design, run and control various LLM experiments
+> `llmexer` is a framework and CLI utility to plan, design, run and control various LLM experiments
 
 
 ## Installation
@@ -58,7 +58,7 @@ This tool requires access to local or remote running LLMS. It uses a `.env` file
     PROVIDER_OPENAI_KEY=sk-...
     PROVIDER_GEMINI_KEY=AI...
     ```
-    The pattern is `PROVIDER_<PROVIDER_UPPER>_URL` and `PROVIDER_<PROVIDER_UPPER>_KEY` where `<PROVIDER_UPPER>` is the provider name in uppercase (e.g. `OLLAMA`, `OPENAI`, `VLLM`, `GEMINI`).
+    The pattern is `PROVIDER_<PROVIDER_UPPER>_URL` and `PROVIDER_<PROVIDER_UPPER>_KEY` where `<PROVIDER_UPPER>` is the provider name in uppercase (e.g. `OLLAMA`, `VLLM`, `OPENAI`, `GEMINI`).
 5. You could also pass a custom file as `.env` to the CLI:
     ```
     llmexer --env-file custom.env
@@ -85,20 +85,70 @@ llmexer experiment create
 llmexer experiment rename --old-id 20260402-a1b2c3d4 --new-id llm-survey-2026
 ```
 
-**3. Initialise the experiment structure (optional)**
+**3. Initialise the experiment structure **
 
 Scaffold a standard `experiment/` subfolder with template CSVs and a prompt file:
 ```bash
 llmexer experiment init --eid llm-survey-2026
 ```
+<details>
+
 This creates:
 - `experiment/models.csv` — list of models to use (name, provider, notes); pre-filled with `llama3.3:latest`, `phi4:14b`, `gemma3:12b`, `gemma3:27b`
 - `experiment/data.csv` — input data rows (ID, Title, Abstract)
 - `experiment/mapping.csv` — maps data IDs to prompt IDs; pre-filled with `D01;prompt01` and `D02;prompt01`
 - `experiment/prompts/prompt01.txt` — a starter Jinja2 prompt template using `{{title}}` and `{{abstract}}`
 - `experiment/llm-params.csv` — LLM hyperparameter profiles; identity columns: `profile_name`, `model_name`, `provider`; universal columns: `temperature`, `top_p`, `max_tokens`; provider-grouped columns: `ollama_context_window`, `ollama_repeat_penalty` (ollama), `vllm_min_p`, `vllm_best_of` (vllm), `openai_seed` (openai), `gemini_thinking_level` (gemini); pre-filled with example profiles for `ollama`, `openai`, `vllm`, and `gemini`
+</details>
 
-**4. Add papers to the experiment**
+**4. Generate the full experiment matrix**
+
+After filling in `experiment/models.csv`, `experiment/data.csv`, `experiment/mapping.csv`, `experiment/llm-params.csv`, and your Jinja2 prompt templates:
+```bash
+llmexer experiment generate --eid llm-survey-2026
+```
+
+<details>
+
+This renders every (data row × prompt × model × parameter profile) combination and writes a self-contained `experiment/experiment_YYYYMMDD-GUID.csv` with all 20 columns — prompt content, model identity, and all LLM hyperparameters embedded inline. The `code` field encodes each combination as `DATAID_PROMPTID_MODELNAME_PROFILENAME`. Use `--dry-run` to preview the row count without writing:
+```bash
+llmexer --dry-run experiment generate --eid llm-survey-2026
+```
+</details>
+
+**5. Run the experiment — call LLMs and collect results**
+
+Once `experiment generate` has produced the CSV, run all combinations:
+```bash
+llmexer experiment run --eid llm-survey-2026 --file experiment_<SAMPE>.csv
+```
+
+<details>
+
+This reads every row from the generated `experiment_*.csv` (which already contains all param columns) and calls the appropriate LLM. Results are written to `experiment/experiment_llm-survey-2026_results_TIMESTAMP.csv`. Each individual call is also saved as a JSON file under `experiment/responses/`. Use `--dry-run` to preview the row count without making any LLM calls:
+```bash
+llmexer --dry-run experiment run --eid llm-survey-2026
+```
+Run only a specific provider's rows (e.g. when only ollama is available):
+```bash
+llmexer experiment run --eid llm-survey-2026 --filter-provider ollama
+```
+
+Override input or output paths if needed:
+```bash
+llmexer experiment run --eid llm-survey-2026 \
+  --file experiment/experiment_20260402-abc123.csv \
+  --output experiment/my_results.csv
+```
+
+</details>
+
+The API key is read from `LLM_API_KEY` (or `PROVIDER_<PROVIDER_UPPER>_KEY`) in `.env`.
+
+
+## 🚀 Getting Started: Gathering Data for Experiments
+
+**1. Add papers to the experiment**
 
 From a local file:
 ```bash
@@ -113,7 +163,7 @@ From a URL:
 llmexer papers add --eid llm-survey-2026 --url https://arxiv.org/pdf/1706.03762
 ```
 
-**5. Run a literature search**
+**2. Run a literature search**
 
 Create a search configuration and run it:
 ```bash
@@ -128,7 +178,7 @@ llmexer search run --eid llm-survey-2026 --query "large language models" --limit
 
 Results are saved as `<ID>_results.csv` and `<ID>_results_raw.json` in `searches/`.
 
-**6. Filter search results by language (optional)**
+**3. Filter search results by language (optional)**
 
 Filter to English-only papers before downloading (default language is `en`):
 ```bash
@@ -152,7 +202,7 @@ llmexer papers download --eid llm-survey-2026 --search-file 20260401-bfdd863d_fi
 ```
 Failed downloads are saved automatically as `20260401-bfdd863d_results_download_failed.csv` (columns: `doi`, `url`, `title`, `desired_filename`, `downloaded`) next to the source CSV.
 
-**8. Extract text from all added papers**
+**4. Extract text from all added papers**
 
 Using the default `pypdf` backend (saves `.txt` files):
 ```bash
@@ -176,40 +226,6 @@ By default, papers that already have an extracted file are skipped. Use `--rewri
 ```bash
 llmexer papers extract --eid llm-survey-2026 --rewrite
 ```
-
-**9. Generate the full experiment matrix**
-
-After filling in `experiment/models.csv`, `experiment/data.csv`, `experiment/mapping.csv`, `experiment/llm-params.csv`, and your Jinja2 prompt templates:
-```bash
-llmexer experiment generate --eid llm-survey-2026
-```
-This renders every (data row × prompt × model × parameter profile) combination and writes a self-contained `experiment/experiment_YYYYMMDD-GUID.csv` with all 20 columns — prompt content, model identity, and all LLM hyperparameters embedded inline. The `code` field encodes each combination as `DATAID_PROMPTID_MODELNAME_PROFILENAME`. Use `--dry-run` to preview the row count without writing:
-```bash
-llmexer --dry-run experiment generate --eid llm-survey-2026
-```
-
-**10. Run the experiment — call LLMs and collect results**
-
-Once `experiment generate` has produced the CSV, run all combinations:
-```bash
-llmexer experiment run --eid llm-survey-2026
-```
-This reads every row from the generated `experiment_*.csv` (which already contains all param columns) and calls the appropriate LLM. Results are written to `experiment/experiment_llm-survey-2026_results_TIMESTAMP.csv`. Each individual call is also saved as a JSON file under `experiment/responses/`. Use `--dry-run` to preview the row count without making any LLM calls:
-```bash
-llmexer --dry-run experiment run --eid llm-survey-2026
-```
-Run only a specific provider's rows (e.g. when only ollama is available):
-```bash
-llmexer experiment run --eid llm-survey-2026 --filter-provider ollama
-```
-
-Override input or output paths if needed:
-```bash
-llmexer experiment run --eid llm-survey-2026 \
-  --file experiment/experiment_20260402-abc123.csv \
-  --output experiment/my_results.csv
-```
-The API key is read from `LLM_API_KEY` (or `PROVIDER_<PROVIDER_UPPER>_KEY`) in `.env`.
 
 ## 🧪 CLI category: experiment
 
