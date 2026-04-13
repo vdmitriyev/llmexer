@@ -186,7 +186,7 @@ llmexer search filter --eid llm-survey-2026 --file 20260401-bfdd863d.yaml
 ```
 This produces `20260401-bfdd863d_filtered.csv` with only the matching rows.
 
-**7. Download open-access papers by DOI via Unpaywall**
+**4. Download open-access papers by DOI via Unpaywall**
 
 By DOI (one or more):
 ```bash
@@ -202,7 +202,7 @@ llmexer papers download --eid llm-survey-2026 --search-file 20260401-bfdd863d_fi
 ```
 Failed downloads are saved automatically as `20260401-bfdd863d_results_download_failed.csv` (columns: `doi`, `url`, `title`, `desired_filename`, `downloaded`) next to the source CSV.
 
-**4. Extract text from all added papers**
+**5. Extract text from all added papers**
 
 Using the default `pypdf` backend (saves `.txt` files):
 ```bash
