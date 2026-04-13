@@ -109,7 +109,6 @@ def test_generate_output_has_correct_columns(initialised_experiment, experiments
         "provider_name",
         "prompt_hash",
         "original_data_hash",
-        "json_params",
     ]
 
 
@@ -197,49 +196,6 @@ def test_generate_original_data_hash_is_sha256(initialised_experiment, experimen
     df = pd.read_csv(csv_file, sep=";")
     assert len(df.iloc[0]["original_data_hash"]) == 64
     assert all(c in "0123456789abcdef" for c in df.iloc[0]["original_data_hash"])
-
-
-def test_generate_json_params_fallback_for_plain_text_notes(
-    initialised_experiment, experiments_dir
-):
-    """When notes is plain text (not JSON), json_params should be '{}'."""
-    eid, exp_subdir = initialised_experiment
-
-    runner.invoke(app, ["experiment", "generate", "--eid", eid])
-
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
-    assert df.iloc[0]["json_params"] == "{}"
-
-
-def test_generate_json_params_valid_json_notes(experiments_dir):
-    """When notes is valid JSON, json_params should preserve the JSON content."""
-    eid = "json-params-exp"
-    exp_subdir = experiments_dir / eid / "experiment"
-    prompts_dir = exp_subdir / "prompts"
-    os.makedirs(prompts_dir)
-
-    (exp_subdir / "models.csv").write_text(
-        'name;provider;notes\ngpt-4;openai;{"temperature": 0.7}\n',
-        encoding="utf-8",
-    )
-    (exp_subdir / "data.csv").write_text(
-        "ID;Title;Abstract\nD01;Title;Abstract text.\n",
-        encoding="utf-8",
-    )
-    (exp_subdir / "mapping.csv").write_text(
-        "data_id;prompt_id\nD01;prompt01\n",
-        encoding="utf-8",
-    )
-    (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
-
-    result = runner.invoke(app, ["experiment", "generate", "--eid", eid])
-    assert result.exit_code == 0
-
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
-    params = json.loads(df.iloc[0]["json_params"])
-    assert params.get("temperature") == 0.7
 
 
 def test_generate_multiple_models_multiple_rows(experiments_dir):

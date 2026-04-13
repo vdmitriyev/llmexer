@@ -2,13 +2,18 @@
 History
 =======
 
+0.2.1 (2026-04-13)
+-------------------
+
+* Remove ``json_params`` column from ``experiment generate`` output; the ``notes`` field in ``models.csv`` is no longer parsed as JSON
+
 0.2.0 (2026-04-10)
 -------------------
 
 * Add ``experiment init`` command: initialises an existing experiment with a standard folder structure (``experiment/``, ``experiment/prompts/``) and four template files — ``models.csv`` (name/provider/notes), ``data.csv`` (ID/Title/Abstract), ``mapping.csv`` (data_id/prompt_id), and ``prompts/prompt-01.txt`` (``{title}``/``{abstract}`` template)
 * Raise ``LLMExerException`` when ``experiment init`` is called on an already-initialised experiment; raise ``ExperimentNotExistsException`` when the experiment folder does not exist
 * Extract ``get_proper_eid()`` and ``get_experiment_directory_path()`` helpers into ``common.py`` to centralise ``--eid`` resolution and experiment-path validation across command modules
-* Add ``experiment generate`` command: renders all (data row, prompt, model) combinations defined in ``experiment/`` into a single ``experiment_YYYYMMDD-GUID.csv`` output file; columns are ``ID``, ``code``, ``prompt``, ``original_data``, ``model_name``, ``provider_name``, ``prompt_hash``, ``original_data_hash``, ``json_params``
+* Add ``experiment generate`` command: renders all (data row, prompt, model) combinations defined in ``experiment/`` into a single ``experiment_YYYYMMDD-GUID.csv`` output file; columns are ``ID``, ``code``, ``prompt``, ``original_data``, ``model_name``, ``provider_name``, ``prompt_hash``, ``original_data_hash``
 * ``ID`` column is a 1-based integer counter; rows are sorted by model order as listed in ``models.csv`` (all data rows for the first model first, then all for the second, etc.)
 * ``code`` field encodes the combination as ``DATAID_PROMPTID_MODELNAME`` for easy cross-referencing
 * ``prompt_hash`` and ``original_data_hash`` are SHA-256 hex digests of the rendered prompt and the serialised original data row respectively

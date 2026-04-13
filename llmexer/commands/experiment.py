@@ -32,22 +32,7 @@ _OUTPUT_COLUMNS = [
     "provider_name",
     "prompt_hash",
     "original_data_hash",
-    "json_params",
 ]
-
-
-def _parse_json_params(notes) -> str:
-    """Parse the notes field from models.csv as a JSON string.
-
-    Returns the notes as a JSON string if it is valid JSON,
-    otherwise returns '{}' (empty object).
-    """
-    if notes and str(notes).strip():
-        try:
-            return json.dumps(json.loads(str(notes).strip()), ensure_ascii=False)
-        except (json.JSONDecodeError, ValueError):
-            return "{}"
-    return "{}"
 
 
 class SortBy(str, Enum):
@@ -322,7 +307,6 @@ def generate(
                     "provider_name": str(model_row["provider"]),
                     "prompt_hash": prompt_hash,
                     "original_data_hash": original_data_hash,
-                    "json_params": _parse_json_params(model_row.get("notes", "")),
                 }
             )
             row_counter += 1
