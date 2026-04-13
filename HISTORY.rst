@@ -2,6 +2,23 @@
 History
 =======
 
+0.2.2 (2026-04-13)
+-------------------
+
+* Add ``experiment run`` command: executes all prompt × LLM-parameter-profile combinations from ``experiment_YYYYMMDD-GUID.csv`` (produced by ``experiment generate``) and ``llm-params.csv``; writes a ``experiment_<ID>_results_<TIMESTAMP>.csv`` results file and one JSON response file per call under ``experiment/responses/``
+* Extend ``experiment init`` to also create ``experiment/llm-params.csv`` with 12 columns (``profile_name``, ``model_name``, ``provider``, ``temperature``, ``top_p``, ``max_tokens``, ``context_window``, ``seed``, ``repeat_penalty``, ``min_p``, ``best_of``, ``thinking_level``) and five example profiles covering ``ollama``, ``openai``, ``vllm``, and ``gemini`` providers
+* Results CSV columns are the union of the experiment CSV columns (``ID``, ``code``, ``prompt``, ``original_data``, ``model_name``, ``provider_name``, ``prompt_hash``, ``original_data_hash``), the params CSV columns (renamed ``param_model_name`` and ``param_provider`` to avoid collision), and four computed fields: ``response_text``, ``usage_tokens``, ``status``, ``timestamp``
+* ``experiment run`` supports provider-specific parameter mapping via ``llmexer/llm.py``: ``ollama`` uses ``num_ctx``/``num_predict``/``repeat_penalty`` in ``extra_body``; ``vllm`` uses ``min_p``/``best_of``; ``gemini`` uses ``thinking_level``; ``openai`` uses ``max_completion_tokens``/``seed``; all providers share ``temperature`` and ``top_p``
+* All LLM calls use the OpenAI Python SDK with provider-specific ``base_url`` values (``ollama``: ``localhost:11434/v1``, ``vllm``: ``localhost:8000/v1``, ``openai``: default, ``gemini``: Google endpoint); ``openai`` is a lazy optional dependency — a clear install hint is raised if absent
+* ``experiment run`` supports ``--dry-run``, ``--file`` (override auto-detected prompt CSV), ``--output`` (override results file path), ``--filter-provider`` (only run rows for a specific provider)
+* API key read from ``LLM_API_KEY`` or ``PROVIDER_<PROVIDER_UPPER>_KEY`` env vars; base URL overridable via ``PROVIDER_<PROVIDER_UPPER>_URL`` env vars (fall back to built-in defaults)
+* Individual call failures are recorded as ``status="Error: ..."`` rows in the results CSV; the batch continues rather than aborting
+* Extract LLM call logic into new ``llmexer/llm.py`` module (``LLMRunResult`` dataclass, ``LLMRequestsMapper`` class, ``URL_MAP``) to isolate the optional ``openai`` dependency from the rest of the CLI
+* Rename provider-specific columns in ``llm-params.csv`` to carry an explicit provider prefix: ``context_window`` → ``ollama_context_window``, ``repeat_penalty`` → ``ollama_repeat_penalty``, ``seed`` → ``openai_seed``, ``min_p`` → ``vllm_min_p``, ``best_of`` → ``vllm_best_of``, ``thinking_level`` → ``gemini_thinking_level``; universal columns (``temperature``, ``top_p``, ``max_tokens``) unchanged
+* Reorder ``llm-params.csv`` columns to group by provider: universal → ollama → vllm → openai → gemini
+* ``experiment generate`` now performs the full cartesian product (data × prompts × models × parameter profiles) and embeds all 12 param columns directly into the output CSV, producing a self-contained 20-column file; ``experiment run`` no longer reads a separate ``llm-params.csv``
+* ``code`` field extended to ``DATAID_PROMPTID_MODELNAME_PROFILENAME``
+
 0.2.1 (2026-04-13)
 -------------------
 

@@ -42,6 +42,13 @@ def mock_no_dotenv(monkeypatch):
     return mock_load
 
 
+_LLM_PARAMS_HEADER = (
+    "profile_name;model_name;provider;temperature;top_p;max_tokens;"
+    "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level\n"
+)
+_LLM_PARAMS_ROW = "ollama-default;llama3.3:latest;ollama;0.7;1.0;512;4096;1.1;;;;\n"
+
+
 @pytest.fixture()
 def initialised_experiment(experiments_dir):
     """Create and initialise a test experiment with standard template files.
@@ -73,6 +80,10 @@ def initialised_experiment(experiments_dir):
         "Here is the title: {{title}}.\n\nHere is the abstract: {{abstract}}.\n\nCount words.",
         encoding="utf-8",
     )
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW,
+        encoding="utf-8",
+    )
     return eid, exp_subdir
 
 
@@ -93,7 +104,7 @@ def test_generate_creates_output_csv(initialised_experiment, experiments_dir):
 
 
 def test_generate_output_has_correct_columns(initialised_experiment, experiments_dir):
-    """The output CSV should have exactly the required 8 columns in order."""
+    """The output CSV should have exactly the required 20 columns in order."""
     eid, exp_subdir = initialised_experiment
 
     runner.invoke(app, ["experiment", "generate", "--eid", eid])
@@ -109,22 +120,34 @@ def test_generate_output_has_correct_columns(initialised_experiment, experiments
         "provider_name",
         "prompt_hash",
         "original_data_hash",
+        "profile_name",
+        "param_model_name",
+        "param_provider",
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "ollama_context_window",
+        "ollama_repeat_penalty",
+        "vllm_min_p",
+        "vllm_best_of",
+        "openai_seed",
+        "gemini_thinking_level",
     ]
 
 
 def test_generate_code_field_format(initialised_experiment, experiments_dir):
-    """code field should be DATAID_PROMPTID_MODELNAME."""
+    """code field should be DATAID_PROMPTID_MODELNAME_PROFILENAME."""
     eid, exp_subdir = initialised_experiment
 
     runner.invoke(app, ["experiment", "generate", "--eid", eid])
 
     csv_file = next(exp_subdir.glob("experiment_*.csv"))
     df = pd.read_csv(csv_file, sep=";")
-    assert df.iloc[0]["code"] == "D01_prompt01_llama3.3:latest"
+    assert df.iloc[0]["code"] == "D01_prompt01_llama3.3:latest_ollama-default"
 
 
 def test_generate_row_count(initialised_experiment, experiments_dir):
-    """One mapping row × one model = one result row."""
+    """One mapping row × one model × one param profile = one result row."""
     eid, exp_subdir = initialised_experiment
 
     runner.invoke(app, ["experiment", "generate", "--eid", eid])
@@ -199,7 +222,7 @@ def test_generate_original_data_hash_is_sha256(initialised_experiment, experimen
 
 
 def test_generate_multiple_models_multiple_rows(experiments_dir):
-    """With 2 mapping rows and 2 models, should produce 4 result rows."""
+    """With 2 data rows, 2 models, and 1 param profile, should produce 4 result rows."""
     eid = "multi-exp"
     exp_subdir = experiments_dir / eid / "experiment"
     prompts_dir = exp_subdir / "prompts"
@@ -218,13 +241,17 @@ def test_generate_multiple_models_multiple_rows(experiments_dir):
         encoding="utf-8",
     )
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW,
+        encoding="utf-8",
+    )
 
     result = runner.invoke(app, ["experiment", "generate", "--eid", eid])
     assert result.exit_code == 0
 
     csv_file = next(exp_subdir.glob("experiment_*.csv"))
     df = pd.read_csv(csv_file, sep=";")
-    assert len(df) == 4  # 2 data rows × 2 models
+    assert len(df) == 4  # 2 data rows × 2 models × 1 param profile
     assert list(df["ID"]) == [1, 2, 3, 4]
     # rows are sorted by model order from models.csv, then by mapping order within each model
     assert list(df["model_name"]) == ["model-a", "model-a", "model-b", "model-b"]
@@ -251,6 +278,10 @@ def test_generate_sorted_by_model_order(experiments_dir):
         encoding="utf-8",
     )
     (prompts_dir / "prompt01.txt").write_text("{{title}}", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW,
+        encoding="utf-8",
+    )
 
     result = runner.invoke(app, ["experiment", "generate", "--eid", eid])
     assert result.exit_code == 0
@@ -296,7 +327,7 @@ def test_generate_prints_success_message(initialised_experiment, experiments_dir
 
 
 def test_generate_prompt_hash_deterministic(experiments_dir):
-    """Two rows from the same prompt+data but different models share the same prompt_hash."""
+    """Rows from the same prompt+data share the same prompt_hash regardless of model/profile."""
     eid = "hash-exp"
     exp_subdir = experiments_dir / eid / "experiment"
     prompts_dir = exp_subdir / "prompts"
@@ -315,6 +346,10 @@ def test_generate_prompt_hash_deterministic(experiments_dir):
         encoding="utf-8",
     )
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW,
+        encoding="utf-8",
+    )
 
     runner.invoke(app, ["experiment", "generate", "--eid", eid])
 
@@ -386,6 +421,9 @@ def test_generate_missing_models_csv_raises(experiments_dir):
     (exp_subdir / "mapping.csv").write_text(
         "data_id;prompt_id\nD01;p\n", encoding="utf-8"
     )
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8"
+    )
 
     result = runner.invoke(app, ["experiment", "generate", "--eid", eid])
 
@@ -406,6 +444,9 @@ def test_generate_missing_data_csv_raises(experiments_dir):
     (exp_subdir / "mapping.csv").write_text(
         "data_id;prompt_id\nD01;p\n", encoding="utf-8"
     )
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8"
+    )
 
     result = runner.invoke(app, ["experiment", "generate", "--eid", eid])
 
@@ -424,6 +465,9 @@ def test_generate_missing_mapping_csv_raises(experiments_dir):
         "name;provider;notes\nm;p;\n", encoding="utf-8"
     )
     (exp_subdir / "data.csv").write_text("ID;Title\nD01;T\n", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8"
+    )
 
     result = runner.invoke(app, ["experiment", "generate", "--eid", eid])
 
@@ -449,6 +493,9 @@ def test_generate_missing_data_id_skips_row(experiments_dir):
         "data_id;prompt_id\nD01;prompt01\nBAD-ID;prompt01\n", encoding="utf-8"
     )
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8"
+    )
 
     result = runner.invoke(app, ["experiment", "generate", "--eid", eid])
 
@@ -474,6 +521,9 @@ def test_generate_missing_prompt_file_skips_row(experiments_dir):
     )
     (exp_subdir / "mapping.csv").write_text(
         "data_id;prompt_id\nD01;nonexistent-prompt\n", encoding="utf-8"
+    )
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8"
     )
 
     result = runner.invoke(app, ["experiment", "generate", "--eid", eid])
@@ -502,6 +552,9 @@ def test_generate_uses_current_experiment_from_env(
         "data_id;prompt_id\nD01;prompt01\n", encoding="utf-8"
     )
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8"
+    )
 
     monkeypatch.setenv("EXPERIMENT_ID", eid)
 
@@ -523,3 +576,117 @@ def test_generate_without_eid_and_no_env_raises(
 
     assert result.exit_code != 0
     assert isinstance(result.exception, ExperimentIDRequiredException)
+
+
+# ---------------------------------------------------------------------------
+# LLM-params integration tests
+# ---------------------------------------------------------------------------
+
+
+def test_generate_missing_llm_params_raises(experiments_dir):
+    """Missing llm-params.csv should raise LLMExerException."""
+    eid = "no-params-exp"
+    exp_subdir = experiments_dir / eid / "experiment"
+    prompts_dir = exp_subdir / "prompts"
+    os.makedirs(prompts_dir)
+
+    (exp_subdir / "models.csv").write_text(
+        "name;provider;notes\nm;p;\n", encoding="utf-8"
+    )
+    (exp_subdir / "data.csv").write_text(
+        "ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8"
+    )
+    (exp_subdir / "mapping.csv").write_text(
+        "data_id;prompt_id\nD01;prompt01\n", encoding="utf-8"
+    )
+    (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
+    # llm-params.csv intentionally absent
+
+    result = runner.invoke(app, ["experiment", "generate", "--eid", eid])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, LLMExerException)
+    assert "llm-params.csv" in str(result.exception)
+
+
+def test_generate_includes_param_columns(initialised_experiment, experiments_dir):
+    """Output CSV should contain all 12 llm-params column names."""
+    eid, exp_subdir = initialised_experiment
+
+    runner.invoke(app, ["experiment", "generate", "--eid", eid])
+
+    csv_file = next(exp_subdir.glob("experiment_*.csv"))
+    df = pd.read_csv(csv_file, sep=";")
+    for col in [
+        "profile_name",
+        "param_model_name",
+        "param_provider",
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "ollama_context_window",
+        "openai_seed",
+        "ollama_repeat_penalty",
+        "vllm_min_p",
+        "vllm_best_of",
+        "gemini_thinking_level",
+    ]:
+        assert col in df.columns
+
+
+def test_generate_param_values_embedded(initialised_experiment, experiments_dir):
+    """Param column values from llm-params.csv should appear in the output rows."""
+    eid, exp_subdir = initialised_experiment
+
+    runner.invoke(app, ["experiment", "generate", "--eid", eid])
+
+    csv_file = next(exp_subdir.glob("experiment_*.csv"))
+    df = pd.read_csv(csv_file, sep=";")
+    assert df.iloc[0]["profile_name"] == "ollama-default"
+    assert df.iloc[0]["param_model_name"] == "llama3.3:latest"
+    assert df.iloc[0]["param_provider"] == "ollama"
+    assert float(df.iloc[0]["temperature"]) == 0.7
+
+
+def test_generate_row_count_with_multiple_profiles(experiments_dir):
+    """1 mapping row × 1 model × 2 param profiles = 2 result rows."""
+    eid = "two-profiles-exp"
+    exp_subdir = experiments_dir / eid / "experiment"
+    prompts_dir = exp_subdir / "prompts"
+    os.makedirs(prompts_dir)
+
+    (exp_subdir / "models.csv").write_text(
+        "name;provider;notes\nmodel-a;p;\n", encoding="utf-8"
+    )
+    (exp_subdir / "data.csv").write_text(
+        "ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8"
+    )
+    (exp_subdir / "mapping.csv").write_text(
+        "data_id;prompt_id\nD01;prompt01\n", encoding="utf-8"
+    )
+    (prompts_dir / "prompt01.txt").write_text("{{title}}", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER
+        + "profile-a;model-a;p;0.5;1.0;256;;;;;;\n"
+        + "profile-b;model-a;p;1.0;0.9;512;;;;;;\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--eid", eid])
+    assert result.exit_code == 0
+
+    csv_file = next(exp_subdir.glob("experiment_*.csv"))
+    df = pd.read_csv(csv_file, sep=";")
+    assert len(df) == 2
+    assert list(df["profile_name"]) == ["profile-a", "profile-b"]
+
+
+def test_generate_code_includes_profile_name(initialised_experiment, experiments_dir):
+    """code field should end with _{profile_name}."""
+    eid, exp_subdir = initialised_experiment
+
+    runner.invoke(app, ["experiment", "generate", "--eid", eid])
+
+    csv_file = next(exp_subdir.glob("experiment_*.csv"))
+    df = pd.read_csv(csv_file, sep=";")
+    assert df.iloc[0]["code"].endswith("_ollama-default")

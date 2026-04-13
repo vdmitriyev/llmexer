@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llmexer"
 description = "A framework and CLI utility to curate datasets and orchestrate (design, run, evaluate) various LLM experiments"
-version = "0.2.1"
+version = "0.2.2"
 readme = "README.md"
 authors = [
   {name = "vdmitriyev"},
@@ -26,6 +26,8 @@ dependencies = [
     "requests>=2.31.0",
     "pypdf>=6.9.2",
     "langdetect>=1.0.9",
+    "pydantic>=2.12.5",
+    "openai>=2.30.0",
 ]
 
 [project.scripts]

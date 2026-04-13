@@ -201,6 +201,24 @@ def test_init_without_eid_and_no_env_raises(
     assert isinstance(result.exception, ExperimentIDRequiredException)
 
 
+def test_init_creates_llm_params_csv(experiment, experiments_dir):
+    """init should create llm-params.csv with the correct header and example rows."""
+    eid, exp_path = experiment
+
+    result = runner.invoke(app, ["experiment", "init", "--eid", eid])
+
+    assert result.exit_code == 0
+    params_file = exp_path / "experiment" / "llm-params.csv"
+    assert params_file.exists()
+    lines = params_file.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == (
+        "profile_name;model_name;provider;temperature;top_p;max_tokens;"
+        "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level"
+    )
+    assert len(lines) >= 2
+    assert any("ollama" in line for line in lines[1:])
+
+
 def test_init_eid_overrides_env(experiments_dir, mock_no_dotenv, monkeypatch):
     """When --eid is provided, it should override EXPERIMENT_ID from the environment."""
     env_eid = "env-exp"

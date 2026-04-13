@@ -44,7 +44,22 @@ This tool requires access to local or remote running LLMS. It uses a `.env` file
     DOCLING_USER=myuser
     DOCLING_PASSWORD=mypassword
     ```
-4. You could also pass a custom file as `.env` to the CLI:
+4.  Set the API key for LLM providers (optional, used by `experiment run` for OpenAI, Gemini, or other cloud providers):
+    ```
+    LLM_API_KEY=sk-...
+    ```
+    Per-provider overrides take precedence over `LLM_API_KEY` and the built-in URL defaults:
+    ```
+    # Override the base URL for a specific provider
+    PROVIDER_OLLAMA_URL=http://localhost:11434/v1
+    PROVIDER_VLLM_URL=http://localhost:8000/v1
+
+    # Override the API key for a specific provider (takes precedence over LLM_API_KEY)
+    PROVIDER_OPENAI_KEY=sk-...
+    PROVIDER_GEMINI_KEY=AI...
+    ```
+    The pattern is `PROVIDER_<PROVIDER_UPPER>_URL` and `PROVIDER_<PROVIDER_UPPER>_KEY` where `<PROVIDER_UPPER>` is the provider name in uppercase (e.g. `OLLAMA`, `OPENAI`, `VLLM`, `GEMINI`).
+5. You could also pass a custom file as `.env` to the CLI:
     ```
     llmexer --env-file custom.env
     ```
@@ -81,6 +96,7 @@ This creates:
 - `experiment/data.csv` — input data rows (ID, Title, Abstract)
 - `experiment/mapping.csv` — maps data IDs to prompt IDs; pre-filled with `D01;prompt01` and `D02;prompt01`
 - `experiment/prompts/prompt01.txt` — a starter Jinja2 prompt template using `{{title}}` and `{{abstract}}`
+- `experiment/llm-params.csv` — LLM hyperparameter profiles; identity columns: `profile_name`, `model_name`, `provider`; universal columns: `temperature`, `top_p`, `max_tokens`; provider-grouped columns: `ollama_context_window`, `ollama_repeat_penalty` (ollama), `vllm_min_p`, `vllm_best_of` (vllm), `openai_seed` (openai), `gemini_thinking_level` (gemini); pre-filled with example profiles for `ollama`, `openai`, `vllm`, and `gemini`
 
 **4. Add papers to the experiment**
 
@@ -161,16 +177,39 @@ By default, papers that already have an extracted file are skipped. Use `--rewri
 llmexer papers extract --eid llm-survey-2026 --rewrite
 ```
 
-**9. Generate rendered prompts for all data-model combinations**
+**9. Generate the full experiment matrix**
 
-After filling in `experiment/models.csv`, `experiment/data.csv`, `experiment/mapping.csv`, and your Jinja2 prompt templates:
+After filling in `experiment/models.csv`, `experiment/data.csv`, `experiment/mapping.csv`, `experiment/llm-params.csv`, and your Jinja2 prompt templates:
 ```bash
 llmexer experiment generate --eid llm-survey-2026
 ```
-This renders every (data row, prompt, model) combination and writes the results to `experiment/experiment_YYYYMMDD-GUID.csv`. Use `--dry-run` to preview the row count without writing:
+This renders every (data row × prompt × model × parameter profile) combination and writes a self-contained `experiment/experiment_YYYYMMDD-GUID.csv` with all 20 columns — prompt content, model identity, and all LLM hyperparameters embedded inline. The `code` field encodes each combination as `DATAID_PROMPTID_MODELNAME_PROFILENAME`. Use `--dry-run` to preview the row count without writing:
 ```bash
 llmexer --dry-run experiment generate --eid llm-survey-2026
 ```
+
+**10. Run the experiment — call LLMs and collect results**
+
+Once `experiment generate` has produced the CSV, run all combinations:
+```bash
+llmexer experiment run --eid llm-survey-2026
+```
+This reads every row from the generated `experiment_*.csv` (which already contains all param columns) and calls the appropriate LLM. Results are written to `experiment/experiment_llm-survey-2026_results_TIMESTAMP.csv`. Each individual call is also saved as a JSON file under `experiment/responses/`. Use `--dry-run` to preview the row count without making any LLM calls:
+```bash
+llmexer --dry-run experiment run --eid llm-survey-2026
+```
+Run only a specific provider's rows (e.g. when only ollama is available):
+```bash
+llmexer experiment run --eid llm-survey-2026 --filter-provider ollama
+```
+
+Override input or output paths if needed:
+```bash
+llmexer experiment run --eid llm-survey-2026 \
+  --file experiment/experiment_20260402-abc123.csv \
+  --output experiment/my_results.csv
+```
+The API key is read from `LLM_API_KEY` (or `PROVIDER_<PROVIDER_UPPER>_KEY`) in `.env`.
 
 ## 🧪 CLI category: experiment
 
@@ -179,8 +218,9 @@ The `experiment` (alias: `exp`) category provides commands for managing LLM expe
 | Shortname | Description | Command Example |
 |-----------|-------------|-----------------|
 | `create` | Create a new experiment folder under `.experiments/` using format `YYYYMMDD-GUID`. Accepts an optional custom ID. | `llmexer experiment create --id my-experiment` |
-| `init` | Initialise an existing experiment with a standard folder structure (`experiment/`, `experiment/prompts/`) and template files: `models.csv` (pre-filled with 4 ollama models), `data.csv`, `mapping.csv` (pre-filled with D01 and D02 rows), `prompts/prompt01.txt` (Jinja2 template using `{{title}}` and `{{abstract}}`). Raises an error if already initialised. | `llmexer experiment init --eid my-experiment` |
-| `generate` | Render all (data row × prompt × model) combinations defined in `experiment/` and write the result to `experiment/experiment_YYYYMMDD-GUID.csv`. Output columns: `ID`, `code`, `prompt`, `original_data`, `model_name`, `provider_name`, `prompt_hash`, `original_data_hash`. Rows are sorted by model order from `models.csv`. Supports `--dry-run`. | `llmexer experiment generate --eid my-experiment` |
+| `init` | Initialise an existing experiment with a standard folder structure (`experiment/`, `experiment/prompts/`) and template files: `models.csv` (pre-filled with 4 ollama models), `data.csv`, `mapping.csv` (pre-filled with D01 and D02 rows), `prompts/prompt01.txt` (Jinja2 template using `{{title}}` and `{{abstract}}`), and `llm-params.csv` (hyperparameter profiles; universal: `temperature`, `top_p`, `max_tokens`; ollama: `ollama_context_window`, `ollama_repeat_penalty`; vllm: `vllm_min_p`, `vllm_best_of`; openai: `openai_seed`; gemini: `gemini_thinking_level`). Raises an error if already initialised. | `llmexer experiment init --eid my-experiment` |
+| `generate` | Render all (data row × prompt × model × parameter profile) combinations and write a self-contained 20-column `experiment/experiment_YYYYMMDD-GUID.csv`. Columns: `ID`, `code` (`DATAID_PROMPTID_MODELNAME_PROFILENAME`), `prompt`, `original_data`, `model_name`, `provider_name`, `prompt_hash`, `original_data_hash`, plus all 12 param columns from `llm-params.csv` (`profile_name`, `param_model_name`, `param_provider`, `temperature`, `top_p`, `max_tokens`, `ollama_context_window`, `openai_seed`, `ollama_repeat_penalty`, `vllm_min_p`, `vllm_best_of`, `gemini_thinking_level`). Rows are sorted by model order from `models.csv`. Supports `--dry-run`. | `llmexer experiment generate --eid my-experiment` |
+| `run` | Execute every row in the generated `experiment_*.csv` (no separate params file needed — all columns are embedded). Calls each LLM via the OpenAI SDK (supports ollama, vllm, openai, gemini) and writes results to `experiment_<ID>_results_<TIMESTAMP>.csv`. Individual JSON responses are saved under `experiment/responses/`. Supports `--dry-run`, `--file` (override input CSV), `--output` (override results path), `--filter-provider` (only run rows for a specific provider). API key read from `LLM_API_KEY` or `PROVIDER_<PROVIDER_UPPER>_KEY` env vars; URL from `PROVIDER_<PROVIDER_UPPER>_URL` or built-in defaults. Requires `openai` package (`pip install openai`). | `llmexer experiment run --eid my-experiment --filter-provider ollama` |
 | `list` | List all experiments with optional sorting by name or date. | `llmexer experiment list --sort-by date --desc` |
 | `current` | Display the current experiment ID loaded from `.env`. | `llmexer experiment current` |
 | `rename` | Rename an existing experiment. Uses `EXPERIMENT_ID` from `.env` if `--old-id` is omitted. | `llmexer experiment rename --old-id old-name --new-id new-name` |
