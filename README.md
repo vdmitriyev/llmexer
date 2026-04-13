@@ -85,7 +85,7 @@ llmexer experiment create
 llmexer experiment rename --old-id 20260402-a1b2c3d4 --new-id llm-survey-2026
 ```
 
-**3. Initialise the experiment structure **
+**3. Initialise the experiment structure**
 
 Scaffold a standard `experiment/` subfolder with template CSVs and a prompt file:
 ```bash
