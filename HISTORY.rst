@@ -2,6 +2,11 @@
 History
 =======
 
+0.2.5 (2026-04-15)
+-------------------
+
+* Remove ``papers rename`` stub command: the command had no implementation and is no longer exposed in the CLI, documentation, or tests
+
 0.2.4 (2026-04-14)
 -------------------
 

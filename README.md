@@ -251,7 +251,6 @@ EXPERIMENT_ID=my-experiment
 
 # These commands will use my-experiment automatically
 llmexer search run --query "machine learning"
-llmexer papers rename
 ```
 
 You can still override the current experiment by explicitly providing `--eid`:
@@ -271,6 +270,7 @@ The `papers` category provides commands for managing PDF papers within an experi
 | `download --doi` | Download one or more open-access PDFs by DOI using the Unpaywall API. Email required via `--email` or `UNPAYWALL_EMAIL` env var. | `llmexer papers download --doi 10.1038/nature12373 --email you@example.com` |
 | `download --search-file` | Download all papers from a search result CSV (inside `searches/`), including filtered CSVs (`_filtered.csv`). Files are named `YEAR_AUTHOR_TITLE_DOI.pdf`. On success, updates `downloaded=True` in the source CSV. Failures saved as `<stem>_download_failed.csv`. | `llmexer papers download --search-file 20260401-abc123_filtered.csv` |
 | `extract` | Extract text from all PDFs in `papers/`. Default `pypdf` backend saves `.txt`; `docling` backend sends PDFs to a remote docling-serve instance and saves `.md`. Connection details (`DOCLING_URL`, `DOCLING_USER`, `DOCLING_PASSWORD`) read from `.env`; overridable via `--docling-url`, `--docling-user`, `--docling-password`. Already-extracted files are skipped unless `--rewrite` is passed. | `llmexer papers extract --eid my-experiment --processor docling` |
+
 
 ## 🔍 CLI category: search
 
@@ -295,6 +295,26 @@ The `self` category provides introspection commands for the llmexer CLI itself:
 |-----------|-------------|-----------------|
 | `version` | Print the current llmexer package version. | `llmexer self version` |
 | `envs` | Display all llmexer-relevant environment variables as a table. `EXPERIMENT_ID` is highlighted in bold cyan; `DOCLING_PASSWORD` is masked as `********` when set. | `llmexer self envs` |
+
+## 📄 Renaming PDFs with pdf-renamer
+
+Before adding papers to an experiment, you can automatically rename them by their bibliographic metadata (year, journal, authors, title) using the external [`pdf-renamer`](https://github.com/MicheleCotrufo/pdf-renamer) tool.
+
+No installation is needed — run it directly with `uvx`.
+
+Rename using custom format: year - authors (et al.) - title):
+```bash
+uvx --from pdf-renamer pdfrenamer -f "{YYYY}_{A3etal}_{T}" /path/to/pdfs
+```
+Rename recursively (include subdirectories)
+```bash
+uvx --from pdf-renamer pdfrenamer /path/to/pdfs -sf
+```
+
+There is also a possibility to extract BiBTeX of a publication as follows
+```bash
+uvx --from pdf2bib pdf2bib -s bibtex.bib /path/to/pdfs
+```
 
 ## CLI UI
 

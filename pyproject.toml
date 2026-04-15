@@ -21,7 +21,6 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "Jinja2>=3.1.6",
     "typing-extensions>=4.0.0",
-    "pdf-renamer>=1.1",
     "pandas>=3.0.1",
     "requests>=2.31.0",
     "pypdf>=6.9.2",

@@ -238,20 +238,6 @@ def make_structured_filename(
 
 
 @app.command()
-def rename(
-    eid: str = typer.Option(
-        None,
-        "--eid",
-        help="Experiment ID to be used to store search results. If not provided, uses EXPERIMENT_ID from .env.",
-    ),
-) -> None:
-    """Renames papers of the given experiment."""
-
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
-
-
-@app.command()
 def add(
     eid: str = typer.Option(
         None,
