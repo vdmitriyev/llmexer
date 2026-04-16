@@ -62,6 +62,7 @@ _PARAM_COLUMNS = [
 ]
 
 DIR_EXPERIMENT = "experiment"
+DIR_RESPONSES = "responses"
 
 
 class SortBy(str, Enum):
@@ -477,7 +478,7 @@ def run(
     file: str = typer.Option(
         None,
         "--file",
-        help="Path to a specific experiment_*.csv file. Output will be written into experiment/experiment_file_results_TIMESTAMP.csv.",
+        help="Path to a specific experiment_NAME.csv file. Output will be written into experiment/experiment_file_results_TIMESTAMP.csv.",
     ),
     filter_provider: str = typer.Option(
         None,
@@ -498,19 +499,9 @@ def run(
         )
 
     if file is None:
-        csv_candidates = [
-            f
-            for f in os.listdir(exp_subdir)
-            if f.startswith("experiment_")
-            and f.endswith(".csv")
-            and "_results_" not in f
-        ]
-        if not csv_candidates:
-            raise LLMExerException(
-                f"No experiment CSV found for '{eid}'. Run `experiment generate --eid {eid}` first."
-            )
-        csv_candidates.sort()
-        file_path = os.path.join(exp_subdir, csv_candidates[-1])
+        raise LLMExerException(
+            f"No experiment CSV provided. Run `experiment generate --eid {eid}` first."
+        )
     elif os.path.isabs(file):
         file_path = file
     else:
@@ -545,11 +536,18 @@ def run(
                 f"'{filter_provider}' — nothing to run."
             )
             return
+    responses_dir = os.path.join(experiment_path, DIR_RESPONSES)
+    ensure_directory_exists(responses_dir)
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     output_path = os.path.join(exp_subdir, f"experiment_{eid}_results_{ts}.csv")
-    cprint(f"Output results will be saved in: [bold yellow]{output_path}[/bold yellow]")
-    cprint(f"All JSON responses will be saved int: {responses_dir}")
+    cprint(
+        f"Output results will be saved into: [bold yellow]{output_path}[/bold yellow]"
+    )
+    cprint(
+        f"JSON responses will be saved into: [bold yellow]{responses_dir}[/bold yellow]"
+    )
+
     total_runs = len(prompts_df)
     cprint(f"Total experiments to run: [bold green]{total_runs}[/bold green]")
 
