@@ -225,7 +225,7 @@ llmexer papers extract --eid llm-survey-2026 --rewrite
 
 The `experiment` (alias: `exp`) category provides commands for managing LLM experiments:
 
-| Shortname | Description | Command Example |
+| Command   | Description | Command Example |
 |-----------|-------------|-----------------|
 | `create` | Create a new experiment folder under `.experiments/` using format `YYYYMMDD-GUID`. Accepts an optional custom ID. | `llmexer experiment create --id my-experiment` |
 | `init` | Initialise an existing experiment with a standard folder structure (`experiment/`, `experiment/prompts/`) and template files: `models.csv` (pre-filled with 4 ollama models), `data.csv`, `mapping.csv` (pre-filled with D01 and D02 rows), `prompts/prompt01.txt` (Jinja2 template using `{{title}}` and `{{abstract}}`), and `llm-params.csv` (hyperparameter profiles; universal: `temperature`, `top_p`, `max_tokens`; ollama: `ollama_context_window`, `ollama_repeat_penalty`; vllm: `vllm_min_p`, `vllm_best_of`; openai: `openai_seed`; gemini: `gemini_thinking_level`). Raises an error if already initialised. | `llmexer experiment init --eid my-experiment` |
@@ -256,7 +256,7 @@ llmexer search run --eid different-experiment --query "deep learning"
 
 The `papers` category provides commands for managing PDF papers within an experiment:
 
-| Shortname | Description | Command Example |
+| Command   | Description | Command Example |
 |-----------|-------------|-----------------|
 | `add --file` | Copy a single PDF into the experiment's `papers/` folder. | `llmexer papers add --file /path/to/paper.pdf` |
 | `add --directory` | Recursively copy all PDFs from a directory. Already-existing papers are skipped. | `llmexer papers add --directory /path/to/folder` |
@@ -270,7 +270,7 @@ The `papers` category provides commands for managing PDF papers within an experi
 
 The `search` category provides commands for managing and running literature searches using the Semantic Scholar bulk API:
 
-| Shortname | Description | Command Example |
+| Command   | Description | Command Example |
 |-----------|-------------|-----------------|
 | `create` | Create a search configuration YAML file in the experiment's `searches/` folder. | `llmexer search create --query "machine learning"` |
 | `run --query` | Run a search directly from a query string. Saves `<ID>_results_raw.json` and `<ID>_results.csv` to `searches/`. CSV columns include: `sem_scholar_paper_id`, `year`, `title`, `authors`, `abstract`, `isOpenAccess`, `doi`, `language`, `referenceCount`, `citationCount`, `entry_source`, `pdf_filename`, `txt_filename`, `markdown_filename`, `pdf_downloaded`. Raw JSON also contains `fieldsOfStudy`, `citationStyles`, `publicationTypes`. | `llmexer search run --query "neural networks" --limit 200` |
@@ -285,7 +285,7 @@ Semantic Scholar API Documentation: [Paper bulk search](https://api.semanticscho
 
 The `self` category provides introspection commands for the llmexer CLI itself:
 
-| Shortname | Description | Command Example |
+| Command   | Description | Command Example |
 |-----------|-------------|-----------------|
 | `version` | Print the current llmexer package version. | `llmexer self version` |
 | `envs` | Display all llmexer-relevant environment variables as a table. `EXPERIMENT_ID` is highlighted in bold cyan; `DOCLING_PASSWORD` is masked as `********` when set. | `llmexer self envs` |

@@ -103,6 +103,25 @@ def create(
     cprint(f"Created experiment: [bold yellow]{experiment_id}[/bold yellow]")
 
 
+def _is_experiment_initialized(experiment_path: str) -> bool:
+    """Check if an experiment has been initialized with required CSV files."""
+    exp_subdir = os.path.join(experiment_path, "experiment")
+    required_files = ["data.csv", "llm-params.csv", "mapping.csv", "models.csv"]
+    return all(os.path.exists(os.path.join(exp_subdir, f)) for f in required_files)
+
+
+def _get_generated_experiment_files(experiment_path: str) -> list[str]:
+    """Get list of generated experiment CSV files (excluding result files)."""
+    exp_subdir = os.path.join(experiment_path, "experiment")
+    if not os.path.exists(exp_subdir):
+        return []
+    return [
+        f
+        for f in os.listdir(exp_subdir)
+        if f.startswith("experiment_") and f.endswith(".csv") and "_results_" not in f
+    ]
+
+
 @app.command(name="list")
 def list_experiments(
     sort_by: SortBy = typer.Option(
@@ -130,14 +149,38 @@ def list_experiments(
 
     table = Table()
     table.add_column("#", justify="right", style="cyan", no_wrap=True)
-    table.add_column("Name", style="yellow")
-    table.add_column("Created", style="green", no_wrap=True)
+    table.add_column("Name", style="cyan")
+    table.add_column("Created", style="cyan", no_wrap=True)
+    table.add_column("Initialized", justify="center", style="red", no_wrap=True)
+    table.add_column("Experiments", style="white")
+
+    current_eid = settings.experiment_id
 
     for i, entry in enumerate(entries, start=1):
         ctime = datetime.fromtimestamp(entry.stat().st_ctime, tz=timezone.utc).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
-        table.add_row(str(i), entry.name, ctime)
+
+        is_initialized = _is_experiment_initialized(entry.path)
+        init_display = "[green]Yes[/green]" if is_initialized else "[dim]No[/dim]"
+
+        generated_files = _get_generated_experiment_files(entry.path)
+        files_display = " ".join(generated_files) if generated_files else "[dim]-[/dim]"
+
+        # Check if this is the current experiment
+        is_current = current_eid and entry.name == current_eid
+
+        if is_current:
+            # Bold yellow for current experiment, underline only on counter
+            table.add_row(
+                f"[bold underline yellow]{i}[/bold underline yellow]",
+                f"[bold yellow]{entry.name}[/bold yellow]",
+                f"[bold yellow]{ctime}[/bold yellow]",
+                f"[bold yellow]{'Yes' if is_initialized else 'No'}[/bold yellow]",
+                f"[bold yellow]{' '.join(generated_files) if generated_files else '-'}[/bold yellow]",
+            )
+        else:
+            table.add_row(str(i), entry.name, ctime, init_display, files_display)
 
     console.print(table)
 

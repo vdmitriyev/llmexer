@@ -30,14 +30,12 @@ def _names_from_output(output: str) -> list[str]:
     for line in output.splitlines():
         m = re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", line)
         if m:
-            # Name sits between the row number and the date; strip table border characters.
-            # Strip Rich markup / box-drawing chars and split on whitespace runs.
-            clean = re.sub(r"[│┃|]", " ", line)
-            parts = clean.split()
-            # parts: [row_num, ...name_parts..., date, time]
-            # date and time are the last two tokens; row_num is the first
-            name = " ".join(parts[1:-2])
-            rows.append(name)
+            # Split on the table column separator │
+            columns = re.split(r"[│┃|]", line)
+            # columns[0] is empty (before first │), columns[1] is #, columns[2] is Name
+            if len(columns) >= 3:
+                name = columns[2].strip()
+                rows.append(name)
     return rows
 
 
@@ -135,3 +133,108 @@ def test_list_numbering(experiments_dir):
     assert result.exit_code == 0
     for i in ["1", "2", "3"]:
         assert i in result.output
+
+
+def test_list_initialized_column_header(experiments_dir):
+    """Output should contain Initialized column header."""
+    os.makedirs(experiments_dir / "my-exp")
+
+    result = runner.invoke(app, ["experiment", "list"])
+    assert result.exit_code == 0
+    assert "Initialized" in result.output
+
+
+def test_list_not_initialized(experiments_dir):
+    """Experiment without init should show No in Initialized column."""
+    os.makedirs(experiments_dir / "uninit-exp")
+
+    result = runner.invoke(app, ["experiment", "list"])
+    assert result.exit_code == 0
+    assert "No" in result.output
+
+
+def test_list_initialized(experiments_dir):
+    """Experiment with all required CSV files should show Yes in Initialized column."""
+    exp_path = experiments_dir / "init-exp" / "experiment"
+    os.makedirs(exp_path)
+    for f in ["data.csv", "llm-params.csv", "mapping.csv", "models.csv"]:
+        (exp_path / f).write_text("header\n")
+
+    result = runner.invoke(app, ["experiment", "list"])
+    assert result.exit_code == 0
+    assert "Yes" in result.output
+
+
+def test_list_partially_initialized(experiments_dir):
+    """Experiment with only some CSV files should show No in Initialized column."""
+    exp_path = experiments_dir / "partial-exp" / "experiment"
+    os.makedirs(exp_path)
+    # Only create some of the required files
+    for f in ["data.csv", "models.csv"]:
+        (exp_path / f).write_text("header\n")
+
+    result = runner.invoke(app, ["experiment", "list"])
+    assert result.exit_code == 0
+    assert "No" in result.output
+
+
+def test_list_generated_files_column_header(experiments_dir):
+    """Output should contain Experiments column header."""
+    os.makedirs(experiments_dir / "my-exp")
+
+    result = runner.invoke(app, ["experiment", "list"])
+    assert result.exit_code == 0
+    assert "Experiments" in result.output
+
+
+def test_list_no_generated_files(experiments_dir):
+    """Experiment with no generated files should show - in Generated Files column."""
+    os.makedirs(experiments_dir / "no-gen-exp")
+
+    result = runner.invoke(app, ["experiment", "list"])
+    assert result.exit_code == 0
+    # The dash is shown when no generated files exist
+    assert "-" in result.output
+
+
+def test_list_with_generated_files(experiments_dir):
+    """Experiment with generated files should display their names (possibly truncated)."""
+    exp_path = experiments_dir / "gen-exp" / "experiment"
+    os.makedirs(exp_path)
+    (exp_path / "experiment_20240101-abcd1234.csv").write_text("data\n")
+
+    result = runner.invoke(app, ["experiment", "list"])
+    assert result.exit_code == 0
+    # Rich may truncate long filenames, so check for the prefix
+    assert "experiment_20240101" in result.output
+
+
+def test_list_multiple_generated_files(experiments_dir):
+    """Experiment with multiple generated files should display them."""
+    exp_path = experiments_dir / "multi-gen-exp" / "experiment"
+    os.makedirs(exp_path)
+    (exp_path / "experiment_20240101-abcd1234.csv").write_text("data\n")
+    (exp_path / "experiment_20240102-efgh5678.csv").write_text("data\n")
+
+    result = runner.invoke(app, ["experiment", "list"])
+    assert result.exit_code == 0
+    # Rich may truncate long filenames with ellipsis, so check for shorter prefix
+    # that will survive truncation (at least "experiment_2024" should appear)
+    assert "experiment_2024" in result.output
+
+
+def test_list_excludes_result_files(experiments_dir):
+    """Result files (*_results_*.csv) should be excluded from Generated Files column."""
+    exp_path = experiments_dir / "results-exp" / "experiment"
+    os.makedirs(exp_path)
+    (exp_path / "experiment_20240101-abcd1234.csv").write_text("data\n")
+    (exp_path / "experiment_test-id_results_20240101_120000.csv").write_text(
+        "results\n"
+    )
+
+    result = runner.invoke(app, ["experiment", "list"])
+    assert result.exit_code == 0
+    # The generated file should be shown (possibly truncated, but prefix should appear)
+    assert "experiment_20240101" in result.output
+    # The results file should NOT be shown (no "_results_" should appear)
+    assert "_results_" not in result.output

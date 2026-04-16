@@ -2,6 +2,12 @@
 History
 =======
 
+0.2.6 (2026-04-16)
+-------------------
+
+* Enhance ``experiment list`` table styling: highlight the current experiment (when ``EXPERIMENT_ID`` is set) with bold yellow text and underline only on the counter (#); change ``Name`` and ``Created`` columns to cyan; rename ``Generated Files`` column to ``Experiments``; use space separator instead of comma for generated files list
+* Fix test ``test_run_provider_key_falls_back_to_llm_api_key_env``: rename to ``test_run_provider_key_defaults_to_na_when_absent`` and update assertion to reflect the current implementation where ``api_key`` defaults to ``"na"`` when ``PROVIDER_<PROVIDER>_KEY`` is absent (the ``LLM_API_KEY`` fallback was removed)
+
 0.2.5 (2026-04-15)
 -------------------
 

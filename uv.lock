@@ -14,7 +14,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-04-07T08:53:23.2241941Z"
+exclude-newer = "2026-04-08T10:30:36.2128909Z"
 exclude-newer-span = "P8D"
 
 [[package]]
@@ -454,7 +454,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/0e/72/a3add0e4eec4eb9e2
 
 [[package]]
 name = "llmexer"
-version = "0.2.4"
+version = "0.2.6"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },

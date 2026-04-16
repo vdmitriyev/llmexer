@@ -484,10 +484,8 @@ def test_run_uses_provider_key_from_env(experiment_with_csvs, monkeypatch):
     assert captured.get("api_key") == "provider-specific-key"
 
 
-def test_run_provider_key_falls_back_to_llm_api_key_env(
-    experiment_with_csvs, monkeypatch
-):
-    """When PROVIDER_OLLAMA_KEY is absent, LLM_API_KEY env var is used."""
+def test_run_provider_key_defaults_to_na_when_absent(experiment_with_csvs, monkeypatch):
+    """When PROVIDER_OLLAMA_KEY is absent, api_key defaults to 'na'."""
     import llmexer.llm as llm_module
 
     captured = {}
@@ -514,12 +512,11 @@ def test_run_provider_key_falls_back_to_llm_api_key_env(
 
     monkeypatch.setattr(llm_module, "LLMRequestsMapper", CapturingMapper)
     monkeypatch.delenv("PROVIDER_OLLAMA_KEY", raising=False)
-    monkeypatch.setenv("LLM_API_KEY", "fallback-key")
 
     eid, _ = experiment_with_csvs
     runner.invoke(app, ["experiment", "run", "--eid", eid])
 
-    assert captured.get("api_key") == "fallback-key"
+    assert captured.get("api_key") == "na"
 
 
 # ---------------------------------------------------------------------------
