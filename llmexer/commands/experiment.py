@@ -90,7 +90,7 @@ def create(
         help="Custom experiment ID. If not provided, one is auto-generated.",
     )
 ) -> None:
-    """Create a new experiment folder under .experiments."""
+    """Create a new experiment folder under .experiments"""
     experiment_id = id if id else generate_experiment_id()
     experiment_path = os.path.join(EXPERIMENTS_PATH, experiment_id)
 
@@ -131,7 +131,7 @@ def list_experiments(
     ),
     desc: bool = typer.Option(False, "--desc", help="Sort in descending order."),
 ) -> None:
-    """List all experiments in the experiments folder."""
+    """List all experiments in the experiments folder"""
     if not os.path.exists(EXPERIMENTS_PATH):
         cprint("No experiments found.")
         return
@@ -198,7 +198,7 @@ def rename(
         help="New experiment ID name.",
     ),
 ) -> None:
-    """Rename an existing experiment."""
+    """Rename an existing experiment"""
 
     # Use current experiment if old_id not provided
     if old_id is None:
@@ -232,7 +232,7 @@ def init(
         help="Experiment ID to initialise. If not provided, uses EXPERIMENT_ID from .env.",
     )
 ) -> None:
-    """Initialise an experiment with a standard folder structure and template files."""
+    """Initialise an experiment with a standard folder structure and template files"""
 
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)
@@ -307,7 +307,7 @@ def generate(
         help="Experiment ID to generate prompts for. If not provided, uses EXPERIMENT_ID from .env.",
     ),
 ) -> None:
-    """Generate rendered prompts for all data-model combinations defined in the experiment."""
+    """Generate rendered prompts for all data-model combinations defined in the experiment"""
 
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)
@@ -441,7 +441,7 @@ def generate(
 
 @app.command()
 def current() -> None:
-    """Display the current experiment ID loaded from .env."""
+    """Display the current experiment ID loaded from .env"""
 
     if settings.experiment_id:
         experiment_path = os.path.join(EXPERIMENTS_PATH, settings.experiment_id)
@@ -485,7 +485,7 @@ def run(
         "E.g. --filter-provider ollama",
     ),
 ) -> None:
-    """Run all rows in the generated experiment CSV and save results."""
+    """Run all rows in the generated experiment CSV and save results"""
 
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)

@@ -262,7 +262,7 @@ def add(
         help="URL of a PDF to download into the papers subdirectory.",
     ),
 ) -> None:
-    """Adds PDF paper(s) to the papers subdirectory of the current experiment."""
+    """Adds PDF paper(s) to the papers subdirectory of the current experiment"""
 
     provided = sum(p is not None for p in [file, directory, url])
     if provided != 1:
@@ -357,7 +357,7 @@ def download(
         help="Email address for Unpaywall API. Falls back to UNPAYWALL_EMAIL env var.",
     ),
 ) -> None:
-    """Download open-access PDF(s) by DOI using the Unpaywall API."""
+    """Download open-access PDF(s) by DOI using the Unpaywall API"""
 
     provided = sum(p is not None and p != [] for p in [doi or None, search_file])
     if provided != 1:
@@ -527,7 +527,7 @@ def extract(
         help="Force rewrite of existing extracted files. By default, already-extracted files are skipped.",
     ),
 ) -> None:
-    """Extracts text from all PDFs in the papers subdirectory and saves as .txt (pypdf) or .md (docling) files."""
+    """Extracts text from all PDFs in the papers subdirectory and saves as .txt (pypdf) or .md (docling) files"""
 
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)

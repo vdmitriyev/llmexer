@@ -21,19 +21,19 @@ LLMEXER_ENV_VARS = [
 
 @app.command()
 def version():
-    """Print the current llmexer version."""
+    """Print the current llmexer version"""
     cprint(package_version())
 
 
 @app.command()
 def user_agent():
-    """Print the User-Agent string used by llmexer for HTTP requests."""
+    """Print the User-Agent string used by llmexer for HTTP requests"""
     cprint("User-Agent:", Text(get_user_agent(), style="bold green"))
 
 
 @app.command()
 def envs():
-    """Print llmexer-relevant environment variables as a table."""
+    """Print llmexer-relevant environment variables as a table"""
     table = Table(title="Environment Variables", border_style="bright_blue")
     table.add_column("Variable", style="white", no_wrap=True)
     table.add_column("Value", style="cyan")

@@ -2,6 +2,11 @@
 History
 =======
 
+0.2.8 (2026-04-16)
+-------------------
+
+* Normalise CLI command help text: all command docstrings now end with a period for consistency across ``search``, ``experiment``, ``papers``, and ``self`` command groups
+
 0.2.7 (2026-04-16)
 -------------------
 

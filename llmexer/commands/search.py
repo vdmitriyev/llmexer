@@ -316,7 +316,7 @@ def list_searches(
         help="Experiment ID. If not provided, uses EXPERIMENT_ID from .env.",
     ),
 ) -> None:
-    """List all search YAML files for an experiment."""
+    """List all search YAML files for an experiment"""
     from datetime import datetime, timezone
 
     eid = get_proper_eid(eid)
@@ -390,7 +390,7 @@ def rename_search(
         help="Experiment ID. If not provided, uses EXPERIMENT_ID from .env.",
     ),
 ) -> None:
-    """Rename a search and all its associated files."""
+    """Rename a search and all its associated files"""
 
     # Strip .yaml extension if passed as full filename
     old_id = os.path.splitext(old_id)[0]
@@ -624,7 +624,7 @@ def stats(
         help="Experiment ID to look up results for. If not provided, uses EXPERIMENT_ID from .env.",
     ),
 ) -> None:
-    """Display statistics for a completed search result."""
+    """Display statistics for a completed search result"""
 
     if file is None:
         raise UnexpectedCLIParamsException("--file is required.")
@@ -689,7 +689,7 @@ def filter_results(
         help="Filter by language code (e.g. 'en', 'de'). Default: 'en'.",
     ),
 ) -> None:
-    """Filter search results CSV by language, saving a new _filtered.csv."""
+    """Filter search results CSV by language, saving a new _filtered.csv"""
 
     if file is None:
         raise UnexpectedCLIParamsException("--file is required.")
@@ -822,7 +822,7 @@ def sync(
         help="Experiment ID. If not provided, uses EXPERIMENT_ID from .env.",
     ),
 ) -> None:
-    """Sync CSV result files against the papers/ folder of the experiment."""
+    """Sync CSV result files against the papers/ folder of the experiment"""
 
     if file is None:
         raise UnexpectedCLIParamsException("--file is required.")
