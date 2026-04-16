@@ -2,6 +2,11 @@
 History
 =======
 
+0.2.10 (2026-04-16)
+-------------------
+
+* Fix behaviour of creating folders when running the experiment
+
 0.2.9 (2026-04-16)
 -------------------
 

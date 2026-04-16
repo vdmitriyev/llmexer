@@ -268,7 +268,7 @@ def test_run_creates_responses_directory(experiment_with_csvs, mock_llm_mapper):
     )
 
     assert result.exit_code == 0
-    assert (exp_subdir.parent / "responses").is_dir()
+    assert (exp_subdir / "responses").is_dir()
 
 
 def test_run_creates_individual_json_files(experiment_with_csvs, mock_llm_mapper):
@@ -287,7 +287,7 @@ def test_run_creates_individual_json_files(experiment_with_csvs, mock_llm_mapper
         ],
     )
 
-    json_files = list((exp_subdir.parent / "responses").glob("*.json"))
+    json_files = list((exp_subdir / "responses").glob("*.json"))
     assert len(json_files) == 1
     with open(json_files[0], encoding="utf-8") as f:
         data = json.load(f)

@@ -108,21 +108,23 @@ def create(
 
 def _is_experiment_initialized(experiment_path: str) -> bool:
     """Check if an experiment has been initialized with required CSV files."""
-    exp_subdir = os.path.join(
-        experiment_path,
-    )
+    experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
     required_files = ["data.csv", "llm-params.csv", "mapping.csv", "models.csv"]
-    return all(os.path.exists(os.path.join(exp_subdir, f)) for f in required_files)
+    for f in required_files:
+        print(os.path.join(experiment_subdir_path, f))
+    return all(
+        os.path.exists(os.path.join(experiment_subdir_path, f)) for f in required_files
+    )
 
 
 def _get_generated_experiment_files(experiment_path: str) -> list[str]:
     """Get list of generated experiment CSV files (excluding result files)."""
-    exp_subdir = os.path.join(experiment_path, DIR_EXPERIMENT)
-    if not os.path.exists(exp_subdir):
+    experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
+    if not os.path.exists(experiment_subdir_path):
         return []
     return [
         f
-        for f in os.listdir(exp_subdir)
+        for f in os.listdir(experiment_subdir_path)
         if f.startswith("experiment_") and f.endswith(".csv") and "_results_" not in f
     ]
 
@@ -165,7 +167,6 @@ def list_experiments(
         ctime = datetime.fromtimestamp(entry.stat().st_ctime, tz=timezone.utc).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
-
         is_initialized = _is_experiment_initialized(entry.path)
         init_display = "[green]Yes[/green]" if is_initialized else "[dim]No[/dim]"
 
@@ -246,17 +247,17 @@ def init(
     experiment_path = get_experiment_directory_path(eid)
 
     # Raise if already initialised
-    exp_subdir = os.path.join(experiment_path, DIR_EXPERIMENT)
-    if os.path.exists(exp_subdir):
+    experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
+    if os.path.exists(experiment_subdir_path):
         raise LLMExerException(f"Experiment '{eid}' has already been initialised.")
 
     # Create subfolders
-    prompts_subdir = os.path.join(exp_subdir, "prompts")
-    ensure_directory_exists(exp_subdir)
+    prompts_subdir = os.path.join(experiment_subdir_path, "prompts")
+    ensure_directory_exists(experiment_subdir_path)
     ensure_directory_exists(prompts_subdir)
 
     # models.csv
-    models_path = os.path.join(exp_subdir, "models.csv")
+    models_path = os.path.join(experiment_subdir_path, "models.csv")
     with open(models_path, "w", encoding="utf-8") as f:
         f.write("name;provider;notes\n")
         f.write("llama3.3:latest;ollama;local model\n")
@@ -265,7 +266,7 @@ def init(
         f.write("gemma3:27b;ollama;local model\n")
 
     # data.csv
-    data_path = os.path.join(exp_subdir, "data.csv")
+    data_path = os.path.join(experiment_subdir_path, "data.csv")
     with open(data_path, "w", encoding="utf-8") as f:
         f.write("ID;Title;Abstract\n")
         f.write(
@@ -276,7 +277,7 @@ def init(
         )
 
     # mapping.csv
-    mapping_path = os.path.join(exp_subdir, "mapping.csv")
+    mapping_path = os.path.join(experiment_subdir_path, "mapping.csv")
     with open(mapping_path, "w", encoding="utf-8") as f:
         f.write("data_id;prompt_id\n")
         f.write("D01;prompt01\n")
@@ -292,7 +293,7 @@ def init(
         )
 
     # llm-params.csv
-    llm_params_path = os.path.join(exp_subdir, "llm-params.csv")
+    llm_params_path = os.path.join(experiment_subdir_path, "llm-params.csv")
     with open(llm_params_path, "w", encoding="utf-8") as f:
         f.write(
             "profile_name;model_name;provider;temperature;top_p;max_tokens;"
@@ -320,17 +321,17 @@ def generate(
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)
 
-    exp_subdir = os.path.join(experiment_path, DIR_EXPERIMENT)
-    if not os.path.exists(exp_subdir):
+    experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
+    if not os.path.exists(experiment_subdir_path):
         raise LLMExerException(
             f"Experiment '{eid}' has not been initialised. Run `experiment init --eid {eid}` first."
         )
 
-    models_path = os.path.join(exp_subdir, "models.csv")
-    data_path = os.path.join(exp_subdir, "data.csv")
-    mapping_path = os.path.join(exp_subdir, "mapping.csv")
-    llm_params_path = os.path.join(exp_subdir, "llm-params.csv")
-    prompts_subdir = os.path.join(exp_subdir, "prompts")
+    models_path = os.path.join(experiment_subdir_path, "models.csv")
+    data_path = os.path.join(experiment_subdir_path, "data.csv")
+    mapping_path = os.path.join(experiment_subdir_path, "mapping.csv")
+    llm_params_path = os.path.join(experiment_subdir_path, "llm-params.csv")
+    prompts_subdir = os.path.join(experiment_subdir_path, "prompts")
 
     for label, path in [
         ("models.csv", models_path),
@@ -431,7 +432,7 @@ def generate(
     result_df["model_name"] = result_df["model_name"].astype(str)
     result_df["ID"] = range(1, len(result_df) + 1)
     output_filename = f"experiment_{generate_experiment_id()}.csv"
-    output_path = os.path.join(exp_subdir, output_filename)
+    output_path = os.path.join(experiment_subdir_path, output_filename)
 
     if settings.dry_run:
         cprint(
@@ -492,8 +493,8 @@ def run(
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)
 
-    exp_subdir = os.path.join(experiment_path, DIR_EXPERIMENT)
-    if not os.path.exists(exp_subdir):
+    experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
+    if not os.path.exists(experiment_subdir_path):
         raise LLMExerException(
             f"Experiment '{eid}' has not been initialised. Run `experiment init --eid {eid}` first."
         )
@@ -505,7 +506,7 @@ def run(
     elif os.path.isabs(file):
         file_path = file
     else:
-        file_path = os.path.join(exp_subdir, file)
+        file_path = os.path.join(experiment_subdir_path, file)
 
     if not os.path.exists(file_path):
         raise LLMExerException(f"Experiment CSV not found: '{file_path}'.")
@@ -536,17 +537,21 @@ def run(
                 f"'{filter_provider}' — nothing to run."
             )
             return
-    responses_dir = os.path.join(experiment_path, DIR_RESPONSES)
-    ensure_directory_exists(responses_dir)
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    output_path = os.path.join(exp_subdir, f"experiment_{eid}_results_{ts}.csv")
+    output_path = os.path.join(
+        experiment_subdir_path, f"experiment_{eid}_results_{ts}.csv"
+    )
     cprint(
         f"Output results will be saved into: [bold yellow]{output_path}[/bold yellow]"
     )
-    cprint(
-        f"JSON responses will be saved into: [bold yellow]{responses_dir}[/bold yellow]"
-    )
+
+    if not settings.dry_run:
+        responses_dir = os.path.join(experiment_subdir_path, DIR_RESPONSES)
+        ensure_directory_exists(responses_dir)
+        cprint(
+            f"JSON responses will be saved into: [bold yellow]{responses_dir}[/bold yellow]"
+        )
 
     total_runs = len(prompts_df)
     cprint(f"Total experiments to run: [bold green]{total_runs}[/bold green]")
