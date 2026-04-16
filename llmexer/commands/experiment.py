@@ -110,8 +110,6 @@ def _is_experiment_initialized(experiment_path: str) -> bool:
     """Check if an experiment has been initialized with required CSV files."""
     experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
     required_files = ["data.csv", "llm-params.csv", "mapping.csv", "models.csv"]
-    for f in required_files:
-        print(os.path.join(experiment_subdir_path, f))
     return all(
         os.path.exists(os.path.join(experiment_subdir_path, f)) for f in required_files
     )
