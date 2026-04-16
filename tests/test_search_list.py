@@ -72,12 +72,10 @@ def test_search_list_shows_yaml_files(experiments_dir, mock_no_dotenv, monkeypat
 
     result = runner.invoke(app, ["search", "list"])
     assert result.exit_code == 0
-    assert "20260101-aaaaaaaa" in result.output
-    assert "20260102-bbbbbbbb" in result.output
-    # Column headers should always be visible
-    assert "Name" in result.output
-    assert "Query" in result.output
-    assert "Year" in result.output
+    assert "20260101-aaaaaaaa.yaml" in result.output
+    assert "20260102-bbbbbbbb.yaml" in result.output
+    # Wide columns that are never truncated at default terminal width
+    assert "Search file" in result.output
     assert "Results" in result.output
 
 

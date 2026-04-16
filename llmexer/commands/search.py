@@ -334,7 +334,7 @@ def list_searches(
 
     table = Table()
     table.add_column("#", justify="right", style="cyan", no_wrap=True)
-    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Search file", style="cyan", no_wrap=True)
     table.add_column("Query", style="white")
     table.add_column("Year", style="cyan", no_wrap=True)
     table.add_column("Created", style="cyan", no_wrap=True)
@@ -355,7 +355,7 @@ def list_searches(
             if os.path.exists(results_csv)
             else "[dim]No[/dim]"
         )
-        table.add_row(str(i), search_id, query, year, ctime, results_display)
+        table.add_row(str(i), yaml_path.name, query, year, ctime, results_display)
 
     console.print(table)
     latest_name = yaml_files[-1].name

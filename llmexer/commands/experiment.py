@@ -165,7 +165,10 @@ def list_experiments(
         init_display = "[green]Yes[/green]" if is_initialized else "[dim]No[/dim]"
 
         generated_files = _get_generated_experiment_files(entry.path)
-        files_display = " ".join(generated_files) if generated_files else "[dim]-[/dim]"
+        files_display = (
+            "\n".join(generated_files) if generated_files else "[dim]-[/dim]"
+        )
+        files_display_plain = "\n".join(generated_files) if generated_files else "-"
 
         # Check if this is the current experiment
         is_current = current_eid and entry.name == current_eid
@@ -177,7 +180,7 @@ def list_experiments(
                 f"[bold yellow]{entry.name}[/bold yellow]",
                 f"[bold yellow]{ctime}[/bold yellow]",
                 f"[bold yellow]{'Yes' if is_initialized else 'No'}[/bold yellow]",
-                f"[bold yellow]{' '.join(generated_files) if generated_files else '-'}[/bold yellow]",
+                f"[bold yellow]{files_display_plain}[/bold yellow]",
             )
         else:
             table.add_row(str(i), entry.name, ctime, init_display, files_display)
