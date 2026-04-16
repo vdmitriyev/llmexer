@@ -61,6 +61,8 @@ _PARAM_COLUMNS = [
     "gemini_thinking_level",
 ]
 
+DIR_EXPERIMENT = "experiment"
+
 
 class SortBy(str, Enum):
     alpha = "alpha"
@@ -105,14 +107,16 @@ def create(
 
 def _is_experiment_initialized(experiment_path: str) -> bool:
     """Check if an experiment has been initialized with required CSV files."""
-    exp_subdir = os.path.join(experiment_path, "experiment")
+    exp_subdir = os.path.join(
+        experiment_path,
+    )
     required_files = ["data.csv", "llm-params.csv", "mapping.csv", "models.csv"]
     return all(os.path.exists(os.path.join(exp_subdir, f)) for f in required_files)
 
 
 def _get_generated_experiment_files(experiment_path: str) -> list[str]:
     """Get list of generated experiment CSV files (excluding result files)."""
-    exp_subdir = os.path.join(experiment_path, "experiment")
+    exp_subdir = os.path.join(experiment_path, DIR_EXPERIMENT)
     if not os.path.exists(exp_subdir):
         return []
     return [
@@ -241,7 +245,7 @@ def init(
     experiment_path = get_experiment_directory_path(eid)
 
     # Raise if already initialised
-    exp_subdir = os.path.join(experiment_path, "experiment")
+    exp_subdir = os.path.join(experiment_path, DIR_EXPERIMENT)
     if os.path.exists(exp_subdir):
         raise LLMExerException(f"Experiment '{eid}' has already been initialised.")
 
@@ -315,7 +319,7 @@ def generate(
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)
 
-    exp_subdir = os.path.join(experiment_path, "experiment")
+    exp_subdir = os.path.join(experiment_path, DIR_EXPERIMENT)
     if not os.path.exists(exp_subdir):
         raise LLMExerException(
             f"Experiment '{eid}' has not been initialised. Run `experiment init --eid {eid}` first."
@@ -473,13 +477,7 @@ def run(
     file: str = typer.Option(
         None,
         "--file",
-        help="Path to a specific experiment_*.csv file. "
-        "If not provided, the most recently modified one in experiment/ is used.",
-    ),
-    output: str = typer.Option(
-        None,
-        "--output",
-        help="Output results CSV path. Defaults to experiment/experiment_ID_results_TIMESTAMP.csv.",
+        help="Path to a specific experiment_*.csv file. Output will be written into experiment/experiment_file_results_TIMESTAMP.csv.",
     ),
     filter_provider: str = typer.Option(
         None,
@@ -493,32 +491,33 @@ def run(
     eid = get_proper_eid(eid)
     experiment_path = get_experiment_directory_path(eid)
 
-    exp_subdir = os.path.join(experiment_path, "experiment")
+    exp_subdir = os.path.join(experiment_path, DIR_EXPERIMENT)
     if not os.path.exists(exp_subdir):
         raise LLMExerException(
             f"Experiment '{eid}' has not been initialised. Run `experiment init --eid {eid}` first."
         )
 
-    # Resolve experiment CSV
     if file is None:
-        csv_files = sorted(
-            [
-                f
-                for f in os.listdir(exp_subdir)
-                if f.startswith("experiment_") and f.endswith(".csv")
-            ],
-            key=lambda f: os.path.getmtime(os.path.join(exp_subdir, f)),
-            reverse=True,
-        )
-        if not csv_files:
+        csv_candidates = [
+            f
+            for f in os.listdir(exp_subdir)
+            if f.startswith("experiment_")
+            and f.endswith(".csv")
+            and "_results_" not in f
+        ]
+        if not csv_candidates:
             raise LLMExerException(
                 f"No experiment CSV found for '{eid}'. Run `experiment generate --eid {eid}` first."
             )
-        file_path = os.path.join(exp_subdir, csv_files[0])
+        csv_candidates.sort()
+        file_path = os.path.join(exp_subdir, csv_candidates[-1])
+    elif os.path.isabs(file):
+        file_path = file
     else:
-        file_path = file if os.path.isabs(file) else os.path.join(exp_subdir, file)
-        if not os.path.exists(file_path):
-            raise LLMExerException(f"Experiment CSV not found: '{file_path}'.")
+        file_path = os.path.join(exp_subdir, file)
+
+    if not os.path.exists(file_path):
+        raise LLMExerException(f"Experiment CSV not found: '{file_path}'.")
 
     # Lazy import to keep openai optional
     try:
@@ -547,27 +546,19 @@ def run(
             )
             return
 
-    total = len(prompts_df)
-    cprint(f"Running [bold green]{total}[/bold green] call(s)")
-
-    # Resolve output path
-    if output is None:
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        output = os.path.join(exp_subdir, f"experiment_{eid}_results_{ts}.csv")
-
-    if settings.dry_run:
-        cprint(
-            f"[bold yellow]Dry run:[/bold yellow] would write {total} row(s) to '{output}'"
-        )
-        return
-
-    responses_dir = os.path.join(exp_subdir, "responses")
-    from llmexer.common import ensure_directory_exists
-
-    ensure_directory_exists(responses_dir)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    output_path = os.path.join(exp_subdir, f"experiment_{eid}_results_{ts}.csv")
+    cprint(f"Output results will be saved in: [bold yellow]{output_path}[/bold yellow]")
+    cprint(f"All JSON responses will be saved int: {responses_dir}")
+    total_runs = len(prompts_df)
+    cprint(f"Total experiments to run: [bold green]{total_runs}[/bold green]")
 
     all_rows = []
-    for _, p_row in prompts_df.iterrows():
+    for index, p_row in prompts_df.iterrows():
+        current_run_info = f"[[green]{index+1}[/green]/[cyan]{total_runs}[/cyan]]"
+        experiment_info = f"[[yellow]{p_row['code']}[/yellow]]"
+        run_info_prefix = f"{current_run_info}{experiment_info}"
+        cprint(f"{run_info_prefix} running")
         provider = str(p_row["param_provider"]).lower()
         provider_upper = provider.upper()
         base_url = os.environ.get(f"PROVIDER_{provider_upper}_URL") or URL_MAP.get(
@@ -579,6 +570,9 @@ def run(
             base_url=base_url,
             api_key=resolved_key,
         )
+        if settings.dry_run:
+            continue
+
         result = mapper.execute(p_row["prompt"], p_row.to_dict())
 
         combined = {
@@ -599,15 +593,15 @@ def run(
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(result.model_dump(), f, indent=2, ensure_ascii=False)
 
-        cprint(
-            f"  [bold]{'green' if result.status == 'success' else 'red'}]{result.status}[/bold] "
-            f"{p_row['code']} / {p_row['profile_name']} / {p_row['param_model_name']}"
-        )
+        status_color = "green" if result.status == "success" else "red"
+        run_status_info = f"[bold {status_color}]{result.status} [/bold {status_color}]"
+        cprint(f"{run_info_prefix} finished {run_status_info}")
 
-    results_df = pd.DataFrame(all_rows)
-    results_df.to_csv(output, index=False, sep=";", encoding="utf-8")
-    output_filename = os.path.basename(output)
-    cprint(
-        f"Saved [bold green]{len(all_rows)}[/bold green] result(s) → "
-        f"[bold yellow]{output_filename}[/bold yellow]"
-    )
+    if not settings.dry_run:
+        results_df = pd.DataFrame(all_rows)
+        results_df.to_csv(output_path, index=False, sep=";", encoding="utf-8")
+        output_filename = os.path.basename(output_path)
+        cprint(
+            f"Saved [bold green]{len(all_rows)}[/bold green] result(s) → "
+            f"[bold yellow]{output_filename}[/bold yellow]"
+        )

@@ -2,6 +2,11 @@
 History
 =======
 
+0.2.9 (2026-04-16)
+-------------------
+
+* Modify outputs of the `experiment run`, so it handles status updates better
+
 0.2.8 (2026-04-16)
 -------------------
 
