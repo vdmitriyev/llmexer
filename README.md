@@ -162,6 +162,7 @@ llmexer papers add --eid llm-survey-2026 --url https://arxiv.org/pdf/1706.03762
 Create a search configuration and run it:
 ```bash
 llmexer search create --eid llm-survey-2026 --query "large language models"
+llmexer search list --eid llm-survey-2026
 llmexer search run --eid llm-survey-2026 --file 20260401-bfdd863d.yaml
 ```
 
@@ -273,6 +274,8 @@ The `search` category provides commands for managing and running literature sear
 | Command   | Description | Command Example |
 |-----------|-------------|-----------------|
 | `create` | Create a search configuration YAML file in the experiment's `searches/` folder. | `llmexer search create --query "machine learning"` |
+| `list` | List all search YAML configs in the experiment's `searches/` folder as a table (columns: `#`, `Name`, `Query`, `Year`, `Created`, `Results`). Prints a next-step hint referencing the latest search file. | `llmexer search list --eid my-experiment` |
+| `rename` | Rename a search ID and all its associated files (`<id>.yaml`, `<id>_results.csv`, `<id>_results_raw.json`, `<id>_filtered.csv`, `<id>_results_download_failed.csv`). Accepts a full `.yaml` filename for `--old-id`. | `llmexer search rename --old-id 20260401-abc123 --new-id my-search` |
 | `run --query` | Run a search directly from a query string. Saves `<ID>_results_raw.json` and `<ID>_results.csv` to `searches/`. CSV columns include: `sem_scholar_paper_id`, `year`, `title`, `authors`, `abstract`, `isOpenAccess`, `doi`, `language`, `referenceCount`, `citationCount`, `entry_source`, `pdf_filename`, `txt_filename`, `markdown_filename`, `pdf_downloaded`. Raw JSON also contains `fieldsOfStudy`, `citationStyles`, `publicationTypes`. | `llmexer search run --query "neural networks" --limit 200` |
 | `run --file` | Run a search loading parameters from an existing YAML config. Use `--rewrite` to overwrite existing result files. | `llmexer search run --file 20260401-abc123.yaml` |
 | `stats` | Display statistics for a completed search: papers per year and a stats breakdown (open access, language, downloaded, entry source, txt/markdown presence), stacked for results and filtered CSVs. | `llmexer search stats --file 20260401-abc123.yaml` |

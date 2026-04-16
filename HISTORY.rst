@@ -2,6 +2,13 @@
 History
 =======
 
+0.2.7 (2026-04-16)
+-------------------
+
+* Add ``search rename`` command: renames a search ID and all its associated files (``<id>.yaml``, ``<id>_results.csv``, ``<id>_results_raw.json``, ``<id>_filtered.csv``, ``<id>_results_download_failed.csv``); accepts ``--old-id`` and ``--new-id``; raises ``LLMExerException`` if the source does not exist or the target already exists
+* Add ``search list`` command: lists all YAML search configs in the experiment's ``searches/`` folder as a Rich table (columns: ``#``, ``Name``, ``Query``, ``Year``, ``Created``, ``Results``); prints a next-step hint below the table referencing the latest search file (e.g. ``llmexer search stats --file <latest>.yaml``)
+* Improve ``search stats`` Stats Breakdown table colors: ``Count`` and ``%`` columns now inherit the color of their stat row (``bold green`` for ``existing``, ``bold red`` for ``missing``, ``magenta`` for Open Access / Entry Source / Language); default column color changed from fixed green/yellow to ``cyan``
+
 0.2.6 (2026-04-16)
 -------------------
 

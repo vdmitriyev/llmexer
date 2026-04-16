@@ -308,6 +308,118 @@ def create(
     cprint(f"Query: [bold green]{query}[/bold green]")
 
 
+@app.command(name="list")
+def list_searches(
+    eid: str = typer.Option(
+        None,
+        "--eid",
+        help="Experiment ID. If not provided, uses EXPERIMENT_ID from .env.",
+    ),
+) -> None:
+    """List all search YAML files for an experiment."""
+    from datetime import datetime, timezone
+
+    eid = get_proper_eid(eid)
+    experiment_path = get_experiment_directory_path(eid)
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+
+    if not os.path.isdir(searches_path):
+        cprint("No searches found.")
+        return
+
+    yaml_files = sorted(Path(searches_path).glob("*.yaml"))
+    if not yaml_files:
+        cprint("No searches found.")
+        return
+
+    table = Table()
+    table.add_column("#", justify="right", style="cyan", no_wrap=True)
+    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Query", style="white")
+    table.add_column("Year", style="cyan", no_wrap=True)
+    table.add_column("Created", style="cyan", no_wrap=True)
+    table.add_column("Results", justify="center", no_wrap=True)
+
+    for i, yaml_path in enumerate(yaml_files, start=1):
+        search_id = yaml_path.stem
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            params = yaml.safe_load(f)
+        query = params.get("query", "")
+        year = params.get("year", DEFAULT_SEARCH_YEAR_PARAM)
+        ctime = datetime.fromtimestamp(
+            yaml_path.stat().st_ctime, tz=timezone.utc
+        ).strftime("%Y-%m-%d %H:%M:%S")
+        results_csv = os.path.join(searches_path, f"{search_id}_results.csv")
+        results_display = (
+            "[bold green]Yes[/bold green]"
+            if os.path.exists(results_csv)
+            else "[dim]No[/dim]"
+        )
+        table.add_row(str(i), search_id, query, year, ctime, results_display)
+
+    console.print(table)
+    latest_name = yaml_files[-1].name
+    cprint("\nExample to view search stats:")
+    cprint(f"[bold yellow]llmexer search stats --file {latest_name}[/bold yellow]")
+
+
+_SEARCH_FILE_SUFFIXES = [
+    ".yaml",
+    "_results.csv",
+    "_results_raw.json",
+    "_filtered.csv",
+    "_results_download_failed.csv",
+]
+
+
+@app.command(name="rename")
+def rename_search(
+    old_id: str = typer.Option(
+        ...,
+        "--old-id",
+        help="Current search ID (or full YAML filename) to rename.",
+    ),
+    new_id: str = typer.Option(
+        ...,
+        "--new-id",
+        help="New search ID.",
+    ),
+    eid: str = typer.Option(
+        None,
+        "--eid",
+        help="Experiment ID. If not provided, uses EXPERIMENT_ID from .env.",
+    ),
+) -> None:
+    """Rename a search and all its associated files."""
+
+    # Strip .yaml extension if passed as full filename
+    old_id = os.path.splitext(old_id)[0]
+    new_id = os.path.splitext(new_id)[0]
+
+    eid = get_proper_eid(eid)
+    experiment_path = get_experiment_directory_path(eid)
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+
+    old_yaml = os.path.join(searches_path, f"{old_id}.yaml")
+    new_yaml = os.path.join(searches_path, f"{new_id}.yaml")
+
+    if not os.path.exists(old_yaml):
+        raise LLMExerException(f"Search '{old_id}' does not exist.")
+
+    if os.path.exists(new_yaml):
+        raise LLMExerException(f"Search '{new_id}' already exists.")
+
+    for suffix in _SEARCH_FILE_SUFFIXES:
+        src = os.path.join(searches_path, f"{old_id}{suffix}")
+        dst = os.path.join(searches_path, f"{new_id}{suffix}")
+        if os.path.exists(src):
+            os.rename(src, dst)
+
+    cprint(
+        f"Renamed search: [bold yellow]{old_id}[/bold yellow] → [bold yellow]{new_id}[/bold yellow]"
+    )
+
+
 @app.command()
 def run(
     query: str = typer.Option(
@@ -414,8 +526,8 @@ def _build_stats_grid(df):
 
     table2 = Table(title="Stats Breakdown", expand=True)
     table2.add_column("Stat", no_wrap=True)
-    table2.add_column("Count", style="green", justify="right")
-    table2.add_column("%", style="yellow", justify="right")
+    table2.add_column("Count", style="cyan", justify="right")
+    table2.add_column("%", style="cyan", justify="right")
 
     table2.add_row(
         "[white]Total:[/white] [bold white]papers[/bold white]",
@@ -426,23 +538,23 @@ def _build_stats_grid(df):
     oa_true = int(df["isOpenAccess"].sum())
     table2.add_row(
         f"[white]Open Access:[/white] [magenta]True[/magenta]",
-        str(oa_true),
-        _pct(oa_true),
+        f"[magenta]{oa_true}[/magenta]",
+        f"[magenta]{_pct(oa_true)}[/magenta]",
     )
 
     if "entry_source" in df.columns:
         for src, cnt in df["entry_source"].fillna("").value_counts().items():
             table2.add_row(
                 f"[white]Entry Source:[/white] [magenta]{src}[/magenta]",
-                str(int(cnt)),
-                _pct(int(cnt)),
+                f"[magenta]{int(cnt)}[/magenta]",
+                f"[magenta]{_pct(int(cnt))}[/magenta]",
             )
 
     for lang, cnt in df["language"].value_counts().items():
         table2.add_row(
             f"[white]Language:[/white] [magenta]{lang}[/magenta]",
-            str(int(cnt)),
-            _pct(int(cnt)),
+            f"[magenta]{int(cnt)}[/magenta]",
+            f"[magenta]{_pct(int(cnt))}[/magenta]",
         )
 
     if "pdf_downloaded" in df.columns:
@@ -450,13 +562,13 @@ def _build_stats_grid(df):
         dl_missing = total - dl_existing
         table2.add_row(
             "[white]PDF:[/white] [bold green]existing[/bold green]",
-            str(dl_existing),
-            _pct(dl_existing),
+            f"[bold green]{dl_existing}[/bold green]",
+            f"[bold green]{_pct(dl_existing)}[/bold green]",
         )
         table2.add_row(
             "[white]PDF:[/white] [bold red]missing[/bold red]",
-            str(dl_missing),
-            _pct(dl_missing),
+            f"[bold red]{dl_missing}[/bold red]",
+            f"[bold red]{_pct(dl_missing)}[/bold red]",
         )
 
     if "txt_filename" in df.columns:
@@ -466,13 +578,13 @@ def _build_stats_grid(df):
         txt_missing = total - txt_existing
         table2.add_row(
             "[white]TXT:[/white] [bold green]existing[/bold green]",
-            str(txt_existing),
-            _pct(txt_existing),
+            f"[bold green]{txt_existing}[/bold green]",
+            f"[bold green]{_pct(txt_existing)}[/bold green]",
         )
         table2.add_row(
             "[white]TXT:[/white] [bold red]missing[/bold red]",
-            str(txt_missing),
-            _pct(txt_missing),
+            f"[bold red]{txt_missing}[/bold red]",
+            f"[bold red]{_pct(txt_missing)}[/bold red]",
         )
 
     if "markdown_filename" in df.columns:
@@ -482,13 +594,13 @@ def _build_stats_grid(df):
         md_missing = total - md_existing
         table2.add_row(
             "[white]Markdown:[/white] [bold green]existing[/bold green]",
-            str(md_existing),
-            _pct(md_existing),
+            f"[bold green]{md_existing}[/bold green]",
+            f"[bold green]{_pct(md_existing)}[/bold green]",
         )
         table2.add_row(
             "[white]Markdown:[/white] [bold red]missing[/bold red]",
-            str(md_missing),
-            _pct(md_missing),
+            f"[bold red]{md_missing}[/bold red]",
+            f"[bold red]{_pct(md_missing)}[/bold red]",
         )
 
     layout = Table.grid(padding=(0, 2))
