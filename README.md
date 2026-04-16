@@ -35,42 +35,32 @@ This tool requires access to local or remote running LLMS. It uses a `.env` file
 
 1.  Create a `.env` file in the root of the project
 2.  Set the current experiment ID (optional):
-    ```
+    ```env
     EXPERIMENT_ID=20260330-3a9adf70
     ```
 3.  Configure the docling backend (optional, used by `papers extract --processor docling`):
-    ```
+    ```env
     DOCLING_URL=http://localhost:5001/
     DOCLING_USER=myuser
     DOCLING_PASSWORD=mypassword
     ```
-4.  Set the API key for LLM providers (optional, used by `experiment run` for OpenAI, Gemini, or other cloud providers):
-    ```
-    LLM_API_KEY=sk-...
-    ```
-    Per-provider overrides take precedence over `LLM_API_KEY` and the built-in URL defaults:
-    ```
-    # Override the base URL for a specific provider
+4.  Set the API key for LLM providers (optional, used by `experiment run` for ollama, vllm, OpenAI, Gemini):
+    ```env
+    # Base URL for a specific provider
     PROVIDER_OLLAMA_URL=http://localhost:11434/v1
     PROVIDER_VLLM_URL=http://localhost:8000/v1
 
-    # Override the API key for a specific provider (takes precedence over LLM_API_KEY)
+    # The API key for a specific provider (takes precedence over LLM_API_KEY)
     PROVIDER_OPENAI_KEY=sk-...
-    PROVIDER_GEMINI_KEY=AI...
     ```
-    The pattern is `PROVIDER_<PROVIDER_UPPER>_URL` and `PROVIDER_<PROVIDER_UPPER>_KEY` where `<PROVIDER_UPPER>` is the provider name in uppercase (e.g. `OLLAMA`, `VLLM`, `OPENAI`, `GEMINI`).
-5. You could also pass a custom file as `.env` to the CLI:
+     The pattern is `PROVIDER_<PROVIDER_UPPER>_URL` and `PROVIDER_<PROVIDER_UPPER>_KEY` where `<PROVIDER_UPPER>` is the provider name in uppercase (e.g. `OLLAMA`, `VLLM`, `OPENAI`, `GEMINI`).
+5. If you would like to change the envs based on the experiment run (e.g., just test a LLM provider for a particular experiment), you could also pass a custom file as `.env` to the CLI:
     ```
     llmexer --env-file custom.env
     ```
 
 ## 🚀 Getting Started
 
-
-Because it's a typer CLI application, you can explore all its commands and options by simply running.
-```bash
-llmexer --help
-```
 
 A typical end-to-end workflow for collecting and processing papers inside an experiment:
 
@@ -143,8 +133,12 @@ llmexer experiment run --eid llm-survey-2026 \
 
 </details>
 
-The API key is read from `LLM_API_KEY` (or `PROVIDER_<PROVIDER_UPPER>_KEY`) in `.env`.
+The API key is read from `.env` (pattern -> `PROVIDER_<PROVIDER_UPPER>_KEY`).
 
+P.S.: CLI interfaces could be complex, thus use a help to get options and parameters overview:
+```bash
+llmexer --help
+```
 
 ## ⚡ Getting Started: Gathering Data for Experiments
 

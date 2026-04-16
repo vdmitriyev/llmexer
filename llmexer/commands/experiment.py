@@ -527,11 +527,7 @@ def run(
         base_url = os.environ.get(f"PROVIDER_{provider_upper}_URL") or URL_MAP.get(
             provider
         )
-        resolved_key = (
-            os.environ.get(f"PROVIDER_{provider_upper}_KEY")
-            or os.environ.get("LLM_API_KEY")
-            or "na"
-        )
+        resolved_key = os.environ.get(f"PROVIDER_{provider_upper}_KEY") or "na"
         mapper = LLMRequestsMapper(
             provider=provider,
             base_url=base_url,
