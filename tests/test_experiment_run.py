@@ -112,7 +112,18 @@ def test_run_dry_run_no_files_written(experiment_with_csvs, mock_llm_mapper):
     """With --dry-run, no results CSV or responses/ dir should be created."""
     eid, exp_subdir = experiment_with_csvs
 
-    result = runner.invoke(app, ["--dry-run", "experiment", "run", "--eid", eid])
+    result = runner.invoke(
+        app,
+        [
+            "--dry-run",
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
     assert result.exit_code == 0
     # No results CSV written
@@ -127,7 +138,18 @@ def test_run_dry_run_shows_row_count(experiment_with_csvs, mock_llm_mapper):
     """Dry run output should mention the total number of rows to run."""
     eid, _ = experiment_with_csvs
 
-    result = runner.invoke(app, ["--dry-run", "experiment", "run", "--eid", eid])
+    result = runner.invoke(
+        app,
+        [
+            "--dry-run",
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
     assert result.exit_code == 0
     assert "1" in result.output  # 1 row in the experiment CSV
@@ -142,7 +164,17 @@ def test_run_creates_results_csv(experiment_with_csvs, mock_llm_mapper):
     """run should create a results CSV after execution."""
     eid, exp_subdir = experiment_with_csvs
 
-    result = runner.invoke(app, ["experiment", "run", "--eid", eid])
+    result = runner.invoke(
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
     assert result.exit_code == 0
     results_files = [
@@ -157,7 +189,17 @@ def test_run_results_csv_has_correct_columns(experiment_with_csvs, mock_llm_mapp
     """Results CSV should contain all experiment CSV columns plus 4 result fields."""
     eid, exp_subdir = experiment_with_csvs
 
-    runner.invoke(app, ["experiment", "run", "--eid", eid])
+    runner.invoke(
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
     results_files = [
         f
@@ -188,7 +230,17 @@ def test_run_results_csv_row_count(experiment_with_csvs, mock_llm_mapper):
     """Result row count equals the number of rows in the experiment CSV."""
     eid, exp_subdir = experiment_with_csvs
 
-    runner.invoke(app, ["experiment", "run", "--eid", eid])
+    runner.invoke(
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
     results_files = [
         f
@@ -203,19 +255,39 @@ def test_run_creates_responses_directory(experiment_with_csvs, mock_llm_mapper):
     """run should create an experiment/responses/ directory."""
     eid, exp_subdir = experiment_with_csvs
 
-    result = runner.invoke(app, ["experiment", "run", "--eid", eid])
+    result = runner.invoke(
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
     assert result.exit_code == 0
-    assert (exp_subdir / "responses").is_dir()
+    assert (exp_subdir.parent / "responses").is_dir()
 
 
 def test_run_creates_individual_json_files(experiment_with_csvs, mock_llm_mapper):
     """run should save one JSON file per LLM call in responses/."""
     eid, exp_subdir = experiment_with_csvs
 
-    runner.invoke(app, ["experiment", "run", "--eid", eid])
+    runner.invoke(
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
-    json_files = list((exp_subdir / "responses").glob("*.json"))
+    json_files = list((exp_subdir.parent / "responses").glob("*.json"))
     assert len(json_files) == 1
     with open(json_files[0], encoding="utf-8") as f:
         data = json.load(f)
@@ -234,7 +306,9 @@ def test_run_uses_current_experiment_from_env(
     )
     monkeypatch.setenv("EXPERIMENT_ID", eid)
 
-    result = runner.invoke(app, ["experiment", "run"])
+    result = runner.invoke(
+        app, ["experiment", "run", "--file", "experiment_20240101-abcd1234.csv"]
+    )
 
     assert result.exit_code == 0
 
@@ -284,7 +358,17 @@ def test_run_failed_call_still_writes_row(experiment_with_csvs, monkeypatch):
 
     eid, exp_subdir = experiment_with_csvs
 
-    result = runner.invoke(app, ["experiment", "run", "--eid", eid])
+    result = runner.invoke(
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
     assert result.exit_code == 0
     results_files = [
@@ -366,7 +450,17 @@ def test_run_missing_openai_package_raises(experiment_with_csvs, monkeypatch):
 
     eid, _ = experiment_with_csvs
 
-    result = runner.invoke(app, ["experiment", "run", "--eid", eid])
+    result = runner.invoke(
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
     assert result.exit_code != 0
     assert isinstance(result.exception, LLMExerException)
@@ -408,7 +502,17 @@ def test_run_uses_provider_url_from_env(experiment_with_csvs, monkeypatch):
     monkeypatch.setenv("PROVIDER_OLLAMA_URL", "http://custom-ollama:9999/v1")
 
     eid, _ = experiment_with_csvs
-    runner.invoke(app, ["experiment", "run", "--eid", eid])
+    runner.invoke(
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
     assert captured.get("base_url") == "http://custom-ollama:9999/v1"
 
@@ -443,7 +547,17 @@ def test_run_provider_url_falls_back_to_url_map(experiment_with_csvs, monkeypatc
     monkeypatch.delenv("PROVIDER_OLLAMA_URL", raising=False)
 
     eid, _ = experiment_with_csvs
-    runner.invoke(app, ["experiment", "run", "--eid", eid])
+    runner.invoke(
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
     assert captured.get("base_url") == "http://localhost:11434/v1"
 
@@ -479,7 +593,17 @@ def test_run_uses_provider_key_from_env(experiment_with_csvs, monkeypatch):
     monkeypatch.setenv("LLM_API_KEY", "generic-key")
 
     eid, _ = experiment_with_csvs
-    runner.invoke(app, ["experiment", "run", "--eid", eid])
+    runner.invoke(
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
     assert captured.get("api_key") == "provider-specific-key"
 
@@ -514,7 +638,17 @@ def test_run_provider_key_defaults_to_na_when_absent(experiment_with_csvs, monke
     monkeypatch.delenv("PROVIDER_OLLAMA_KEY", raising=False)
 
     eid, _ = experiment_with_csvs
-    runner.invoke(app, ["experiment", "run", "--eid", eid])
+    runner.invoke(
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+        ],
+    )
 
     assert captured.get("api_key") == "na"
 
@@ -544,7 +678,17 @@ def test_run_filter_provider_runs_only_matching_rows(
     eid, exp_subdir = experiment_with_two_provider_rows
 
     result = runner.invoke(
-        app, ["experiment", "run", "--eid", eid, "--filter-provider", "ollama"]
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+            "--filter-provider",
+            "ollama",
+        ],
     )
 
     assert result.exit_code == 0
@@ -566,7 +710,17 @@ def test_run_filter_provider_no_match_exits_cleanly(
     eid, exp_subdir = experiment_with_two_provider_rows
 
     result = runner.invoke(
-        app, ["experiment", "run", "--eid", eid, "--filter-provider", "gemini"]
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+            "--filter-provider",
+            "gemini",
+        ],
     )
 
     assert result.exit_code == 0
@@ -586,7 +740,17 @@ def test_run_filter_provider_case_insensitive(
     eid, exp_subdir = experiment_with_two_provider_rows
 
     result = runner.invoke(
-        app, ["experiment", "run", "--eid", eid, "--filter-provider", "OLLAMA"]
+        app,
+        [
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+            "--filter-provider",
+            "OLLAMA",
+        ],
     )
 
     assert result.exit_code == 0
@@ -608,7 +772,17 @@ def test_run_filter_provider_dry_run_shows_filtered_count(
 
     result = runner.invoke(
         app,
-        ["--dry-run", "experiment", "run", "--eid", eid, "--filter-provider", "ollama"],
+        [
+            "--dry-run",
+            "experiment",
+            "run",
+            "--eid",
+            eid,
+            "--file",
+            "experiment_20240101-abcd1234.csv",
+            "--filter-provider",
+            "ollama",
+        ],
     )
 
     assert result.exit_code == 0
