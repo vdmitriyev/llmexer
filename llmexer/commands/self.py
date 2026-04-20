@@ -1,3 +1,5 @@
+"""Self group commands of the CLI interface."""
+
 import os
 
 import typer

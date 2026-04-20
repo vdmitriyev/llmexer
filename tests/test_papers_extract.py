@@ -251,7 +251,7 @@ def test_extract_docling_happy_path(
 
     mock_session = MagicMock()
     mock_session.post.return_value = _make_docling_response("# Title\n\nBody text.")
-    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
+    with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
         )
@@ -279,7 +279,7 @@ def test_extract_docling_dry_run(
 
     mock_session = MagicMock()
     mock_session.post.return_value = _make_docling_response("# Title")
-    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
+    with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
             ["--dry-run", "papers", "extract", "--eid", eid, "--processor", "docling"],
@@ -306,7 +306,7 @@ def test_extract_docling_server_error(
 
     mock_session = MagicMock()
     mock_session.post.return_value = mock_resp
-    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
+    with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
         )
@@ -329,7 +329,7 @@ def test_extract_docling_cli_url_override(
 
     mock_session = MagicMock()
     mock_session.post.return_value = _make_docling_response("# CLI URL")
-    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
+    with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
             [
@@ -363,7 +363,7 @@ def test_extract_docling_default_url(
 
     mock_session = MagicMock()
     mock_session.post.return_value = _make_docling_response("# Default")
-    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
+    with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
         )
@@ -390,7 +390,7 @@ def test_extract_docling_skips_existing_md(
 
     mock_session = MagicMock()
     mock_session.post.return_value = _make_docling_response("# New Content")
-    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
+    with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
         )
@@ -417,7 +417,7 @@ def test_extract_docling_rewrite_overwrites_md(
 
     mock_session = MagicMock()
     mock_session.post.return_value = _make_docling_response("# New Content")
-    with patch("llmexer.commands.papers.make_http_session", return_value=mock_session):
+    with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
             ["papers", "extract", "--eid", eid, "--processor", "docling", "--rewrite"],

@@ -128,7 +128,7 @@ def test_download_email_from_env(
     pdf_mock = _make_pdf_response("http://example.com/paper.pdf")
 
     with patch(
-        "llmexer.commands.papers.make_http_session",
+        "llmexer.base.papers.make_http_session",
         side_effect=[_mock_session(unpaywall_mock), _mock_session(pdf_mock)],
     ):
         result = runner.invoke(
@@ -150,7 +150,7 @@ def test_download_happy_path_single_doi(experiments_dir, mock_no_dotenv, experim
     pdf_mock = _make_pdf_response("http://example.com/paper.pdf")
 
     with patch(
-        "llmexer.commands.papers.make_http_session",
+        "llmexer.base.papers.make_http_session",
         side_effect=[_mock_session(unpaywall_mock), _mock_session(pdf_mock)],
     ):
         result = runner.invoke(
@@ -177,7 +177,7 @@ def test_download_happy_path_multiple_dois(experiments_dir, mock_no_dotenv, expe
     eid, exp_path = experiment
 
     with patch(
-        "llmexer.commands.papers.make_http_session",
+        "llmexer.base.papers.make_http_session",
         side_effect=[
             _mock_session(_make_unpaywall_response("http://example.com/paper1.pdf")),
             _mock_session(_make_pdf_response("http://example.com/paper1.pdf")),
@@ -216,7 +216,7 @@ def test_download_no_oa_location_skips(experiments_dir, mock_no_dotenv, experime
     unpaywall_mock = _make_unpaywall_response(has_oa=False)
 
     with patch(
-        "llmexer.commands.papers.make_http_session",
+        "llmexer.base.papers.make_http_session",
         return_value=_mock_session(unpaywall_mock),
     ):
         result = runner.invoke(
@@ -246,7 +246,7 @@ def test_download_no_pdf_url_skips(experiments_dir, mock_no_dotenv, experiment):
     unpaywall_mock = _make_unpaywall_response(has_oa=True, pdf_url_null=True)
 
     with patch(
-        "llmexer.commands.papers.make_http_session",
+        "llmexer.base.papers.make_http_session",
         return_value=_mock_session(unpaywall_mock),
     ):
         result = runner.invoke(
@@ -279,7 +279,7 @@ def test_download_unpaywall_request_failure_skips(
     mock_session.get.side_effect = req.RequestException("timeout")
 
     with patch(
-        "llmexer.commands.papers.make_http_session",
+        "llmexer.base.papers.make_http_session",
         return_value=mock_session,
     ):
         result = runner.invoke(
@@ -315,7 +315,7 @@ def test_download_pdf_request_failure_skips(
     pdf_session.get.side_effect = pdf_error
 
     with patch(
-        "llmexer.commands.papers.make_http_session",
+        "llmexer.base.papers.make_http_session",
         side_effect=[_mock_session(unpaywall_mock), pdf_session],
     ):
         result = runner.invoke(
@@ -347,7 +347,7 @@ def test_download_duplicate_skips(experiments_dir, mock_no_dotenv, experiment):
     pdf_mock = _make_pdf_response("http://example.com/paper.pdf")
 
     with patch(
-        "llmexer.commands.papers.make_http_session",
+        "llmexer.base.papers.make_http_session",
         side_effect=[_mock_session(unpaywall_mock), _mock_session(pdf_mock)],
     ):
         result = runner.invoke(
@@ -381,7 +381,7 @@ def test_download_dry_run(experiments_dir, mock_no_dotenv, experiment):
     pdf_mock = _make_pdf_response("http://example.com/paper.pdf")
 
     with patch(
-        "llmexer.commands.papers.make_http_session",
+        "llmexer.base.papers.make_http_session",
         side_effect=[_mock_session(unpaywall_mock), _mock_session(pdf_mock)],
     ):
         result = runner.invoke(
@@ -417,7 +417,7 @@ def test_download_fallback_filename_from_doi(
     pdf_mock = _make_pdf_response("http://example.com/view?id=123")
 
     with patch(
-        "llmexer.commands.papers.make_http_session",
+        "llmexer.base.papers.make_http_session",
         side_effect=[_mock_session(unpaywall_mock), _mock_session(pdf_mock)],
     ):
         result = runner.invoke(
@@ -450,7 +450,7 @@ def test_download_summary_output(experiments_dir, mock_no_dotenv, experiment):
 
     # First DOI succeeds, second has no OA
     with patch(
-        "llmexer.commands.papers.make_http_session",
+        "llmexer.base.papers.make_http_session",
         side_effect=[
             _mock_session(_make_unpaywall_response("http://example.com/paper.pdf")),
             _mock_session(_make_pdf_response("http://example.com/paper.pdf")),

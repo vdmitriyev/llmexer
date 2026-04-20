@@ -2,6 +2,14 @@
 History
 =======
 
+0.2.11 (2026-04-20)
+-------------------
+
+* Refactor: move utility functions from ``commands/papers.py`` to ``base/papers.py`` to separate CLI logic from reusable business logic
+* Moved to ``base/papers.py``: ``extract_via_docling()``, ``download_pdf_from_url()``, ``resolve_unpaywall_pdf_url()``, ``get_first_author_last_name()``, ``make_structured_filename()``, ``PDFProcessor`` enum, ``DOCLING_TIMEOUT`` and ``UNPAYWALL_EMAIL`` constants
+* Update ``commands/search.py`` to import ``get_first_author_last_name`` and ``make_structured_filename`` from ``base/papers.py``
+* Add ``base/__init__.py`` to establish ``llmexer.base`` as a proper Python package
+
 0.2.10 (2026-04-16)
 -------------------
 

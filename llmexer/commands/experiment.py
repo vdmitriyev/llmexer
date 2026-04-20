@@ -1,4 +1,4 @@
-"""Experiment group commands."""
+"""Experiment group commands of the CLI interface."""
 
 import hashlib
 import json

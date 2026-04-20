@@ -1,4 +1,4 @@
-"""Search group commands."""
+"""Search group commands of the CLI interface."""
 
 import json
 import os
@@ -12,7 +12,7 @@ import yaml
 from requests.adapters import HTTPAdapter, Retry
 from rich.table import Table
 
-from llmexer.commands.papers import get_first_author_last_name, make_structured_filename
+from llmexer.base.papers import get_first_author_last_name, make_structured_filename
 from llmexer.common import (
     ensure_directory_exists,
     get_experiment_directory_path,
