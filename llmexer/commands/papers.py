@@ -33,6 +33,7 @@ from llmexer.exceptions import (
     PaperAlreadyExistsException,
     PaperDownloadException,
     PaperExtractException,
+    UnexpectedCLIParamsException,
 )
 
 app = typer.Typer(help="Work with papers.")
@@ -64,7 +65,6 @@ def add(
     ),
 ) -> None:
     """Adds PDF paper(s) to the papers subdirectory of the current experiment"""
-    from llmexer.exceptions import UnexpectedCLIParamsException
 
     provided = sum(p is not None for p in [file, directory, url])
     if provided != 1:
@@ -160,7 +160,6 @@ def download(
     ),
 ) -> None:
     """Download open-access PDF(s) by DOI using the Unpaywall API"""
-    from llmexer.exceptions import UnexpectedCLIParamsException
 
     provided = sum(p is not None and p != [] for p in [doi or None, search_file])
     if provided != 1:

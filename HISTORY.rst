@@ -2,6 +2,10 @@
 History
 =======
 
+0.2.12 (2026-04-21)
+-------------------
+* Tiny refactor of the code by moving functions around for better readability
+
 0.2.11 (2026-04-20)
 -------------------
 

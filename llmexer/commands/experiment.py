@@ -85,27 +85,6 @@ def generate_experiment_id() -> str:
     return f"{formatted_datetime}-{unique_id}"
 
 
-@app.command()
-def create(
-    id: str = typer.Option(
-        None,
-        "--id",
-        help="Custom experiment ID. If not provided, one is auto-generated.",
-    )
-) -> None:
-    """Create a new experiment folder under .experiments"""
-    experiment_id = id if id else generate_experiment_id()
-    experiment_path = os.path.join(EXPERIMENTS_PATH, experiment_id)
-
-    if os.path.exists(experiment_path):
-        raise ExperimentAlreadyExistsException(
-            f"Experiment '{experiment_id}' already exists."
-        )
-
-    ensure_directory_exists(experiment_path)
-    cprint(f"Created experiment: [bold yellow]{experiment_id}[/bold yellow]")
-
-
 def _is_experiment_initialized(experiment_path: str) -> bool:
     """Check if an experiment has been initialized with required CSV files."""
     experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
@@ -125,6 +104,27 @@ def _get_generated_experiment_files(experiment_path: str) -> list[str]:
         for f in os.listdir(experiment_subdir_path)
         if f.startswith("experiment_") and f.endswith(".csv") and "_results_" not in f
     ]
+
+
+@app.command()
+def create(
+    id: str = typer.Option(
+        None,
+        "--id",
+        help="Custom experiment ID. If not provided, one is auto-generated.",
+    )
+) -> None:
+    """Create a new experiment folder under .experiments"""
+    experiment_id = id if id else generate_experiment_id()
+    experiment_path = os.path.join(EXPERIMENTS_PATH, experiment_id)
+
+    if os.path.exists(experiment_path):
+        raise ExperimentAlreadyExistsException(
+            f"Experiment '{experiment_id}' already exists."
+        )
+
+    ensure_directory_exists(experiment_path)
+    cprint(f"Created experiment: [bold yellow]{experiment_id}[/bold yellow]")
 
 
 @app.command(name="list")
