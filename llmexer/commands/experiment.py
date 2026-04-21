@@ -160,7 +160,7 @@ def list_experiments(
     table.add_column("Experiments", style="white")
 
     current_eid = settings.experiment_id
-
+    experiment_file_to_run = ""
     for i, entry in enumerate(entries, start=1):
         ctime = datetime.fromtimestamp(entry.stat().st_ctime, tz=timezone.utc).strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -186,10 +186,16 @@ def list_experiments(
                 f"[bold yellow]{'Yes' if is_initialized else 'No'}[/bold yellow]",
                 f"[bold yellow]{files_display_plain}[/bold yellow]",
             )
+            if len(generated_files) > 0:
+                experiment_file_to_run = generated_files[-1]
         else:
             table.add_row(str(i), entry.name, ctime, init_display, files_display)
 
     console.print(table)
+    cprint("\nExample to run an experiment:")
+    cprint(
+        f"[bold yellow]llmexer experiment run --file {experiment_file_to_run}[/bold yellow]"
+    )
 
 
 @app.command()

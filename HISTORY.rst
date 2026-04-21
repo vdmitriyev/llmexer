@@ -2,6 +2,12 @@
 History
 =======
 
+0.2.13 (2026-04-21)
+-------------------
+
+* Improve documentation in README.md
+* Add an example how to run an experiment in CLI into the `experiment list` command
+
 0.2.12 (2026-04-21)
 -------------------
 * Tiny refactor of the code by moving functions around for better readability
