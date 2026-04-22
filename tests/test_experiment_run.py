@@ -76,7 +76,7 @@ def experiment_with_csvs(experiments_dir):
 @pytest.fixture()
 def mock_llm_mapper(monkeypatch):
     """Replace LLMRequestsMapper in the llm module with a fake that returns a canned result."""
-    import llmexer.llm as llm_module
+    import llmexer.base.llm as llm_module
 
     class FakeResult:
         response_text = "mocked response"
@@ -331,7 +331,7 @@ def test_run_custom_experiment_csv(experiment_with_csvs, mock_llm_mapper, tmp_pa
 
 def test_run_failed_call_still_writes_row(experiment_with_csvs, monkeypatch):
     """A failing LLM call should produce an Error status row; run should not abort."""
-    import llmexer.llm as llm_module
+    import llmexer.base.llm as llm_module
 
     class ErrorResult:
         response_text = ""
@@ -442,7 +442,7 @@ def test_run_missing_openai_package_raises(experiment_with_csvs, monkeypatch):
     real_import = builtins.__import__
 
     def mock_import(name, *args, **kwargs):
-        if name == "llmexer.llm":
+        if name == "llmexer.base.llm":
             raise ImportError("No module named 'openai'")
         return real_import(name, *args, **kwargs)
 
@@ -474,7 +474,7 @@ def test_run_missing_openai_package_raises(experiment_with_csvs, monkeypatch):
 
 def test_run_uses_provider_url_from_env(experiment_with_csvs, monkeypatch):
     """PROVIDER_OLLAMA_URL in env should override the built-in URL_MAP default."""
-    import llmexer.llm as llm_module
+    import llmexer.base.llm as llm_module
 
     captured = {}
 
@@ -519,7 +519,7 @@ def test_run_uses_provider_url_from_env(experiment_with_csvs, monkeypatch):
 
 def test_run_provider_url_falls_back_to_url_map(experiment_with_csvs, monkeypatch):
     """When PROVIDER_OLLAMA_URL is not set, the built-in URL_MAP default is used."""
-    import llmexer.llm as llm_module
+    import llmexer.base.llm as llm_module
 
     captured = {}
 
@@ -564,7 +564,7 @@ def test_run_provider_url_falls_back_to_url_map(experiment_with_csvs, monkeypatc
 
 def test_run_uses_provider_key_from_env(experiment_with_csvs, monkeypatch):
     """PROVIDER_OLLAMA_KEY in env should take precedence over LLM_API_KEY."""
-    import llmexer.llm as llm_module
+    import llmexer.base.llm as llm_module
 
     captured = {}
 
@@ -610,7 +610,7 @@ def test_run_uses_provider_key_from_env(experiment_with_csvs, monkeypatch):
 
 def test_run_provider_key_defaults_to_na_when_absent(experiment_with_csvs, monkeypatch):
     """When PROVIDER_OLLAMA_KEY is absent, api_key defaults to 'na'."""
-    import llmexer.llm as llm_module
+    import llmexer.base.llm as llm_module
 
     captured = {}
 

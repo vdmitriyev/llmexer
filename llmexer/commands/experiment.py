@@ -448,7 +448,7 @@ def run(
 
     # Lazy import to keep openai optional
     try:
-        from llmexer.llm import URL_MAP, LLMRequestsMapper
+        from llmexer.base.llm import URL_MAP, LLMRequestsMapper
     except ImportError as exc:
         raise LLMExerException(
             "Missing required packages for LLM calls. "
