@@ -1,14 +1,14 @@
-## About
+## 🔰About
 
-> `llmexer` is a framework and CLI utility to plan, design, run and control various LLM experiments
+`llmexer` is a framework and CLI utility to plan, design, run and control various LLM experiments
 
-The philosophy of the tool is that `everything is a file or directory` (envs, experiments, searchers, etc.). The CLI lets you modify a lot of files related to the experiments and searchers, but those files could be modified also manually for better performance (e.g., terms of the search could be changed and search could be re-run, paper PDFs could be manually copied, CSV file with generated experiments could be modified etc.).
+> 🪄 The philosophy of the tool is: `everything` is a `file`. Experiments, searchers, configs, and further items will be saved as files. The CLI helps you to modify most of the files, but the same files could be modified manually (e.g., adding new LLM model, modification of search search, paper PDFs could be manually added, CSV file with generated experiments could be modified etc.).
 
-## Installation
+## 📦 Installation
 
-* (option 1) Clone this repo and follow `development setup`
+* Clone this repo and follow steps from `Development Setup`
 
-##  Development Setup
+## 🧩 Development Setup
 
 This guide walks through setting up the project for local development using `uv`.
 
@@ -32,7 +32,7 @@ This guide walks through setting up the project for local development using `uv`
 
 ## ⚙️ Configuration
 
-This tool requires access to local or remote running LLMS. It uses a `.env` file to securely load your API credentials, and also set the current experiment.
+This tool requires access to local or remote running LLMs. It uses a `.env` file to securely load your API credentials, and also set the current experiment.
 
 1.  Create a `.env` file in the root of the project
 2.  Set the current experiment ID (optional):
