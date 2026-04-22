@@ -133,7 +133,16 @@ tasks:
     silent: true
     cmds:
       - echo "running pylint (static code analysis)"
-      - pylint llmexer
+      - pylint {{.PACKAGE_NAME}}
+
+  black:
+    desc: runs black
+    aliases: []
+    deps: [check-virtualenv]
+    silent: true
+    cmds:
+      - echo "running black (code formatter)"
+      - black {{.PACKAGE_NAME}} --target-version py312
 
   pytest:
     desc: runs tests
