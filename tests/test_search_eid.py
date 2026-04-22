@@ -26,7 +26,7 @@ def _make_mock_s2_response() -> Mock:
 def mock_s2_session():
     mock_session = Mock()
     mock_session.get.return_value = _make_mock_s2_response()
-    with patch("llmexer.commands.search.requests.Session", return_value=mock_session):
+    with patch("llmexer.base.search.make_http_session", return_value=mock_session):
         yield mock_session
 
 

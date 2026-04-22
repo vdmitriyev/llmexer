@@ -2,6 +2,7 @@
 
 > `llmexer` is a framework and CLI utility to plan, design, run and control various LLM experiments
 
+The philosophy of the tool is that `everything is a file or directory` (envs, experiments, searchers, etc.). The CLI lets you modify a lot of files related to the experiments and searchers, but those files could be modified also manually for better performance (e.g., terms of the search could be changed and search could be re-run, paper PDFs could be manually copied, CSV file with generated experiments could be modified etc.).
 
 ## Installation
 

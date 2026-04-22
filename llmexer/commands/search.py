@@ -1,23 +1,27 @@
 """Search group commands of the CLI interface."""
 
-import json
 import os
-import uuid
 from pathlib import Path
 
 import pandas as pd
-import requests
 import typer
 import yaml
-from requests.adapters import HTTPAdapter, Retry
 from rich.table import Table
 
-from llmexer.base.papers import get_first_author_last_name, make_structured_filename
+from llmexer.base.search import (
+    _PAPER_CSV_COLUMNS,
+    DEFAULT_OPEN_ACCESS_PARAM,
+    DEFAULT_SEARCH_YEAR_PARAM,
+    generate_search_id,
+    read_search_params,
+    run_semantic_scholar_search,
+    save_search_query,
+    synf_df_runs_of_search_and_papers,
+)
 from llmexer.common import (
     ensure_directory_exists,
     get_experiment_directory_path,
     get_proper_eid,
-    make_http_session,
 )
 from llmexer.configs import console, cprint, settings
 from llmexer.constants import PAPERS_DIR, SEARCHES_DIR
@@ -34,35 +38,6 @@ app = typer.Typer(help="Search online digital libraries for papers and metadata.
 
 # Default values
 DEFAULT_QUERY_PARAM = "influence of machine learning on computer science"
-DEFAULT_SEARCH_YEAR_PARAM = "2020-2025"
-DEFAULT_OPEN_ACCESS_PARAM = False
-
-DEFAULT_VALUE_ENTRY_SOURCE = "Semantic Scholar"
-
-# Semantic Scholar API constants
-_SEM_SCHOLAR_BULK_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
-_SEM_SCHOLAR_FIELDS = (
-    "paperId,title,authors,abstract,isOpenAccess,externalIds,year,"
-    "referenceCount,citationCount,fieldsOfStudy,citationStyles,publicationTypes"
-)
-_PAPER_CSV_COLUMNS = [
-    "sem_scholar_paper_id",
-    "year",
-    "title",
-    "authors",
-    "abstract",
-    "isOpenAccess",
-    "doi",
-    "language",
-    "citationCount",
-    "referenceCount",
-    "entry_source",
-    "pdf_filename",
-    "txt_filename",
-    "markdown_filename",
-    "pdf_downloaded",
-]
-
 
 _SEARCH_FILE_SUFFIXES = [
     ".yaml",
@@ -71,286 +46,6 @@ _SEARCH_FILE_SUFFIXES = [
     "_filtered.csv",
     "_results_download_failed.csv",
 ]
-
-
-def _detect_language(title: str | None, abstract: str | None) -> str:
-    """Detect language from title and abstract separately.
-    Returns 'unclear' if they disagree or on failure or missing text."""
-    from langdetect import LangDetectException, detect
-
-    try:
-        if title and str(title).strip() and abstract and str(abstract).strip():
-            lang_title = detect(str(title).strip())
-            lang_abstract = detect(str(abstract).strip())
-            return lang_title if lang_title == lang_abstract else "unclear"
-        text = " ".join(filter(None, [title, abstract])).strip()
-        if not text:
-            return "unclear"
-        return detect(text)
-    except LangDetectException:
-        return "unclear"
-
-
-def _sync_df(df: pd.DataFrame, papers_path: str) -> tuple[pd.DataFrame, int, int]:
-    """Sync pdf_downloaded, txt_filename, markdown_filename for existing rows and
-    append new rows for PDFs found in papers_path that are not yet in the DataFrame.
-
-    Returns:
-        (updated_df, updated_count, added_count)
-    """
-    papers_dir = Path(papers_path)
-    updated_count = 0
-
-    # Ensure string columns stay as object dtype even when all values are NaN
-    for col in ("txt_filename", "markdown_filename", "pdf_filename", "entry_source"):
-        if col in df.columns and df[col].dtype != object:
-            df[col] = df[col].astype(object)
-
-    known_pdf_filenames = set(
-        df["pdf_filename"].dropna().astype(str).str.strip().loc[lambda s: s != ""]
-    )
-
-    for idx, row in df.iterrows():
-        pdf_filename = str(row.get("pdf_filename", "") or "").strip()
-        if not pdf_filename:
-            continue
-        stem = (
-            pdf_filename[:-4] if pdf_filename.lower().endswith(".pdf") else pdf_filename
-        )
-
-        changed = False
-        if (papers_dir / pdf_filename).exists():
-            if not df.at[idx, "pdf_downloaded"]:
-                df.at[idx, "pdf_downloaded"] = True
-                changed = True
-
-        txt_val = row.get("txt_filename", "")
-        txt_empty = pd.isna(txt_val) or str(txt_val).strip() == ""
-        txt_candidate = f"{stem}.txt"
-        if txt_empty and (papers_dir / txt_candidate).exists():
-            df.at[idx, "txt_filename"] = txt_candidate
-            changed = True
-
-        md_val = row.get("markdown_filename", "")
-        md_empty = pd.isna(md_val) or str(md_val).strip() == ""
-        md_candidate = f"{stem}.md"
-        if md_empty and (papers_dir / md_candidate).exists():
-            df.at[idx, "markdown_filename"] = md_candidate
-            changed = True
-
-        if changed:
-            updated_count += 1
-
-    new_rows = []
-    if papers_dir.exists():
-        for pdf_path in sorted(papers_dir.glob("*.pdf")):
-            pdf_name = pdf_path.name
-            if pdf_name in known_pdf_filenames:
-                continue
-            stem = pdf_path.stem
-            txt_exists = (papers_dir / f"{stem}.txt").exists()
-            md_exists = (papers_dir / f"{stem}.md").exists()
-            new_row = {col: "" for col in _PAPER_CSV_COLUMNS}
-            new_row["pdf_filename"] = pdf_name
-            new_row["pdf_downloaded"] = True
-            new_row["entry_source"] = "manually added"
-            new_row["txt_filename"] = f"{stem}.txt" if txt_exists else ""
-            new_row["markdown_filename"] = f"{stem}.md" if md_exists else ""
-            new_rows.append(new_row)
-
-    added_count = len(new_rows)
-    if new_rows:
-        df = pd.concat(
-            [df, pd.DataFrame(new_rows, columns=_PAPER_CSV_COLUMNS)], ignore_index=True
-        )
-
-    return df, updated_count, added_count
-
-
-def generate_search_id() -> str:
-    """
-    Generate a unique experiment ID formatted as 'YYYYMMDD-GUID'
-
-    Returns:
-      str: A string in the format 'YYYYMMDD-UUID'.
-    """
-    from datetime import date, datetime, timedelta, timezone
-
-    now_utc = datetime.now(timezone.utc)
-    formatted_datetime = now_utc.strftime("%Y%m%d")
-    unique_id = str(uuid.uuid4())[:8]
-    return f"{formatted_datetime}-{unique_id}"
-
-
-def save_search_query(
-    experiment_path: str,
-    query: str,
-    year: str = DEFAULT_SEARCH_YEAR_PARAM,
-    only_open_access: bool = DEFAULT_OPEN_ACCESS_PARAM,
-) -> str:
-    """_summary_
-
-    Args:
-        query (str): _description_
-        year (str, optional): _description_. Defaults to DEFAULT_SEARCH_YEAR_PARAM.
-        only_open_access (bool, optional): _description_. Defaults to DEFAULT_OPEN_ACCESS_PARAM.
-
-    Returns:
-        str: _description_
-    """
-
-    # Create searches directory inside the experiment folder
-    searches_path = os.path.join(experiment_path, "searches")
-    ensure_directory_exists(searches_path)
-    search_id = generate_search_id()
-
-    yaml_filename = f"{search_id}.yaml"
-    yaml_path = os.path.join(searches_path, yaml_filename)
-
-    # Create YAML content
-    search_config = {"query": query, "year": year, "onlyOpenAccess": only_open_access}
-
-    # Write YAML file
-    with open(yaml_path, "w", encoding="utf-8") as f:
-        yaml.dump(search_config, f, default_flow_style=False, sort_keys=False)
-
-    return search_id, yaml_filename
-
-
-def run_semantic_scholar_search(
-    query: str,
-    year: str,
-    only_open_access: bool,
-    batch_size: int,
-    limit_size: int,
-    json_path: str,
-    csv_path: str,
-) -> tuple[list[dict], list[dict]]:
-    """Call the Semantic Scholar bulk search API with pagination.
-
-    Returns:
-        (raw_json_results, records): raw_json_results is a list of raw API response dicts (one per page);
-        records is a list of flattened paper dicts with PAPER_CSV_COLUMNS fields.
-    """
-
-    session = make_http_session()
-    retries = Retry(
-        total=5,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-    )
-    session.mount("https://", HTTPAdapter(max_retries=retries))
-
-    params: dict = {
-        "query": query,
-        "fields": _SEM_SCHOLAR_FIELDS,
-        "limit": min(batch_size, 1000),
-    }
-
-    if year:
-        params["year"] = year
-    if only_open_access:
-        params["openAccessPdf"] = ""
-
-    raw_json_results: list[dict] = []
-    records: list[dict] = []
-
-    while True:
-        response = session.get(_SEM_SCHOLAR_BULK_URL, params=params)
-        response.raise_for_status()
-        data = response.json()
-        raw_json_results.append(data)
-
-        papers = data.get("data", [])
-        for paper in papers:
-            if limit_size is not None and len(records) >= limit_size:
-                break
-            ext_ids = paper.get("externalIds") or {}
-            pdf_filename = make_structured_filename(
-                paper.get("year"),
-                get_first_author_last_name(paper),
-                paper.get("title"),
-                ext_ids.get("DOI"),
-            )
-            records.append(
-                {
-                    "sem_scholar_paper_id": paper.get("paperId"),
-                    "year": paper.get("year"),
-                    "title": paper.get("title"),
-                    "authors": "; ".join(
-                        a.get("name", "") for a in paper.get("authors", [])
-                    ),
-                    "abstract": paper.get("abstract"),
-                    "isOpenAccess": paper.get("isOpenAccess"),
-                    "doi": ext_ids.get("DOI"),
-                    "language": _detect_language(
-                        paper.get("title"), paper.get("abstract")
-                    ),
-                    "referenceCount": paper.get("referenceCount"),
-                    "citationCount": paper.get("citationCount"),
-                    "entry_source": DEFAULT_VALUE_ENTRY_SOURCE,
-                    "pdf_filename": pdf_filename,
-                    "txt_filename": "",
-                    "markdown_filename": "",
-                    "pdf_downloaded": False,
-                }
-            )
-
-        cprint(f"Retrieved {len(records)} paper(s) so far...")
-        logger.debug(
-            "Page retrieved: %d papers in page, %d total", len(papers), len(records)
-        )
-
-        token = data.get("token")
-        if not token:
-            break
-        params["token"] = token
-
-        with open(json_path, "w", encoding="utf-8") as fh:
-            json.dump(raw_json_results, fh, ensure_ascii=False, indent=4)
-
-        df = pd.DataFrame(records, columns=_PAPER_CSV_COLUMNS)
-        df.to_csv(csv_path, index=False, encoding="utf-8", sep=";")
-
-    with open(json_path, "w", encoding="utf-8") as fh:
-        json.dump(raw_json_results, fh, ensure_ascii=False, indent=4)
-    logger.debug("Wrote raw response to '%s'", json_path)
-
-    df = pd.DataFrame(records, columns=_PAPER_CSV_COLUMNS)
-    df.sort_values(by=["year", "title"], ascending=[False, True]).to_csv(
-        csv_path, index=False, encoding="utf-8", sep=";"
-    )
-    logger.debug("Wrote CSV to '%s'", csv_path)
-
-    cprint(f"[bold green]Total retrieved:[/bold green] {len(records)} paper(s)")
-    cprint(f"File with raw responses ([magenta]JSON[/magenta]):\n  {json_path}")
-    cprint(f"File with results ([magenta]CSV[/magenta]):\n  {csv_path}")
-
-    return records
-
-
-def read_search_params(file, experiment_path, query_default: str = None):
-
-    file_stem = os.path.splitext(os.path.basename(file))[0]
-    search_id = file_stem
-
-    # Load parameters from config file if provided
-    if os.path.isabs(file):
-        search_file_path = file
-    else:
-        search_file_path = os.path.join(experiment_path, SEARCHES_DIR, file)
-
-    if not os.path.exists(search_file_path):
-        raise LLMExerException(f"Search file does not exist: '{file}' ")
-
-    with open(search_file_path, "r", encoding="utf-8") as f:
-        search_params = yaml.safe_load(f)
-
-    query = search_params.get("query", query_default)
-    year = search_params.get("year", DEFAULT_SEARCH_YEAR_PARAM)
-    only_open_access = search_params.get("onlyOpenAccess", DEFAULT_OPEN_ACCESS_PARAM)
-
-    return search_id, query, year, only_open_access
 
 
 def _build_stats_grid(df):
@@ -690,9 +385,13 @@ def run(
 
     print_search_header(eid, search_id, query, year, only_open_access)
 
-    run_semantic_scholar_search(
+    records = run_semantic_scholar_search(
         query, year, only_open_access, batch, limit, json_path, csv_path
     )
+
+    cprint(f"[bold green]Total retrieved:[/bold green] {len(records)} paper(s)")
+    cprint(f"File with raw responses ([magenta]JSON[/magenta]):\n  {json_path}")
+    cprint(f"File with results ([magenta]CSV[/magenta]):\n  {csv_path}")
 
 
 @app.command()
@@ -838,7 +537,9 @@ def sync(
         return
 
     df = pd.read_csv(results_csv, sep=";")
-    updated_df, updated_count, added_count = _sync_df(df, papers_path)
+    updated_df, updated_count, added_count = synf_df_runs_of_search_and_papers(
+        df, papers_path
+    )
 
     if not settings.dry_run:
         updated_df.to_csv(results_csv, index=False, encoding="utf-8", sep=";")
@@ -848,7 +549,9 @@ def sync(
 
     if os.path.exists(filtered_csv):
         filtered_df = pd.read_csv(filtered_csv, sep=";")
-        updated_filtered_df, f_updated, f_added = _sync_df(filtered_df, papers_path)
+        updated_filtered_df, f_updated, f_added = synf_df_runs_of_search_and_papers(
+            filtered_df, papers_path
+        )
         if not settings.dry_run:
             updated_filtered_df.to_csv(
                 filtered_csv, index=False, encoding="utf-8", sep=";"
