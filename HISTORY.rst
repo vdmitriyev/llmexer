@@ -2,6 +2,12 @@
 History
 =======
 
+0.2.14 (2026-04-27)
+-------------------
+
+* Change the behaviour of the docling extraction - no it removes images from the mardown output
+
+
 0.2.13 (2026-04-21)
 -------------------
 

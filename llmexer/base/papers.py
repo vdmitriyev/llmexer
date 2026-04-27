@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -27,8 +28,37 @@ class PDFProcessor(str, Enum):
     docling = "docling"
 
 
+def remove_empty_image_placeholders(markdown: str) -> str:
+    """
+    Replaces useless image content from Docling markdown output with a comment:
+    1. Standalone <!-- image --> / <!-- image:xxx --> placeholder blocks
+    2. Inline base64-embedded images: ![Image](data:image/png;base64,...)
+    """
+
+    REPLACEMENT = "<!--  Image has been removed. Keeping placeholder only -->\n"
+
+    text = markdown.replace("\r\n", "\n")
+
+    text = re.sub(
+        r"(?m)^[ \t]*<!--\s*image(?::[^\-]*)?\s*-->[ \t]*$\n?",
+        REPLACEMENT,
+        text,
+    )
+
+    text = re.sub(
+        r"(?m)^[ \t]*!\[[^\]]*\]\(data:image/[^;]+;base64,[^)]*\)[ \t]*$\n?",
+        REPLACEMENT,
+        text,
+    )
+
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
+
+
 def extract_via_docling(pdf_path: Path, url: str, auth: tuple) -> str:
     """Upload a PDF to a docling-serve instance and return the extracted Markdown.
+
 
     Raises PaperExtractException on network errors or unexpected response shapes.
     """
@@ -38,11 +68,20 @@ def extract_via_docling(pdf_path: Path, url: str, auth: tuple) -> str:
     payload = {
         "options": json.dumps(
             {
-                "to_formats": ["md"],
                 "from_formats": ["pdf"],
+                "to_formats": ["md"],
                 "do_ocr": True,
+                "image_export_mode": "placeholder",
+                "force_ocr": False,
+                "ocr_preset": "easyocr",
+                "ocr_lang": ["de", "en"],
+                "do_picture_classification": True,
+                "do_picture_description": True,
+                "picture_description_preset": "default",
+                "images_scale": 2.0,
                 "pdf_backend": "dlparse_v2",
                 "table_mode": "accurate",
+                "do_table_structure": True,
                 "abort_on_error": False,
             }
         )
@@ -81,7 +120,8 @@ def extract_via_docling(pdf_path: Path, url: str, auth: tuple) -> str:
     for doc in docs:
         md = doc.get("md_content") or doc.get("markdown") or doc.get("content")
         if md:
-            return md
+            no_images_md = remove_empty_image_placeholders(md)
+            return no_images_md
 
     raise PaperExtractException(
         f"Could not find Markdown content in docling response for '{pdf_path.name}'."
