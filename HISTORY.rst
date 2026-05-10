@@ -2,6 +2,11 @@
 History
 =======
 
+0.2.16 (2026-05-10)
+-------------------
+
+* Add ``OllamaProvider`` in ``llmexer/base/llm.py`` as the first concrete ``LLMProviderBase`` implementation; translates CSV row parameters to ollama-specific OpenAI-compatible API calls (``num_ctx``, ``num_predict``, ``repeat_penalty`` via ``extra_body``), tracks per-call timing and cumulative stats, and manages lifecycle state transitions (``STARTED → RUNNING → SUCCESS/ERROR``); ``experiment run`` now routes ollama rows through ``OllamaProvider`` instead of ``LLMRequestsMapper``
+
 0.2.15 (2026-05-10)
 -------------------
 

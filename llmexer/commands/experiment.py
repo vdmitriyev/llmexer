@@ -449,7 +449,8 @@ def run(
 
     # Lazy import to keep openai optional
     try:
-        from llmexer.base.llm import URL_MAP, LLMRequestsMapper
+        from llmexer.base.llm import URL_MAP, LLMRequestsMapper, OllamaProvider
+        from llmexer.base.provider import CallerState, ProviderAuth
     except ImportError as exc:
         raise LLMExerException(
             "Missing required packages for LLM calls. "
@@ -504,22 +505,52 @@ def run(
             provider
         )
         resolved_key = os.environ.get(f"PROVIDER_{provider_upper}_KEY") or "na"
-        mapper = LLMRequestsMapper(
-            provider=provider,
-            base_url=base_url,
-            api_key=resolved_key,
-        )
+
         if settings.dry_run:
             continue
 
-        result = mapper.execute(p_row["prompt"], p_row.to_dict())
+        if provider == "ollama":
+            caller = OllamaProvider(
+                provider=provider,
+                auth=ProviderAuth(api_key=resolved_key),
+                base_url=base_url or URL_MAP["ollama"],
+            )
+            resp = caller.execute(p_row["prompt"], p_row.to_dict())
+            response_text = resp.text
+            usage_tokens = resp.usage_tokens
+            status = (
+                f"Error: {resp.raw}" if caller.state == CallerState.ERROR else "success"
+            )
+            timestamp = datetime.now(timezone.utc).isoformat()
+            json_payload: dict = {
+                "model": str(p_row.get("param_model_name", "")),
+                "provider": provider,
+                "prompt": p_row["prompt"],
+                "profile": str(p_row.get("profile_name", "")),
+                "response_text": response_text,
+                "usage_tokens": usage_tokens,
+                "status": status,
+                "timestamp": timestamp,
+            }
+        else:
+            mapper = LLMRequestsMapper(
+                provider=provider,
+                base_url=base_url,
+                api_key=resolved_key,
+            )
+            result = mapper.execute(p_row["prompt"], p_row.to_dict())
+            response_text = result.response_text
+            usage_tokens = result.usage_tokens
+            status = result.status
+            timestamp = result.timestamp
+            json_payload = result.model_dump()
 
         combined = {
             **p_row.to_dict(),
-            "response_text": result.response_text,
-            "usage_tokens": result.usage_tokens,
-            "status": result.status,
-            "timestamp": result.timestamp,
+            "response_text": response_text,
+            "usage_tokens": usage_tokens,
+            "status": status,
+            "timestamp": timestamp,
         }
         all_rows.append(combined)
 
@@ -530,10 +561,10 @@ def run(
             responses_dir, f"{file_ts}_{safe_model}_{provider}.json"
         )
         with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(result.model_dump(), f, indent=2, ensure_ascii=False)
+            json.dump(json_payload, f, indent=2, ensure_ascii=False)
 
-        status_color = "green" if result.status == "success" else "red"
-        run_status_info = f"[bold {status_color}]{result.status} [/bold {status_color}]"
+        status_color = "green" if status == "success" else "red"
+        run_status_info = f"[bold {status_color}]{status} [/bold {status_color}]"
         cprint(f"{run_info_prefix} finished {run_status_info}")
 
     if not settings.dry_run:

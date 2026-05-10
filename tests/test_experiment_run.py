@@ -17,19 +17,19 @@ from llmexer.exceptions import (
 
 runner = CliRunner()
 
-# The experiment CSV now contains all 20 columns (prompt + embedded param columns).
+# The experiment CSV contains all 21 columns (prompt + tokens_estimate + embedded param columns).
 _EXPERIMENT_CSV_HEADER = (
-    "ID;code;prompt;original_data;model_name;provider_name;prompt_hash;original_data_hash;"
+    "ID;code;prompt;tokens_estimate;original_data;model_name;provider_name;prompt_hash;original_data_hash;"
     "profile_name;param_model_name;param_provider;temperature;top_p;max_tokens;"
     "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level\n"
 )
 _EXPERIMENT_CSV_ROW = (
-    "1;D01_prompt01_llama3.3:latest_ollama-default;Hello world;"
+    "1;D01_prompt01_llama3.3:latest_ollama-default;Hello world;2;"
     '{"ID":"D01"};llama3.3:latest;ollama;abc123;def456;'
     "ollama-default;llama3.3:latest;ollama;0.7;1.0;512;4096;1.1;;;;\n"
 )
 _EXPERIMENT_CSV_ROW_OPENAI = (
-    "2;D01_prompt01_gpt-4o_openai-default;Hello world;"
+    "2;D01_prompt01_gpt-4o_openai-default;Hello world;2;"
     '{"ID":"D01"};gpt-4o;openai;abc123;def456;'
     "openai-default;gpt-4o;openai;0.7;1.0;512;;;;42;\n"
 )
@@ -75,8 +75,9 @@ def experiment_with_csvs(experiments_dir):
 
 @pytest.fixture()
 def mock_llm_mapper(monkeypatch):
-    """Replace LLMRequestsMapper in the llm module with a fake that returns a canned result."""
+    """Replace LLMRequestsMapper and OllamaProvider with fakes that return canned results."""
     import llmexer.base.llm as llm_module
+    from llmexer.base.provider import CallerState, ProviderResponse
 
     class FakeResult:
         response_text = "mocked response"
@@ -99,7 +100,16 @@ def mock_llm_mapper(monkeypatch):
         def execute(self, prompt, row):
             return FakeResult()
 
+    class FakeOllamaProvider:
+        def __init__(self, provider, auth=None, base_url=None, **kwargs):
+            self.state = CallerState.SUCCESS
+
+        def execute(self, prompt, row):
+            self.state = CallerState.SUCCESS
+            return ProviderResponse(text="mocked response", usage_tokens=42)
+
     monkeypatch.setattr(llm_module, "LLMRequestsMapper", FakeMapper)
+    monkeypatch.setattr(llm_module, "OllamaProvider", FakeOllamaProvider)
     return FakeMapper
 
 
@@ -332,29 +342,19 @@ def test_run_custom_experiment_csv(experiment_with_csvs, mock_llm_mapper, tmp_pa
 def test_run_failed_call_still_writes_row(experiment_with_csvs, monkeypatch):
     """A failing LLM call should produce an Error status row; run should not abort."""
     import llmexer.base.llm as llm_module
+    from llmexer.base.provider import CallerState, ProviderResponse
 
-    class ErrorResult:
-        response_text = ""
-        usage_tokens = None
-        status = "Error: connection refused"
-        timestamp = "2024-01-01T00:00:00"
-
-        def model_dump(self):
-            return {
-                "response_text": self.response_text,
-                "usage_tokens": self.usage_tokens,
-                "status": self.status,
-                "timestamp": self.timestamp,
-            }
-
-    class ErrorMapper:
-        def __init__(self, provider, base_url=None, api_key="na"):
-            pass
+    class ErrorOllamaProvider:
+        def __init__(self, provider, auth=None, base_url=None, **kwargs):
+            self.state = CallerState.ERROR
 
         def execute(self, prompt, row):
-            return ErrorResult()
+            self.state = CallerState.ERROR
+            return ProviderResponse(
+                text="", usage_tokens=None, raw="connection refused"
+            )
 
-    monkeypatch.setattr(llm_module, "LLMRequestsMapper", ErrorMapper)
+    monkeypatch.setattr(llm_module, "OllamaProvider", ErrorOllamaProvider)
 
     eid, exp_subdir = experiment_with_csvs
 
@@ -475,30 +475,19 @@ def test_run_missing_openai_package_raises(experiment_with_csvs, monkeypatch):
 def test_run_uses_provider_url_from_env(experiment_with_csvs, monkeypatch):
     """PROVIDER_OLLAMA_URL in env should override the built-in URL_MAP default."""
     import llmexer.base.llm as llm_module
+    from llmexer.base.provider import CallerState, ProviderResponse
 
     captured = {}
 
-    class CapturingMapper:
-        def __init__(self, provider, base_url=None, api_key="na"):
+    class CapturingOllamaProvider:
+        def __init__(self, provider, auth=None, base_url=None, **kwargs):
             captured["base_url"] = base_url
 
         def execute(self, prompt, row):
-            from unittest.mock import Mock
+            self.state = CallerState.SUCCESS
+            return ProviderResponse(text="x", usage_tokens=1)
 
-            r = Mock()
-            r.response_text = "x"
-            r.usage_tokens = 1
-            r.status = "success"
-            r.timestamp = "2024-01-01T00:00:00"
-            r.model_dump.return_value = {
-                "response_text": "x",
-                "usage_tokens": 1,
-                "status": "success",
-                "timestamp": "2024-01-01T00:00:00",
-            }
-            return r
-
-    monkeypatch.setattr(llm_module, "LLMRequestsMapper", CapturingMapper)
+    monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
     monkeypatch.setenv("PROVIDER_OLLAMA_URL", "http://custom-ollama:9999/v1")
 
     eid, _ = experiment_with_csvs
@@ -520,30 +509,19 @@ def test_run_uses_provider_url_from_env(experiment_with_csvs, monkeypatch):
 def test_run_provider_url_falls_back_to_url_map(experiment_with_csvs, monkeypatch):
     """When PROVIDER_OLLAMA_URL is not set, the built-in URL_MAP default is used."""
     import llmexer.base.llm as llm_module
+    from llmexer.base.provider import CallerState, ProviderResponse
 
     captured = {}
 
-    class CapturingMapper:
-        def __init__(self, provider, base_url=None, api_key="na"):
+    class CapturingOllamaProvider:
+        def __init__(self, provider, auth=None, base_url=None, **kwargs):
             captured["base_url"] = base_url
 
         def execute(self, prompt, row):
-            from unittest.mock import Mock
+            self.state = CallerState.SUCCESS
+            return ProviderResponse(text="x", usage_tokens=1)
 
-            r = Mock()
-            r.response_text = "x"
-            r.usage_tokens = 1
-            r.status = "success"
-            r.timestamp = "2024-01-01T00:00:00"
-            r.model_dump.return_value = {
-                "response_text": "x",
-                "usage_tokens": 1,
-                "status": "success",
-                "timestamp": "2024-01-01T00:00:00",
-            }
-            return r
-
-    monkeypatch.setattr(llm_module, "LLMRequestsMapper", CapturingMapper)
+    monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
     monkeypatch.delenv("PROVIDER_OLLAMA_URL", raising=False)
 
     eid, _ = experiment_with_csvs
@@ -565,30 +543,19 @@ def test_run_provider_url_falls_back_to_url_map(experiment_with_csvs, monkeypatc
 def test_run_uses_provider_key_from_env(experiment_with_csvs, monkeypatch):
     """PROVIDER_OLLAMA_KEY in env should take precedence over LLM_API_KEY."""
     import llmexer.base.llm as llm_module
+    from llmexer.base.provider import CallerState, ProviderResponse
 
     captured = {}
 
-    class CapturingMapper:
-        def __init__(self, provider, base_url=None, api_key="na"):
-            captured["api_key"] = api_key
+    class CapturingOllamaProvider:
+        def __init__(self, provider, auth=None, base_url=None, **kwargs):
+            captured["api_key"] = auth.api_key if auth else "na"
 
         def execute(self, prompt, row):
-            from unittest.mock import Mock
+            self.state = CallerState.SUCCESS
+            return ProviderResponse(text="x", usage_tokens=1)
 
-            r = Mock()
-            r.response_text = "x"
-            r.usage_tokens = 1
-            r.status = "success"
-            r.timestamp = "2024-01-01T00:00:00"
-            r.model_dump.return_value = {
-                "response_text": "x",
-                "usage_tokens": 1,
-                "status": "success",
-                "timestamp": "2024-01-01T00:00:00",
-            }
-            return r
-
-    monkeypatch.setattr(llm_module, "LLMRequestsMapper", CapturingMapper)
+    monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
     monkeypatch.setenv("PROVIDER_OLLAMA_KEY", "provider-specific-key")
     monkeypatch.setenv("LLM_API_KEY", "generic-key")
 
@@ -611,30 +578,19 @@ def test_run_uses_provider_key_from_env(experiment_with_csvs, monkeypatch):
 def test_run_provider_key_defaults_to_na_when_absent(experiment_with_csvs, monkeypatch):
     """When PROVIDER_OLLAMA_KEY is absent, api_key defaults to 'na'."""
     import llmexer.base.llm as llm_module
+    from llmexer.base.provider import CallerState, ProviderResponse
 
     captured = {}
 
-    class CapturingMapper:
-        def __init__(self, provider, base_url=None, api_key="na"):
-            captured["api_key"] = api_key
+    class CapturingOllamaProvider:
+        def __init__(self, provider, auth=None, base_url=None, **kwargs):
+            captured["api_key"] = auth.api_key if auth else "na"
 
         def execute(self, prompt, row):
-            from unittest.mock import Mock
+            self.state = CallerState.SUCCESS
+            return ProviderResponse(text="x", usage_tokens=1)
 
-            r = Mock()
-            r.response_text = "x"
-            r.usage_tokens = 1
-            r.status = "success"
-            r.timestamp = "2024-01-01T00:00:00"
-            r.model_dump.return_value = {
-                "response_text": "x",
-                "usage_tokens": 1,
-                "status": "success",
-                "timestamp": "2024-01-01T00:00:00",
-            }
-            return r
-
-    monkeypatch.setattr(llm_module, "LLMRequestsMapper", CapturingMapper)
+    monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
     monkeypatch.delenv("PROVIDER_OLLAMA_KEY", raising=False)
 
     eid, _ = experiment_with_csvs

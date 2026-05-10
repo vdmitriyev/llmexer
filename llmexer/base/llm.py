@@ -1,8 +1,17 @@
 """LLM request execution logic for llmexer experiments."""
 
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Dict, Optional
+
+from llmexer.base.provider import (
+    CallerState,
+    LLMProviderBase,
+    ProviderAuth,
+    ProviderRequest,
+    ProviderResponse,
+)
 
 URL_MAP: Dict[str, Optional[str]] = {
     "ollama": "http://localhost:11434/v1",
@@ -119,3 +128,70 @@ class LLMRequestsMapper:
                 response_text="",
                 status=f"Error: {e}",
             )
+
+
+@dataclass
+class OllamaProvider(LLMProviderBase):
+    """Concrete LLM provider for Ollama using the OpenAI-compatible API."""
+
+    base_url: str = URL_MAP["ollama"]
+
+    def build_session(self) -> None:
+        from openai import OpenAI
+
+        self.session = OpenAI(base_url=self.base_url, api_key=self.auth.api_key)
+
+    def build_request(self, prompt: str, row: dict) -> ProviderRequest:
+        extra_body: Dict[str, Any] = {
+            k: v
+            for k, v in {
+                "num_ctx": row.get("ollama_context_window"),
+                "num_predict": row.get("max_tokens"),
+                "repeat_penalty": row.get("ollama_repeat_penalty"),
+            }.items()
+            if v is not None
+        }
+        params: Dict[str, Any] = {
+            "temperature": row.get("temperature", 0.7),
+            "top_p": row.get("top_p", 1.0),
+        }
+        if extra_body:
+            params["extra_body"] = extra_body
+        self.request = ProviderRequest(
+            model=str(row.get("param_model_name", "")),
+            prompt=prompt,
+            params=params,
+        )
+        return self.request
+
+    def execute(self, prompt: str, row: dict) -> ProviderResponse:
+        self.data = row
+        self.state = CallerState.RUNNING
+        t0 = time.monotonic()
+        try:
+            if self.session is None:
+                self.build_session()
+            req = self.build_request(prompt, row)
+            extra_body = req.params.pop("extra_body", None)
+            completion = self.session.chat.completions.create(
+                model=req.model,
+                messages=[{"role": "user", "content": req.prompt}],
+                extra_body=extra_body or None,
+                **req.params,
+            )
+            text = completion.choices[0].message.content or ""
+            tokens = getattr(completion.usage, "total_tokens", None)
+            self.response = ProviderResponse(
+                text=text, usage_tokens=tokens, raw=completion  # gitleaks:allow
+            )
+            self.state = CallerState.SUCCESS
+        except Exception as exc:
+            self.response = ProviderResponse(text="", usage_tokens=None, raw=str(exc))
+            self.state = CallerState.ERROR
+        finally:
+            elapsed = time.monotonic() - t0
+            self.stats.call_count += 1
+            self.stats.elapsed_seconds += elapsed
+            if self.response and self.response.usage_tokens:
+                self.stats.total_tokens += self.response.usage_tokens
+        return self.response
