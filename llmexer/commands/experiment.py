@@ -342,6 +342,7 @@ def generate(
                             "ID": row_counter,
                             "code": f"{data_id}_{prompt_id}_{str(model_row['name'])}_{param_row['profile_name']}",
                             "prompt": rendered_prompt,
+                            "tokens_estimate": len(rendered_prompt) // 4,
                             "original_data": original_data_str,
                             "model_name": str(model_row["name"]),
                             "provider_name": str(model_row["provider"]),

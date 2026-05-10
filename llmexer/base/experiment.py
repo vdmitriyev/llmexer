@@ -10,6 +10,7 @@ _OUTPUT_COLUMNS = [
     "ID",
     "code",
     "prompt",
+    "tokens_estimate",
     "original_data",
     "model_name",
     "provider_name",

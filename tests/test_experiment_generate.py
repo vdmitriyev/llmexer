@@ -104,7 +104,7 @@ def test_generate_creates_output_csv(initialised_experiment, experiments_dir):
 
 
 def test_generate_output_has_correct_columns(initialised_experiment, experiments_dir):
-    """The output CSV should have exactly the required 20 columns in order."""
+    """The output CSV should have exactly the required 21 columns in order."""
     eid, exp_subdir = initialised_experiment
 
     runner.invoke(app, ["experiment", "generate", "--eid", eid])
@@ -115,6 +115,7 @@ def test_generate_output_has_correct_columns(initialised_experiment, experiments
         "ID",
         "code",
         "prompt",
+        "tokens_estimate",
         "original_data",
         "model_name",
         "provider_name",
@@ -169,6 +170,18 @@ def test_generate_prompt_is_rendered(initialised_experiment, experiments_dir):
     assert "abstract of the first" in df.iloc[0]["prompt"]
     assert "{{title}}" not in df.iloc[0]["prompt"]
     assert "{{abstract}}" not in df.iloc[0]["prompt"]
+
+
+def test_generate_tokens_estimate_value(initialised_experiment, experiments_dir):
+    """tokens_estimate should equal len(rendered_prompt) // 4."""
+    eid, exp_subdir = initialised_experiment
+
+    runner.invoke(app, ["experiment", "generate", "--eid", eid])
+
+    csv_file = next(exp_subdir.glob("experiment_*.csv"))
+    df = pd.read_csv(csv_file, sep=";")
+    rendered_prompt = df.iloc[0]["prompt"]
+    assert df.iloc[0]["tokens_estimate"] == len(rendered_prompt) // 4
 
 
 def test_generate_model_name_and_provider(initialised_experiment, experiments_dir):

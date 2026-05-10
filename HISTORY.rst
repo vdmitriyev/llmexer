@@ -2,6 +2,11 @@
 History
 =======
 
+0.2.15 (2026-05-10)
+-------------------
+
+* Add ``tokens_estimate`` column to ``experiment generate`` output: computed as ``len(rendered_prompt) // 4`` (1 token ≈ 4 characters); column appears between ``prompt`` and ``original_data`` in the 21-column output CSV
+
 0.2.14 (2026-04-27)
 -------------------
 
