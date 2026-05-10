@@ -6,6 +6,7 @@ History
 -------------------
 
 * Add ``tokens_estimate`` column to ``experiment generate`` output: computed as ``len(rendered_prompt) // 4`` (1 token ≈ 4 characters); column appears between ``prompt`` and ``original_data`` in the 21-column output CSV
+* Add ``LLMProviderBase`` abstract base class in ``llmexer/base/provider.py`` to define the shared contract for all future LLM provider implementations; introduces ``CallerState`` enum (``started``, ``running``, ``success``, ``error``), ``ProviderAuth`` (``api_key``, ``extra_headers``), ``ProviderRequest`` (``model``, ``prompt``, ``params``), ``ProviderResponse`` (``text``, ``usage_tokens``, ``raw``), and ``CallerStats`` (``call_count``, ``total_tokens``, ``elapsed_seconds``) dataclasses; base class exposes ``data``, ``session``, ``state``, ``stats``, ``auth``, and ``timeout`` fields plus three abstract methods: ``build_session()``, ``build_request()``, and ``execute()``
 
 0.2.14 (2026-04-27)
 -------------------
