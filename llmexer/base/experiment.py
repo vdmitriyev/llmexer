@@ -78,5 +78,5 @@ def _get_generated_experiment_files(experiment_path: str) -> list[str]:
     return [
         f
         for f in os.listdir(experiment_subdir_path)
-        if f.startswith("experiment_") and f.endswith(".csv") and "_results_" not in f
+        if f.startswith("experiment_") and f.endswith(".csv") and "_results" not in f
     ]

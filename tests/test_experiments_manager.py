@@ -190,6 +190,63 @@ def test_operations_before_load_raise(csv_file):
 
 
 # ---------------------------------------------------------------------------
+# ExperimentsManager results file
+# ---------------------------------------------------------------------------
+
+
+def test_results_path_derivation(csv_file):
+    mgr = ExperimentsManager()
+    mgr.load(csv_file)
+    expected = csv_file.replace("experiment_test.csv", "experiment_test_results.csv")
+    assert mgr.results_path() == expected
+
+
+def test_results_path_idempotent(tmp_path):
+    results = tmp_path / "experiment_x_results.csv"
+    results.write_text(_HEADER + _ROW_OLLAMA, encoding="utf-8")
+    mgr = ExperimentsManager()
+    mgr.load(str(results))
+    # Loading a *_results.csv returns the same path (no double suffix).
+    assert mgr.results_path() == str(results)
+
+
+def test_results_path_before_load_raises():
+    with pytest.raises(LLMExerException):
+        ExperimentsManager().results_path()
+
+
+def test_save_results_writes_single_file(csv_file, mock_providers):
+    mgr = ExperimentsManager()
+    mgr.load(csv_file)
+    mgr.run(1)
+    out = mgr.save_results()
+    assert out == mgr.results_path()
+    saved = pd.read_csv(out, sep=";", encoding="utf-8")
+    assert len(saved) == 2  # full row set persisted
+
+
+def test_merge_results_retains_prior_run(csv_file, mock_providers):
+    # First run: only the ollama row (ID 1), then save.
+    mgr = ExperimentsManager()
+    mgr.load(csv_file)
+    mgr.run(1)
+    results_file = mgr.save_results()
+
+    # Fresh manager: reload the original file, merge prior results, run row 2.
+    mgr2 = ExperimentsManager()
+    mgr2.load(csv_file)
+    mgr2.merge_results(results_file)
+    mgr2.run(2)
+    mgr2.save_results(results_file)
+
+    saved = pd.read_csv(results_file, sep=";", encoding="utf-8")
+    by_id = saved.set_index("ID")
+    # Row 1's result survived the second run (merge), row 2 was just filled.
+    assert by_id.loc[1, "status"] == "success"
+    assert by_id.loc[2, "status"] == "success"
+
+
+# ---------------------------------------------------------------------------
 # ExperimentsManager.run
 # ---------------------------------------------------------------------------
 
@@ -350,9 +407,12 @@ def test_cli_run_single_id(experiments_dir, mock_providers):
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f.startswith(f"experiment_{eid}_results_") and f.endswith(".csv")
+        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
     ]
     assert len(results_files) == 1
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
-    assert len(df) == 1
-    assert str(df["param_provider"].iloc[0]).lower() == "ollama"
+    # Full row set persisted; only the --id 1 (ollama) row was run.
+    assert len(df) == 2
+    by_id = df.set_index("ID")
+    assert by_id.loc[1, "status"] == "success"
+    assert pd.isna(by_id.loc[2, "status"])

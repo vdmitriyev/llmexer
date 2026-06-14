@@ -224,17 +224,15 @@ def test_list_multiple_generated_files(experiments_dir):
 
 
 def test_list_excludes_result_files(experiments_dir):
-    """Result files (*_results_*.csv) should be excluded from Generated Files column."""
+    """The single results file (*_results.csv) is excluded from the Experiments column."""
     exp_path = experiments_dir / "results-exp" / "experiment"
     os.makedirs(exp_path)
     (exp_path / "experiment_20240101-abcd1234.csv").write_text("data\n")
-    (exp_path / "experiment_test-id_results_20240101_120000.csv").write_text(
-        "results\n"
-    )
+    (exp_path / "experiment_test-id_results.csv").write_text("results\n")
 
     result = runner.invoke(app, ["experiment", "list"])
     assert result.exit_code == 0
     # The generated file should be shown (possibly truncated, but prefix should appear)
     assert "experiment_20240101" in result.output
-    # The results file should NOT be shown (no "_results_" should appear)
-    assert "_results_" not in result.output
+    # The results file should NOT be shown.
+    assert "_results" not in result.output

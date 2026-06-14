@@ -2,6 +2,14 @@
 History
 =======
 
+0.2.18 (2026-06-14)
+-------------------
+
+* Consolidate experiment results into a single, stable file per experiment: ``experiment run`` now writes ``experiment/experiment_<eid>_results.csv`` (no per-run timestamp) instead of a new ``experiment_<eid>_results_<TIMESTAMP>.csv`` on every run; each experiment therefore keeps just two CSVs — the original generated file and the results file (per-call JSON responses under ``experiment/responses/`` are unchanged)
+* Persistence is owned by ``ExperimentsManager``: new ``results_path()`` (derives ``<stem>_results.csv`` from the loaded file, idempotent), ``merge_results(file)`` (copies result columns from an existing results file onto matching rows, keyed by ``ID``/``code``), and ``save_results(file)`` (writes the whole DataFrame to the single results file)
+* ``experiment run`` now merges in place across runs: a ``--filter-provider`` or ``--id`` run updates only the rows it executed while preserving results from earlier runs, and always persists the full row set to the one results file
+* Fix ``_get_generated_experiment_files`` so the single ``*_results.csv`` file is excluded from the ``experiment list`` "Experiments" column
+
 0.2.17 (2026-06-14)
 -------------------
 

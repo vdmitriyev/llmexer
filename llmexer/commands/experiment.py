@@ -445,7 +445,7 @@ def run(
     file: str = typer.Option(
         None,
         "--file",
-        help="Path to a specific experiment_NAME.csv file. Output will be written into experiment/experiment_file_results_TIMESTAMP.csv.",
+        help="Path to a specific experiment_NAME.csv file. Results are written into a single experiment_NAME_results.csv next to it.",
     ),
     filter_provider: str = typer.Option(
         None,
@@ -483,11 +483,12 @@ def run(
         )
         return
 
+    # Build the run view (which rows to execute) without shrinking manager.df,
+    # so the full row set is always persisted to the single results file.
+    mask = pd.Series(True, index=prompts_df.index)
     if filter_provider is not None:
-        mask = prompts_df["param_provider"].str.lower() == filter_provider.lower()
-        manager.df = prompts_df[mask].reset_index(drop=True)
-        prompts_df = manager.df
-        if prompts_df.empty:
+        mask &= prompts_df["param_provider"].str.lower() == filter_provider.lower()
+        if not mask.any():
             cprint(
                 f"[bold yellow]Warning:[/bold yellow] No rows found for provider "
                 f"'{filter_provider}' — nothing to run."
@@ -495,20 +496,19 @@ def run(
             return
 
     if id is not None:
-        mask = prompts_df["ID"].astype("string") == str(id)
+        id_mask = prompts_df["ID"].astype("string") == str(id)
         if "code" in prompts_df.columns:
-            mask = mask | (prompts_df["code"].astype("string") == str(id))
-        manager.df = prompts_df[mask].reset_index(drop=True)
-        prompts_df = manager.df
-        if prompts_df.empty:
+            id_mask = id_mask | (prompts_df["code"].astype("string") == str(id))
+        mask &= id_mask
+        if not mask.any():
             raise LLMExerException(f"No experiment row found with id '{id}'.")
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    output_path = os.path.join(
-        experiment_subdir_path, f"experiment_{eid}_results_{ts}.csv"
-    )
+    run_df = prompts_df[mask].reset_index(drop=True)
+
+    # A single, stable results file per experiment (no per-run timestamp).
+    results_path = os.path.join(experiment_subdir_path, f"experiment_{eid}_results.csv")
     cprint(
-        f"Output results will be saved into: [bold yellow]{output_path}[/bold yellow]"
+        f"Output results will be saved into: [bold yellow]{results_path}[/bold yellow]"
     )
 
     if not settings.dry_run:
@@ -517,12 +517,13 @@ def run(
         cprint(
             f"JSON responses will be saved into: [bold yellow]{responses_dir}[/bold yellow]"
         )
+        # Retain results from earlier runs for rows not executed this time.
+        manager.merge_results(results_path)
 
-    total_runs = len(prompts_df)
+    total_runs = len(run_df)
     cprint(f"Total experiments to run: [bold green]{total_runs}[/bold green]")
 
-    all_rows = []
-    for index, p_row in prompts_df.iterrows():
+    for index, p_row in run_df.iterrows():
         current_run_info = f"[[green]{index+1}[/green]/[cyan]{total_runs}[/cyan]]"
         experiment_info = f"[[yellow]{p_row['code']}[/yellow]]"
         run_info_prefix = f"{current_run_info}{experiment_info}"
@@ -545,7 +546,6 @@ def run(
             "status": status,
             "timestamp": experiment.timestamp,
         }
-        all_rows.append(experiment.to_dict())
 
         # Save individual JSON response
         file_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
@@ -561,11 +561,10 @@ def run(
         cprint(f"{run_info_prefix} finished {run_status_info}")
 
     if not settings.dry_run:
-        results_df = pd.DataFrame(all_rows)
-        results_df.to_csv(output_path, index=False, sep=";", encoding="utf-8")
-        output_filename = os.path.basename(output_path)
+        manager.save_results(results_path)
+        output_filename = os.path.basename(results_path)
         cprint(
-            f"Saved [bold green]{len(all_rows)}[/bold green] result(s) → "
+            f"Saved [bold green]{total_runs}[/bold green] result(s) → "
             f"[bold yellow]{output_filename}[/bold yellow]"
         )
 

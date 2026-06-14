@@ -10,6 +10,7 @@ report aggregate statistics over the whole file.
 
 import json
 import math
+import os
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Optional
 
@@ -220,6 +221,63 @@ class ExperimentsManager:
                 "Nothing has been loaded yet — call load() before sync()."
             )
         return self.unload(path)
+
+    # ------------------------------------------------------------- results
+    def results_path(self) -> str:
+        """Derive the single results-file path for the loaded experiment.
+
+        Given a loaded ``<dir>/<stem>.csv`` returns ``<dir>/<stem>_results.csv``.
+        Idempotent: a path already ending in ``_results.csv`` is returned as-is.
+        """
+
+        if not self.file:
+            raise LLMExerException(
+                "Nothing has been loaded yet — call load() before results_path()."
+            )
+        stem, ext = os.path.splitext(self.file)
+        if stem.endswith("_results"):
+            return self.file
+        return f"{stem}_results{ext or '.csv'}"
+
+    def merge_results(self, results_file: Optional[str] = None) -> None:
+        """Merge results from an existing results file into the loaded DataFrame.
+
+        Copies each ``_RESULT_COLUMNS`` value from a prior results file onto the
+        matching rows of ``self.df`` (keyed by ``ID``, falling back to ``code``),
+        filling only where the prior file has a value. This preserves results
+        from earlier runs when only a subset of rows is run now. No-op when the
+        results file does not exist.
+        """
+
+        self._require_loaded()
+        path = results_file or self.results_path()
+        if not path or not os.path.exists(path):
+            return
+
+        prior = pd.read_csv(path, sep=";", encoding="utf-8")
+        key = "ID" if ("ID" in self.df.columns and "ID" in prior.columns) else "code"
+        if key not in self.df.columns or key not in prior.columns:
+            return
+
+        prior = prior.drop_duplicates(subset=key, keep="last")
+        prior_keyed = prior.set_index(prior[key].astype("string"))
+        self_keys = self.df[key].astype("string")
+
+        for column in _RESULT_COLUMNS:
+            if column not in prior.columns:
+                continue
+            if column not in self.df.columns:
+                self.df[column] = pd.Series([None] * len(self.df), dtype=object)
+            mapped = self_keys.map(prior_keyed[column])
+            self.df[column] = mapped.where(mapped.notna(), self.df[column])
+
+    def save_results(self, results_file: Optional[str] = None) -> str:
+        """Write the whole DataFrame to the single results file.
+
+        Defaults to :meth:`results_path`. Thin wrapper over :meth:`unload`.
+        """
+
+        return self.unload(results_file or self.results_path())
 
     # -------------------------------------------------------------- running
     def run(self, id_experiment: Any) -> Experiment:

@@ -137,9 +137,7 @@ def test_run_dry_run_no_files_written(experiment_with_csvs, mock_llm_mapper):
 
     assert result.exit_code == 0
     # No results CSV written
-    assert not any(
-        f.startswith(f"experiment_{eid}_results_") for f in os.listdir(exp_subdir)
-    )
+    assert not any(f == f"experiment_{eid}_results.csv" for f in os.listdir(exp_subdir))
     # No responses directory created
     assert not (exp_subdir / "responses").exists()
 
@@ -190,7 +188,7 @@ def test_run_creates_results_csv(experiment_with_csvs, mock_llm_mapper):
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f.startswith(f"experiment_{eid}_results_") and f.endswith(".csv")
+        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
     ]
     assert len(results_files) == 1
 
@@ -214,7 +212,7 @@ def test_run_results_csv_has_correct_columns(experiment_with_csvs, mock_llm_mapp
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f.startswith(f"experiment_{eid}_results_") and f.endswith(".csv")
+        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
     ]
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
 
@@ -255,7 +253,7 @@ def test_run_results_csv_row_count(experiment_with_csvs, mock_llm_mapper):
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f.startswith(f"experiment_{eid}_results_") and f.endswith(".csv")
+        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
     ]
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
     assert len(df) == 1
@@ -374,7 +372,7 @@ def test_run_failed_call_still_writes_row(experiment_with_csvs, monkeypatch):
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f.startswith(f"experiment_{eid}_results_") and f.endswith(".csv")
+        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
     ]
     assert len(results_files) == 1
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
@@ -630,7 +628,7 @@ def experiment_with_two_provider_rows(experiments_dir, mock_llm_mapper):
 def test_run_filter_provider_runs_only_matching_rows(
     experiment_with_two_provider_rows, mock_llm_mapper
 ):
-    """--filter-provider ollama should produce a results CSV with only ollama rows."""
+    """--filter-provider ollama runs only ollama rows but persists the full set."""
     eid, exp_subdir = experiment_with_two_provider_rows
 
     result = runner.invoke(
@@ -651,12 +649,16 @@ def test_run_filter_provider_runs_only_matching_rows(
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f.startswith(f"experiment_{eid}_results_") and f.endswith(".csv")
+        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
     ]
     assert len(results_files) == 1
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
-    assert len(df) == 1
-    assert str(df["param_provider"].iloc[0]).lower() == "ollama"
+    # The single results file keeps every row; only the ollama row was run.
+    assert len(df) == 2
+    ollama_row = df[df["param_provider"].str.lower() == "ollama"].iloc[0]
+    openai_row = df[df["param_provider"].str.lower() == "openai"].iloc[0]
+    assert ollama_row["status"] == "success"
+    assert pd.isna(openai_row["status"])
 
 
 def test_run_filter_provider_no_match_exits_cleanly(
@@ -683,7 +685,7 @@ def test_run_filter_provider_no_match_exits_cleanly(
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f.startswith(f"experiment_{eid}_results_") and f.endswith(".csv")
+        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
     ]
     assert len(results_files) == 0
     assert "nothing to run" in result.output.lower()
@@ -713,11 +715,13 @@ def test_run_filter_provider_case_insensitive(
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f.startswith(f"experiment_{eid}_results_") and f.endswith(".csv")
+        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
     ]
     assert len(results_files) == 1
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
-    assert len(df) == 1
+    assert len(df) == 2
+    ollama_row = df[df["param_provider"].str.lower() == "ollama"].iloc[0]
+    assert ollama_row["status"] == "success"
 
 
 def test_run_filter_provider_dry_run_shows_filtered_count(
@@ -744,3 +748,43 @@ def test_run_filter_provider_dry_run_shows_filtered_count(
     assert result.exit_code == 0
     # Should mention 1 (filtered count), not 2 (total)
     assert "1" in result.output
+
+
+def test_run_sequential_filtered_runs_merge_into_one_file(
+    experiment_with_two_provider_rows, mock_llm_mapper
+):
+    """Two filtered runs leave a single results file with both providers' rows filled."""
+    eid, exp_subdir = experiment_with_two_provider_rows
+
+    for provider in ("ollama", "openai"):
+        result = runner.invoke(
+            app,
+            [
+                "experiment",
+                "run",
+                "--eid",
+                eid,
+                "--file",
+                "experiment_20240101-abcd1234.csv",
+                "--filter-provider",
+                provider,
+            ],
+        )
+        assert result.exit_code == 0
+
+    # Exactly one results file exists after both runs.
+    results_files = [
+        f
+        for f in os.listdir(exp_subdir)
+        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
+    ]
+    assert len(results_files) == 1
+    df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
+    assert len(df) == 2
+    # Both rows are now populated (ollama from run 1, openai from run 2).
+    assert (
+        df[df["param_provider"].str.lower() == "ollama"].iloc[0]["status"] == "success"
+    )
+    assert (
+        df[df["param_provider"].str.lower() == "openai"].iloc[0]["status"] == "success"
+    )
