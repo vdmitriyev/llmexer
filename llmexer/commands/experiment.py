@@ -37,12 +37,10 @@ class SortBy(str, Enum):
     date = "date"
 
 
-def _resolve_experiment_csv(eid: str, file: str) -> tuple[str, str]:
-    """Resolve and validate a generated experiment CSV path for an experiment.
+def _experiment_subdir(eid: str) -> str:
+    """Return the ``experiment/`` subdir for an experiment, raising if missing.
 
-    Returns ``(file_path, experiment_subdir_path)``. Raises ``LLMExerException``
-    if the experiment is not initialised, no file is given, or the file is
-    missing.
+    Raises ``LLMExerException`` if the experiment has not been initialised.
     """
 
     experiment_path = get_experiment_directory_path(eid)
@@ -52,6 +50,30 @@ def _resolve_experiment_csv(eid: str, file: str) -> tuple[str, str]:
             f"Experiment '{eid}' has not been initialised. "
             f"Run `experiment init --eid {eid}` first."
         )
+    return experiment_subdir_path
+
+
+def _find_results_files(experiment_subdir_path: str) -> list[str]:
+    """List results CSVs (``experiment_*_results.csv``) in the experiment subdir."""
+
+    if not os.path.exists(experiment_subdir_path):
+        return []
+    return sorted(
+        f
+        for f in os.listdir(experiment_subdir_path)
+        if f.startswith("experiment_") and f.endswith("_results.csv")
+    )
+
+
+def _resolve_experiment_csv(eid: str, file: str) -> tuple[str, str]:
+    """Resolve and validate a generated experiment CSV path for an experiment.
+
+    Returns ``(file_path, experiment_subdir_path)``. Raises ``LLMExerException``
+    if the experiment is not initialised, no file is given, or the file is
+    missing.
+    """
+
+    experiment_subdir_path = _experiment_subdir(eid)
 
     if file is None:
         raise LLMExerException(
@@ -505,8 +527,9 @@ def run(
 
     run_df = prompts_df[mask].reset_index(drop=True)
 
-    # A single, stable results file per experiment (no per-run timestamp).
-    results_path = os.path.join(experiment_subdir_path, f"experiment_{eid}_results.csv")
+    # A single, stable results file named after the generated input file
+    # (e.g. experiment_<X>.csv -> experiment_<X>_results.csv), no per-run timestamp.
+    results_path = manager.results_path()
     cprint(
         f"Output results will be saved into: [bold yellow]{results_path}[/bold yellow]"
     )
@@ -579,13 +602,33 @@ def stats(
     file: str = typer.Option(
         None,
         "--file",
-        help="Path to a generated experiment_NAME.csv (or its results CSV).",
+        help="CSV to read stats from. Defaults to the single experiment_<eid>_results.csv.",
     ),
 ) -> None:
-    """Show aggregate statistics for a generated experiment CSV."""
+    """Show aggregate statistics for an experiment's results.
+
+    Defaults to the single ``experiment_<eid>_results.csv`` produced by
+    ``experiment run``; pass ``--file`` to inspect a specific CSV instead.
+    """
 
     eid = get_proper_eid(eid)
-    file_path, _ = _resolve_experiment_csv(eid, file)
+    if file is not None:
+        file_path, _ = _resolve_experiment_csv(eid, file)
+    else:
+        experiment_subdir_path = _experiment_subdir(eid)
+        results_files = _find_results_files(experiment_subdir_path)
+        if not results_files:
+            raise LLMExerException(
+                f"No results file found for experiment '{eid}'. "
+                f"Run `experiment run --eid {eid}` first."
+            )
+        if len(results_files) > 1:
+            joined = ", ".join(results_files)
+            raise LLMExerException(
+                f"Multiple results files found for experiment '{eid}': {joined}. "
+                f"Pass --file to choose one."
+            )
+        file_path = os.path.join(experiment_subdir_path, results_files[0])
 
     from llmexer.base.llm_manager import ExperimentsManager
 

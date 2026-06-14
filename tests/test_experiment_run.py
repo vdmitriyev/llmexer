@@ -34,6 +34,9 @@ _EXPERIMENT_CSV_ROW_OPENAI = (
     "openai-default;gpt-4o;openai;0.7;1.0;512;;;;42;\n"
 )
 
+# Results are named after the generated input file passed to `run`.
+_RESULTS_CSV_NAME = "experiment_20240101-abcd1234_results.csv"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -137,7 +140,7 @@ def test_run_dry_run_no_files_written(experiment_with_csvs, mock_llm_mapper):
 
     assert result.exit_code == 0
     # No results CSV written
-    assert not any(f == f"experiment_{eid}_results.csv" for f in os.listdir(exp_subdir))
+    assert not any(f == _RESULTS_CSV_NAME for f in os.listdir(exp_subdir))
     # No responses directory created
     assert not (exp_subdir / "responses").exists()
 
@@ -188,7 +191,7 @@ def test_run_creates_results_csv(experiment_with_csvs, mock_llm_mapper):
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
+        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
     ]
     assert len(results_files) == 1
 
@@ -212,7 +215,7 @@ def test_run_results_csv_has_correct_columns(experiment_with_csvs, mock_llm_mapp
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
+        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
     ]
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
 
@@ -253,7 +256,7 @@ def test_run_results_csv_row_count(experiment_with_csvs, mock_llm_mapper):
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
+        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
     ]
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
     assert len(df) == 1
@@ -372,7 +375,7 @@ def test_run_failed_call_still_writes_row(experiment_with_csvs, monkeypatch):
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
+        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
     ]
     assert len(results_files) == 1
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
@@ -649,7 +652,7 @@ def test_run_filter_provider_runs_only_matching_rows(
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
+        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
     ]
     assert len(results_files) == 1
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
@@ -685,7 +688,7 @@ def test_run_filter_provider_no_match_exits_cleanly(
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
+        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
     ]
     assert len(results_files) == 0
     assert "nothing to run" in result.output.lower()
@@ -715,7 +718,7 @@ def test_run_filter_provider_case_insensitive(
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
+        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
     ]
     assert len(results_files) == 1
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
@@ -776,7 +779,7 @@ def test_run_sequential_filtered_runs_merge_into_one_file(
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
+        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
     ]
     assert len(results_files) == 1
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")

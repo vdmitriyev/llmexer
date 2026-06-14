@@ -381,6 +381,60 @@ def test_cli_stats_command(experiments_dir):
     assert "ollama" in result.output
 
 
+def test_cli_stats_defaults_to_results_file(experiments_dir, mock_providers):
+    """With no --file, stats auto-discovers the single results file."""
+    eid = "stats-default-exp"
+    exp_subdir = experiments_dir / eid / "experiment"
+    os.makedirs(exp_subdir)
+    (exp_subdir / "experiment_test.csv").write_text(
+        _HEADER + _ROW_OLLAMA + _ROW_OPENAI, encoding="utf-8"
+    )
+
+    # Produce the results file (named after the input file).
+    run_result = runner.invoke(
+        app,
+        ["experiment", "run", "--eid", eid, "--file", "experiment_test.csv"],
+    )
+    assert run_result.exit_code == 0, run_result.exception
+    assert (exp_subdir / "experiment_test_results.csv").exists()
+
+    # No --file: stats should pick up the results file and show completed > 0.
+    result = runner.invoke(app, ["experiment", "stats", "--eid", eid])
+    assert result.exit_code == 0, result.exception
+    assert "completed" in result.output
+    assert "ollama" in result.output
+
+
+def test_cli_stats_missing_results_file_raises(experiments_dir):
+    """stats with no --file and no results file errors, pointing to `run`."""
+    eid = "stats-no-results"
+    exp_subdir = experiments_dir / eid / "experiment"
+    os.makedirs(exp_subdir)
+
+    result = runner.invoke(app, ["experiment", "stats", "--eid", eid])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, LLMExerException)
+    assert "run" in str(result.exception).lower()
+
+
+def test_cli_stats_multiple_results_requires_file(experiments_dir):
+    """stats with no --file errors when several results files exist."""
+    eid = "stats-multi"
+    exp_subdir = experiments_dir / eid / "experiment"
+    os.makedirs(exp_subdir)
+    (exp_subdir / "experiment_aaa_results.csv").write_text(
+        _HEADER + _ROW_OLLAMA, encoding="utf-8"
+    )
+    (exp_subdir / "experiment_bbb_results.csv").write_text(
+        _HEADER + _ROW_OPENAI, encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["experiment", "stats", "--eid", eid])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, LLMExerException)
+    assert "--file" in str(result.exception)
+
+
 def test_cli_run_single_id(experiments_dir, mock_providers):
     eid = "single-id-exp"
     exp_subdir = experiments_dir / eid / "experiment"
@@ -407,7 +461,7 @@ def test_cli_run_single_id(experiments_dir, mock_providers):
     results_files = [
         f
         for f in os.listdir(exp_subdir)
-        if f == f"experiment_{eid}_results.csv" and f.endswith(".csv")
+        if f == "experiment_test_results.csv" and f.endswith(".csv")
     ]
     assert len(results_files) == 1
     df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
