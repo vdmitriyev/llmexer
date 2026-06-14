@@ -2,7 +2,7 @@
 
 import pytest
 
-from llmexer.base.provider import (
+from llmexer.base.llm_provider import (
     CallerState,
     CallerStats,
     LLMProviderBase,

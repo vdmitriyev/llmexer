@@ -2,6 +2,15 @@
 History
 =======
 
+0.2.17 (2026-06-14)
+-------------------
+
+* Add ``Experiment`` dataclass and ``ExperimentsManager`` mapper in ``llmexer/base/llm_manager.py``: ``Experiment`` represents a single generated-CSV combination (prompt, model, provider, params, plus result/provider-state fields) and serialises via ``to_json(file)`` (``indent=4``) and ``to_yaml(file)`` — both default to a filename derived from ``experiment_id`` when ``file`` is omitted; ``ExperimentsManager`` owns a generated ``experiment_*.csv`` as a pandas DataFrame with ``load(file)`` / ``unload(file)`` / ``sync(file)``, runs a single combination by id via ``run(id_experiment)`` (resolving the right provider and copying ``CallerState`` / ``CallerStats`` back into the row), and reports aggregate ``stats()`` (completed, running, errors, pending, total tokens, per-provider and per-model counts)
+* Add ``experiment stats`` command: loads a generated ``experiment_*.csv`` (or a results CSV) and renders aggregate statistics as Rich tables (totals plus provider/model breakdowns)
+* Add ``--id`` option to ``experiment run`` to execute only a single combination by its ``ID`` (or ``code``) instead of all rows; ``experiment run`` now delegates execution to ``ExperimentsManager``
+* Refactor ``llmexer/base`` module layout: split the former ``llm.py`` into ``llm_core.py`` (the ``LLMRunResult`` result contract) and ``llm_provider.py`` (provider configuration ``URL_MAP`` / ``resolve_provider_config`` plus the ``LLMRequestsMapper`` and ``OllamaProvider`` implementations); the abstract ``LLMProviderBase`` and supporting types were renamed from ``provider.py`` to ``llm_provider.py``
+* Add ``PyYAML`` as an explicit dependency (previously only transitive) to back ``Experiment.to_yaml``
+
 0.2.16 (2026-05-10)
 -------------------
 

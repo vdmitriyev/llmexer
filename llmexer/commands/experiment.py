@@ -37,6 +37,36 @@ class SortBy(str, Enum):
     date = "date"
 
 
+def _resolve_experiment_csv(eid: str, file: str) -> tuple[str, str]:
+    """Resolve and validate a generated experiment CSV path for an experiment.
+
+    Returns ``(file_path, experiment_subdir_path)``. Raises ``LLMExerException``
+    if the experiment is not initialised, no file is given, or the file is
+    missing.
+    """
+
+    experiment_path = get_experiment_directory_path(eid)
+    experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
+    if not os.path.exists(experiment_subdir_path):
+        raise LLMExerException(
+            f"Experiment '{eid}' has not been initialised. "
+            f"Run `experiment init --eid {eid}` first."
+        )
+
+    if file is None:
+        raise LLMExerException(
+            f"No experiment CSV provided. Run `experiment generate --eid {eid}` first."
+        )
+    file_path = (
+        file if os.path.isabs(file) else os.path.join(experiment_subdir_path, file)
+    )
+
+    if not os.path.exists(file_path):
+        raise LLMExerException(f"Experiment CSV not found: '{file_path}'.")
+
+    return file_path, experiment_subdir_path
+
+
 @app.command()
 def create(
     id: str = typer.Option(
@@ -423,41 +453,29 @@ def run(
         help="Only run rows whose param_provider matches this value (case-insensitive). "
         "E.g. --filter-provider ollama",
     ),
+    id: str = typer.Option(
+        None,
+        "--id",
+        help="Run only a single combination by its ID (or code) instead of all rows.",
+    ),
 ) -> None:
     """Run all rows in the generated experiment CSV and save results"""
 
     eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
-
-    experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
-    if not os.path.exists(experiment_subdir_path):
-        raise LLMExerException(
-            f"Experiment '{eid}' has not been initialised. Run `experiment init --eid {eid}` first."
-        )
-
-    if file is None:
-        raise LLMExerException(
-            f"No experiment CSV provided. Run `experiment generate --eid {eid}` first."
-        )
-    elif os.path.isabs(file):
-        file_path = file
-    else:
-        file_path = os.path.join(experiment_subdir_path, file)
-
-    if not os.path.exists(file_path):
-        raise LLMExerException(f"Experiment CSV not found: '{file_path}'.")
+    file_path, experiment_subdir_path = _resolve_experiment_csv(eid, file)
 
     # Lazy import to keep openai optional
     try:
-        from llmexer.base.llm import URL_MAP, LLMRequestsMapper, OllamaProvider
-        from llmexer.base.provider import CallerState, ProviderAuth
+        import llmexer.base.llm_provider  # noqa: F401  (validates LLM deps importable)
+        from llmexer.base.llm_manager import ExperimentsManager
     except ImportError as exc:
         raise LLMExerException(
             "Missing required packages for LLM calls. "
             "Install them with: pip install openai pydantic"
         ) from exc
 
-    prompts_df = pd.read_csv(file_path, sep=";", encoding="utf-8")
+    manager = ExperimentsManager()
+    prompts_df = manager.load(file_path)
 
     if prompts_df.empty:
         cprint(
@@ -467,13 +485,23 @@ def run(
 
     if filter_provider is not None:
         mask = prompts_df["param_provider"].str.lower() == filter_provider.lower()
-        prompts_df = prompts_df[mask].reset_index(drop=True)
+        manager.df = prompts_df[mask].reset_index(drop=True)
+        prompts_df = manager.df
         if prompts_df.empty:
             cprint(
                 f"[bold yellow]Warning:[/bold yellow] No rows found for provider "
                 f"'{filter_provider}' — nothing to run."
             )
             return
+
+    if id is not None:
+        mask = prompts_df["ID"].astype("string") == str(id)
+        if "code" in prompts_df.columns:
+            mask = mask | (prompts_df["code"].astype("string") == str(id))
+        manager.df = prompts_df[mask].reset_index(drop=True)
+        prompts_df = manager.df
+        if prompts_df.empty:
+            raise LLMExerException(f"No experiment row found with id '{id}'.")
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     output_path = os.path.join(
@@ -500,59 +528,24 @@ def run(
         run_info_prefix = f"{current_run_info}{experiment_info}"
         cprint(f"{run_info_prefix} running")
         provider = str(p_row["param_provider"]).lower()
-        provider_upper = provider.upper()
-        base_url = os.environ.get(f"PROVIDER_{provider_upper}_URL") or URL_MAP.get(
-            provider
-        )
-        resolved_key = os.environ.get(f"PROVIDER_{provider_upper}_KEY") or "na"
 
         if settings.dry_run:
             continue
 
-        if provider == "ollama":
-            caller = OllamaProvider(
-                provider=provider,
-                auth=ProviderAuth(api_key=resolved_key),
-                base_url=base_url or URL_MAP["ollama"],
-            )
-            resp = caller.execute(p_row["prompt"], p_row.to_dict())
-            response_text = resp.text
-            usage_tokens = resp.usage_tokens
-            status = (
-                f"Error: {resp.raw}" if caller.state == CallerState.ERROR else "success"
-            )
-            timestamp = datetime.now(timezone.utc).isoformat()
-            json_payload: dict = {
-                "model": str(p_row.get("param_model_name", "")),
-                "provider": provider,
-                "prompt": p_row["prompt"],
-                "profile": str(p_row.get("profile_name", "")),
-                "response_text": response_text,
-                "usage_tokens": usage_tokens,
-                "status": status,
-                "timestamp": timestamp,
-            }
-        else:
-            mapper = LLMRequestsMapper(
-                provider=provider,
-                base_url=base_url,
-                api_key=resolved_key,
-            )
-            result = mapper.execute(p_row["prompt"], p_row.to_dict())
-            response_text = result.response_text
-            usage_tokens = result.usage_tokens
-            status = result.status
-            timestamp = result.timestamp
-            json_payload = result.model_dump()
+        experiment = manager.run(p_row["ID"])
+        status = experiment.status
 
-        combined = {
-            **p_row.to_dict(),
-            "response_text": response_text,
-            "usage_tokens": usage_tokens,
+        json_payload: dict = {
+            "model": experiment.param_model_name or experiment.model_name,
+            "provider": provider,
+            "prompt": experiment.prompt,
+            "profile": experiment.profile_name,
+            "response_text": experiment.response_text,
+            "usage_tokens": experiment.usage_tokens,
             "status": status,
-            "timestamp": timestamp,
+            "timestamp": experiment.timestamp,
         }
-        all_rows.append(combined)
+        all_rows.append(experiment.to_dict())
 
         # Save individual JSON response
         file_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
@@ -575,3 +568,46 @@ def run(
             f"Saved [bold green]{len(all_rows)}[/bold green] result(s) → "
             f"[bold yellow]{output_filename}[/bold yellow]"
         )
+
+
+@app.command()
+def stats(
+    eid: str = typer.Option(
+        None,
+        "--eid",
+        help="Experiment ID. If not provided, uses EXPERIMENT_ID from .env.",
+    ),
+    file: str = typer.Option(
+        None,
+        "--file",
+        help="Path to a generated experiment_NAME.csv (or its results CSV).",
+    ),
+) -> None:
+    """Show aggregate statistics for a generated experiment CSV."""
+
+    eid = get_proper_eid(eid)
+    file_path, _ = _resolve_experiment_csv(eid, file)
+
+    from llmexer.base.llm_manager import ExperimentsManager
+
+    manager = ExperimentsManager()
+    manager.load(file_path)
+    data = manager.stats()
+
+    summary = Table(title=f"Experiment stats — {eid}")
+    summary.add_column("Metric", style="cyan")
+    summary.add_column("Value", justify="right", style="green")
+    for key in ("total", "completed", "running", "errors", "pending", "total_tokens"):
+        summary.add_row(key, str(data[key]))
+    console.print(summary)
+
+    for label, key in (("Providers", "providers"), ("Models", "models")):
+        breakdown = data[key]
+        if not breakdown:
+            continue
+        table = Table(title=label)
+        table.add_column(label.rstrip("s"), style="cyan")
+        table.add_column("Count", justify="right", style="green")
+        for name, count in breakdown.items():
+            table.add_row(name, str(count))
+        console.print(table)

@@ -5,9 +5,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from llmexer.base.llm import OllamaProvider
-from llmexer.base.provider import (
+from llmexer.base.llm_provider import (
     CallerState,
+    OllamaProvider,
     ProviderAuth,
     ProviderRequest,
     ProviderResponse,

@@ -1,17 +1,13 @@
-"""LLM request execution logic for llmexer experiments."""
+"""LLM provider abstractions, configuration, and concrete provider callers."""
 
+import os
 import time
-from dataclasses import asdict, dataclass, field
-from datetime import datetime
-from typing import Any, Dict, Optional
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, Optional, Tuple
 
-from llmexer.base.provider import (
-    CallerState,
-    LLMProviderBase,
-    ProviderAuth,
-    ProviderRequest,
-    ProviderResponse,
-)
+from llmexer.base.llm_core import LLMRunResult
 
 URL_MAP: Dict[str, Optional[str]] = {
     "ollama": "http://localhost:11434/v1",
@@ -21,20 +17,87 @@ URL_MAP: Dict[str, Optional[str]] = {
 }
 
 
-@dataclass
-class LLMRunResult:
-    model: str
-    provider: str
-    prompt: str
-    profile: str
-    parameters: Dict[str, Any]
-    response_text: str
-    usage_tokens: Optional[int] = None
-    status: str = "success"
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+def resolve_provider_config(provider: str) -> Tuple[Optional[str], str]:
+    """Resolve the base URL and API key for a provider.
 
-    def model_dump(self) -> dict:
-        return asdict(self)
+    Resolution order matches the experiment run command:
+      * base URL: ``PROVIDER_<UPPER>_URL`` env var -> ``URL_MAP`` -> ``None``
+      * api key:  ``PROVIDER_<UPPER>_KEY`` env var -> ``"na"``
+
+    Args:
+        provider (str): provider name (e.g. ``ollama``, ``openai``).
+
+    Returns:
+        tuple[str | None, str]: ``(base_url, api_key)``.
+    """
+
+    provider = provider.lower()
+    provider_upper = provider.upper()
+    base_url = os.environ.get(f"PROVIDER_{provider_upper}_URL") or URL_MAP.get(provider)
+    api_key = os.environ.get(f"PROVIDER_{provider_upper}_KEY") or "na"
+    return base_url, api_key
+
+
+class CallerState(str, Enum):
+    STARTED = "started"
+    RUNNING = "running"
+    SUCCESS = "success"
+    ERROR = "error"
+
+
+@dataclass
+class ProviderAuth:
+    api_key: str = "na"
+    extra_headers: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class ProviderRequest:
+    model: str
+    prompt: str
+    params: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ProviderResponse:
+    text: str = ""
+    usage_tokens: Optional[int] = None
+    raw: Optional[Any] = field(default=None, repr=False)
+
+
+@dataclass
+class CallerStats:
+    call_count: int = 0
+    total_tokens: int = 0
+    elapsed_seconds: float = 0.0
+
+
+@dataclass
+class LLMProviderBase(ABC):
+    provider: str
+
+    auth: ProviderAuth = field(default_factory=ProviderAuth)
+    timeout: Optional[float] = None
+
+    data: Optional[dict[str, Any]] = field(default=None, repr=False)
+    request: Optional[ProviderRequest] = field(default=None, repr=False)
+    response: Optional[ProviderResponse] = field(default=None, repr=False)
+    session: Optional[Any] = field(default=None, repr=False)
+
+    state: CallerState = field(default=CallerState.STARTED)
+    stats: CallerStats = field(default_factory=CallerStats)
+
+    @abstractmethod
+    def build_session(self) -> None:
+        """Initialise self.session (e.g. openai.OpenAI client)."""
+
+    @abstractmethod
+    def build_request(self, prompt: str, row: dict[str, Any]) -> ProviderRequest:
+        """Translate prompt + CSV row into a ProviderRequest and set self.request."""
+
+    @abstractmethod
+    def execute(self, prompt: str, row: dict[str, Any]) -> ProviderResponse:
+        """Run the call; update self.state, self.response, self.stats; return ProviderResponse."""
 
 
 class LLMRequestsMapper:
