@@ -45,6 +45,58 @@ _PARAM_COLUMNS = [
     "gemini_thinking_level",
 ]
 
+# --------------------------------------------------------------------- SQLite
+# Schema partition for the per-provider SQLite tables. Each provider table is
+# built from COMMON_IDENTITY_COLUMNS + COMMON_PARAM_COLUMNS + that provider's
+# entry in PROVIDER_PARAM_COLUMNS + RESULT_COLUMNS. This keeps every provider's
+# parameters in its own table (e.g. the openai table has no ollama_* columns).
+
+# Identity / prompt columns shared by every provider table.
+COMMON_IDENTITY_COLUMNS = [
+    "ID",
+    "code",
+    "prompt",
+    "tokens_estimate",
+    "original_data",
+    "model_name",
+    "provider_name",
+    "prompt_hash",
+    "original_data_hash",
+]
+
+# Parameter columns shared by every provider table.
+COMMON_PARAM_COLUMNS = [
+    "profile_name",
+    "param_model_name",
+    "param_provider",
+    "temperature",
+    "top_p",
+    "max_tokens",
+]
+
+# Parameter columns specific to each provider (keyed by lower-cased provider).
+# A provider not listed here gets no extra parameter columns.
+PROVIDER_PARAM_COLUMNS = {
+    "ollama": ["ollama_context_window", "ollama_repeat_penalty"],
+    "vllm": ["vllm_min_p", "vllm_best_of"],
+    "openai": ["openai_seed"],
+    "gemini": ["gemini_thinking_level"],
+}
+
+# Result columns written back once a row has been run. ``response_json`` stores
+# the full per-call JSON payload (the same dict also exported to responses/).
+RESULT_COLUMNS = [
+    "response_text",
+    "usage_tokens",
+    "status",
+    "state",
+    "call_count",
+    "total_tokens",
+    "elapsed_seconds",
+    "timestamp",
+    "response_json",
+]
+
 
 def generate_project_id() -> str:
     """

@@ -1,58 +1,34 @@
-"""Experiment management: ``Experiment`` data class and ``ExperimentsManager`` mapper.
+"""Experiment management: ``Experiment`` data class and ``ExperimentsManager``.
 
-``ExperimentsManager`` owns a generated ``experiment_*.csv`` file as a pandas
-DataFrame (rows = data x prompt x model x params combinations) and acts as a
-*mapper* between that file on disk and in-memory state. It can run a single
-combination by id directly through the existing LLM providers, copy the
-provider's :class:`CallerState` / :class:`CallerStats` back into the row, and
-report aggregate statistics over the whole file.
+An experiment is generated into a per-provider SQLite database (see
+:mod:`llmexer.base.dao`). ``run_experiment_row`` executes a single generated
+row (a plain dict from the DAO) against the right LLM provider and returns an
+:class:`Experiment` carrying the result and provider state. ``ExperimentsManager``
+is a thin DAO-backed convenience wrapper that runs a row by id and reports
+aggregate statistics.
 """
 
 import json
-import math
-import os
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-import pandas as pd
-
 import llmexer.base.llm_provider as llm_module
+from llmexer.base.dao import ExperimentDAO
 from llmexer.base.llm_provider import CallerState, ProviderAuth
 from llmexer.exceptions import LLMExerException
 from llmexer.logger import get_logger
 
 logger = get_logger()
 
-# Columns appended to a generated row once it has been run.
-_RESULT_COLUMNS = [
-    "response_text",
-    "usage_tokens",
-    "status",
-    "state",
-    "call_count",
-    "total_tokens",
-    "elapsed_seconds",
-    "timestamp",
-]
-
-
-def _clean(value: Any) -> Any:
-    """Normalise pandas/NaN values into plain Python (``None`` for missing)."""
-
-    if value is None:
-        return None
-    if isinstance(value, float) and math.isnan(value):
-        return None
-    return value
-
 
 @dataclass
 class Experiment:
-    """A single generated-experiment combination (one row of the CSV).
+    """A single generated-experiment combination (one row of a provider table).
 
     Carries the rendered prompt, the resolved model/provider/parameters, the
     LLM result, and the provider execution state. The full original row is kept
-    in :attr:`raw` so that nothing from the source file is lost on round-trips.
+    in :attr:`raw` so that nothing from the source is lost on round-trips.
     """
 
     experiment_id: str = ""  # maps to the unique ``code`` column
@@ -82,12 +58,12 @@ class Experiment:
 
     @classmethod
     def from_row(cls, row: Dict[str, Any]) -> "Experiment":
-        """Build an :class:`Experiment` from a DataFrame row dict.
+        """Build an :class:`Experiment` from a row dict.
 
-        Tolerates rows that have not been run yet (missing result columns).
+        Tolerates rows that have not been run yet (NULL result columns).
         """
 
-        row = {k: _clean(v) for k, v in dict(row).items()}
+        row = dict(row)
         experiment_id = str(row.get("code") or row.get("ID") or "")
         return cls(
             experiment_id=experiment_id,
@@ -167,255 +143,144 @@ class Experiment:
         return path
 
 
+def build_response_payload(experiment: Experiment, provider: str) -> Dict[str, Any]:
+    """Build the per-call JSON payload exported to ``responses/`` and the DB."""
+
+    return {
+        "model": experiment.param_model_name or experiment.model_name,
+        "provider": provider,
+        "prompt": experiment.prompt,
+        "profile": experiment.profile_name,
+        "response_text": experiment.response_text,
+        "usage_tokens": experiment.usage_tokens,
+        "status": experiment.status,
+        "timestamp": experiment.timestamp,
+    }
+
+
+def result_values(experiment: Experiment, provider: str) -> Dict[str, Any]:
+    """Build the result-column dict (incl. ``response_json``) for a DB update."""
+
+    payload = build_response_payload(experiment, provider)
+    return {
+        "response_text": experiment.response_text,
+        "usage_tokens": experiment.usage_tokens,
+        "status": experiment.status,
+        "state": experiment.state,
+        "call_count": experiment.call_count,
+        "total_tokens": experiment.total_tokens,
+        "elapsed_seconds": experiment.elapsed_seconds,
+        "timestamp": experiment.timestamp,
+        "response_json": json.dumps(payload, ensure_ascii=False),
+    }
+
+
+def run_experiment_row(row: Dict[str, Any]) -> Experiment:
+    """Execute a single generated row against its provider and return results.
+
+    Resolves the provider from ``param_provider``, runs the LLM call, and copies
+    the provider's :class:`CallerState`/:class:`CallerStats` into the returned
+    :class:`Experiment`. Pure: it does not persist anything.
+    """
+
+    experiment = Experiment.from_row(row)
+    provider = (experiment.param_provider or "").lower()
+    base_url, api_key = llm_module.resolve_provider_config(provider)
+
+    if provider == "ollama":
+        caller = llm_module.OllamaProvider(
+            provider=provider,
+            auth=ProviderAuth(api_key=api_key),
+            base_url=base_url or llm_module.URL_MAP["ollama"],
+        )
+        resp = caller.execute(experiment.prompt, row)
+        experiment.response_text = resp.text
+        experiment.usage_tokens = resp.usage_tokens
+        experiment.status = (
+            f"Error: {resp.raw}" if caller.state == CallerState.ERROR else "success"
+        )
+        state = getattr(caller, "state", CallerState.SUCCESS)
+        experiment.state = getattr(state, "value", str(state))
+        stats = getattr(caller, "stats", None)
+        experiment.call_count = getattr(stats, "call_count", 1)
+        experiment.total_tokens = getattr(
+            stats, "total_tokens", experiment.usage_tokens or 0
+        )
+        experiment.elapsed_seconds = getattr(stats, "elapsed_seconds", 0.0)
+        experiment.timestamp = datetime.now(timezone.utc).isoformat()
+    else:
+        mapper = llm_module.LLMRequestsMapper(
+            provider=provider, base_url=base_url, api_key=api_key
+        )
+        result = mapper.execute(experiment.prompt, row)
+        experiment.response_text = result.response_text
+        experiment.usage_tokens = result.usage_tokens
+        experiment.status = result.status
+        # LLMRequestsMapper has no CallerState/CallerStats; derive them.
+        experiment.state = (
+            CallerState.SUCCESS.value
+            if result.status == "success"
+            else CallerState.ERROR.value
+        )
+        experiment.call_count = 1
+        experiment.total_tokens = result.usage_tokens or 0
+        experiment.timestamp = result.timestamp
+
+    return experiment
+
+
 class ExperimentsManager:
-    """Mapper that manages a generated ``experiment_*.csv`` as a DataFrame.
+    """DAO-backed convenience wrapper over a single experiment database.
 
     Typical lifecycle::
 
-        mgr = ExperimentsManager()
-        mgr.load("experiment_<eid>.csv")
-        mgr.run(1)            # run a single combination by ID, write state back
-        mgr.sync()            # flush changes back to the loaded file
-        mgr.stats()           # aggregate statistics
+        mgr = ExperimentsManager(db_path)
+        mgr.run(1)        # run a single combination by ID (or code), persist result
+        mgr.stats()       # aggregate statistics across all provider tables
     """
 
-    def __init__(self, file: Optional[str] = None):
-        self.file: Optional[str] = file
-        self.df: Optional[pd.DataFrame] = None
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path: Optional[str] = db_path
+        self.dao: Optional[ExperimentDAO] = ExperimentDAO(db_path) if db_path else None
 
-    # ------------------------------------------------------------------ I/O
-    def load(self, file: Optional[str] = None) -> pd.DataFrame:
-        """Load the experiments CSV from disk into a DataFrame."""
+    def open(self, db_path: Optional[str] = None) -> ExperimentDAO:
+        """Open (reflect) an existing experiment database."""
 
-        path = file or self.file
+        path = db_path or self.db_path
         if not path:
-            raise LLMExerException("No file provided to load experiments from.")
-        self.df = pd.read_csv(path, sep=";", encoding="utf-8")
-        self.file = path
-        logger.info(f"Loaded {len(self.df)} experiment row(s) from: '{path}'")
-        return self.df
+            raise LLMExerException("No database provided to open experiments from.")
+        self.dao = ExperimentDAO(path)
+        self.db_path = path
+        return self.dao
 
-    def unload(self, file: Optional[str] = None) -> str:
-        """Write the whole DataFrame to disk (defaults to the loaded file)."""
-
-        self._require_loaded()
-        path = file or self.file
-        if not path:
-            raise LLMExerException("No file provided to unload experiments to.")
-        self.df.to_csv(path, index=False, sep=";", encoding="utf-8")
-        logger.info(f"Unloaded {len(self.df)} experiment row(s) to: '{path}'")
-        return path
-
-    def sync(self, file: Optional[str] = None) -> str:
-        """Flush current in-memory state back to the loaded source file.
-
-        ``sync`` always persists to the originally loaded file (unless ``file``
-        is given explicitly), whereas :meth:`unload` is a plain dump to an
-        arbitrary path.
-        """
-
-        self._require_loaded()
-        path = file or self.file
-        if not path:
+    def _require_open(self) -> None:
+        if self.dao is None:
             raise LLMExerException(
-                "Nothing has been loaded yet — call load() before sync()."
+                "No experiment database opened. Pass db_path or call open() first."
             )
-        return self.unload(path)
 
-    # ------------------------------------------------------------- results
-    def results_path(self) -> str:
-        """Derive the single results-file path for the loaded experiment.
-
-        Given a loaded ``<dir>/<stem>.csv`` returns ``<dir>/<stem>_results.csv``.
-        Idempotent: a path already ending in ``_results.csv`` is returned as-is.
-        """
-
-        if not self.file:
-            raise LLMExerException(
-                "Nothing has been loaded yet — call load() before results_path()."
-            )
-        stem, ext = os.path.splitext(self.file)
-        if stem.endswith("_results"):
-            return self.file
-        return f"{stem}_results{ext or '.csv'}"
-
-    def merge_results(self, results_file: Optional[str] = None) -> None:
-        """Merge results from an existing results file into the loaded DataFrame.
-
-        Copies each ``_RESULT_COLUMNS`` value from a prior results file onto the
-        matching rows of ``self.df`` (keyed by ``ID``, falling back to ``code``),
-        filling only where the prior file has a value. This preserves results
-        from earlier runs when only a subset of rows is run now. No-op when the
-        results file does not exist.
-        """
-
-        self._require_loaded()
-        path = results_file or self.results_path()
-        if not path or not os.path.exists(path):
-            return
-
-        prior = pd.read_csv(path, sep=";", encoding="utf-8")
-        key = "ID" if ("ID" in self.df.columns and "ID" in prior.columns) else "code"
-        if key not in self.df.columns or key not in prior.columns:
-            return
-
-        prior = prior.drop_duplicates(subset=key, keep="last")
-        prior_keyed = prior.set_index(prior[key].astype("string"))
-        self_keys = self.df[key].astype("string")
-
-        for column in _RESULT_COLUMNS:
-            if column not in prior.columns:
-                continue
-            if column not in self.df.columns:
-                self.df[column] = pd.Series([None] * len(self.df), dtype=object)
-            mapped = self_keys.map(prior_keyed[column])
-            self.df[column] = mapped.where(mapped.notna(), self.df[column])
-
-    def save_results(self, results_file: Optional[str] = None) -> str:
-        """Write the whole DataFrame to the single results file.
-
-        Defaults to :meth:`results_path`. Thin wrapper over :meth:`unload`.
-        """
-
-        return self.unload(results_file or self.results_path())
-
-    # -------------------------------------------------------------- running
     def run(self, id_experiment: Any) -> Experiment:
-        """Run a single experiment combination by id, writing state back.
+        """Run a single experiment combination by id, persisting the result."""
 
-        Locates the row whose ``ID`` (or ``code``) matches ``id_experiment``,
-        resolves the right provider, executes the LLM call, and copies the
-        provider's :class:`CallerState` and :class:`CallerStats` into the row.
-        """
-
-        self._require_loaded()
-        idx = self._locate(id_experiment)
-        row = {k: _clean(v) for k, v in self.df.loc[idx].to_dict().items()}
-
-        experiment = Experiment.from_row(row)
-        provider = (experiment.param_provider or "").lower()
-        base_url, api_key = llm_module.resolve_provider_config(provider)
-
-        if provider == "ollama":
-            caller = llm_module.OllamaProvider(
-                provider=provider,
-                auth=ProviderAuth(api_key=api_key),
-                base_url=base_url or llm_module.URL_MAP["ollama"],
+        self._require_open()
+        rows = self.dao.fetch_rows(id_experiment=id_experiment)
+        if not rows:
+            raise LLMExerException(
+                f"No experiment row found with id '{id_experiment}'."
             )
-            resp = caller.execute(experiment.prompt, row)
-            experiment.response_text = resp.text
-            experiment.usage_tokens = resp.usage_tokens
-            experiment.status = (
-                f"Error: {resp.raw}" if caller.state == CallerState.ERROR else "success"
-            )
-            state = getattr(caller, "state", CallerState.SUCCESS)
-            experiment.state = getattr(state, "value", str(state))
-            stats = getattr(caller, "stats", None)
-            experiment.call_count = getattr(stats, "call_count", 1)
-            experiment.total_tokens = getattr(
-                stats, "total_tokens", experiment.usage_tokens or 0
-            )
-            experiment.elapsed_seconds = getattr(stats, "elapsed_seconds", 0.0)
-            from datetime import datetime, timezone
 
-            experiment.timestamp = datetime.now(timezone.utc).isoformat()
-        else:
-            mapper = llm_module.LLMRequestsMapper(
-                provider=provider, base_url=base_url, api_key=api_key
-            )
-            result = mapper.execute(experiment.prompt, row)
-            experiment.response_text = result.response_text
-            experiment.usage_tokens = result.usage_tokens
-            experiment.status = result.status
-            # LLMRequestsMapper has no CallerState/CallerStats; derive them.
-            experiment.state = (
-                CallerState.SUCCESS.value
-                if result.status == "success"
-                else CallerState.ERROR.value
-            )
-            experiment.call_count = 1
-            experiment.total_tokens = result.usage_tokens or 0
-            experiment.timestamp = result.timestamp
-
-        self._write_back(idx, experiment)
+        row = rows[0]
+        experiment = run_experiment_row(row)
+        provider = row.get("_provider") or (experiment.param_provider or "").lower()
+        self.dao.update_result(provider, row["ID"], result_values(experiment, provider))
         return experiment
 
-    # -------------------------------------------------------------- stats
     def stats(self) -> Dict[str, Any]:
-        """Return aggregate statistics over the loaded experiments."""
+        """Return aggregate statistics over all provider tables."""
 
-        self._require_loaded()
-        df = self.df
-        total = len(df)
+        self._require_open()
+        return self.dao.stats()
 
-        if "status" in df.columns:
-            status_str = df["status"].astype("string")
-            completed = int((status_str == "success").sum())
-            errors = int(status_str.str.startswith("Error", na=False).sum())
-            pending = int(status_str.isna().sum())
-        else:
-            completed = 0
-            errors = 0
-            pending = total
-
-        running = 0
-        if "state" in df.columns:
-            running = int(
-                (df["state"].astype("string") == CallerState.RUNNING.value).sum()
-            )
-
-        total_tokens = 0
-        if "total_tokens" in df.columns:
-            total_tokens = int(
-                pd.to_numeric(df["total_tokens"], errors="coerce").fillna(0).sum()
-            )
-        elif "usage_tokens" in df.columns:
-            total_tokens = int(
-                pd.to_numeric(df["usage_tokens"], errors="coerce").fillna(0).sum()
-            )
-
-        providers = self._value_counts("param_provider")
-        models = self._value_counts("param_model_name")
-
-        return {
-            "total": total,
-            "completed": completed,
-            "running": running,
-            "errors": errors,
-            "pending": pending,
-            "total_tokens": total_tokens,
-            "providers": providers,
-            "models": models,
-        }
-
-    # ------------------------------------------------------------- helpers
-    def _require_loaded(self) -> None:
-        if self.df is None:
-            raise LLMExerException(
-                "No experiments loaded. Call load() before this operation."
-            )
-
-    def _locate(self, id_experiment: Any) -> Any:
-        """Return the DataFrame index of the row matching ``id_experiment``."""
-
-        for column in ("ID", "code"):
-            if column in self.df.columns:
-                matches = self.df.index[
-                    self.df[column].astype("string") == str(id_experiment)
-                ]
-                if len(matches):
-                    return matches[0]
-        raise LLMExerException(f"No experiment row found with id '{id_experiment}'.")
-
-    def _write_back(self, idx: Any, experiment: Experiment) -> None:
-        for column in _RESULT_COLUMNS:
-            if column not in self.df.columns:
-                self.df[column] = pd.Series([None] * len(self.df), dtype=object)
-                self.df[column] = self.df[column].astype(object)
-            self.df.at[idx, column] = getattr(experiment, column)
-
-    def _value_counts(self, column: str) -> Dict[str, int]:
-        if column not in self.df.columns:
-            return {}
-        counts = self.df[column].astype("string").value_counts(dropna=True)
-        return {str(k): int(v) for k, v in counts.items()}
+    def close(self) -> None:
+        if self.dao is not None:
+            self.dao.close()

@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from unittest.mock import Mock
 
 import pandas as pd
@@ -14,6 +15,7 @@ from llmexer.exceptions import (
     ProjectIDRequiredException,
     ProjectNotExistsException,
 )
+from tests.db_helpers import find_db, list_dbs, read_experiment_df, table_columns
 
 runner = CliRunner()
 
@@ -92,26 +94,27 @@ def initialised_experiment(projects_dir):
 # ---------------------------------------------------------------------------
 
 
-def test_generate_creates_output_csv(initialised_experiment, projects_dir):
-    """generate should create a experiment_*.csv file in the experiment/ subfolder."""
+def test_generate_creates_output_db(initialised_experiment, projects_dir):
+    """generate should create one experiment_*.db file in the experiment/ subfolder."""
     pid, exp_subdir = initialised_experiment
 
     result = runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
     assert result.exit_code == 0
-    csv_files = list(exp_subdir.glob("experiment_*.csv"))
-    assert len(csv_files) == 1
+    db_files = list(exp_subdir.glob("experiment_*.db"))
+    assert len(db_files) == 1
 
 
-def test_generate_output_has_correct_columns(initialised_experiment, projects_dir):
-    """The output CSV should have exactly the required 21 columns in order."""
+def test_generate_ollama_table_has_correct_columns(
+    initialised_experiment, projects_dir
+):
+    """The ollama table holds the common+ollama+result columns in order."""
     pid, exp_subdir = initialised_experiment
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
-    assert list(df.columns) == [
+    cols = table_columns(find_db(exp_subdir), "ollama")
+    assert cols == [
         "ID",
         "code",
         "prompt",
@@ -129,11 +132,24 @@ def test_generate_output_has_correct_columns(initialised_experiment, projects_di
         "max_tokens",
         "ollama_context_window",
         "ollama_repeat_penalty",
+        "response_text",
+        "usage_tokens",
+        "status",
+        "state",
+        "call_count",
+        "total_tokens",
+        "elapsed_seconds",
+        "timestamp",
+        "response_json",
+    ]
+    # Other providers' parameter columns must NOT appear in the ollama table.
+    for absent in (
         "vllm_min_p",
         "vllm_best_of",
         "openai_seed",
         "gemini_thinking_level",
-    ]
+    ):
+        assert absent not in cols
 
 
 def test_generate_code_field_format(initialised_experiment, projects_dir):
@@ -142,8 +158,7 @@ def test_generate_code_field_format(initialised_experiment, projects_dir):
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert df.iloc[0]["code"] == "D01_prompt01_llama3.3:latest_ollama-default"
 
 
@@ -153,8 +168,7 @@ def test_generate_row_count(initialised_experiment, projects_dir):
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert len(df) == 1
 
 
@@ -164,8 +178,7 @@ def test_generate_prompt_is_rendered(initialised_experiment, projects_dir):
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert "Sample Paper Title One" in df.iloc[0]["prompt"]
     assert "abstract of the first" in df.iloc[0]["prompt"]
     assert "{{title}}" not in df.iloc[0]["prompt"]
@@ -178,8 +191,7 @@ def test_generate_tokens_estimate_value(initialised_experiment, projects_dir):
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     rendered_prompt = df.iloc[0]["prompt"]
     assert df.iloc[0]["tokens_estimate"] == len(rendered_prompt) // 4
 
@@ -190,8 +202,7 @@ def test_generate_model_name_and_provider(initialised_experiment, projects_dir):
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert df.iloc[0]["model_name"] == "llama3.3:latest"
     assert df.iloc[0]["provider_name"] == "ollama"
 
@@ -202,8 +213,7 @@ def test_generate_original_data_is_json(initialised_experiment, projects_dir):
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     original_data = json.loads(df.iloc[0]["original_data"])
     assert original_data["ID"] == "D01"
     assert "Title" in original_data
@@ -216,8 +226,7 @@ def test_generate_prompt_hash_is_sha256(initialised_experiment, projects_dir):
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert len(df.iloc[0]["prompt_hash"]) == 64
     assert all(c in "0123456789abcdef" for c in df.iloc[0]["prompt_hash"])
 
@@ -228,8 +237,7 @@ def test_generate_original_data_hash_is_sha256(initialised_experiment, projects_
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert len(df.iloc[0]["original_data_hash"]) == 64
     assert all(c in "0123456789abcdef" for c in df.iloc[0]["original_data_hash"])
 
@@ -264,8 +272,7 @@ def test_generate_multiple_models_multiple_rows(projects_dir):
     result = runner.invoke(app, ["experiment", "generate", "--pid", pid])
     assert result.exit_code == 0
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert len(df) == 4  # 2 data rows × 2 models × 1 param profile
     assert list(df["ID"]) == [1, 2, 3, 4]
     # rows are sorted by model order from models.csv, then by mapping order within each model
@@ -303,8 +310,7 @@ def test_generate_sorted_by_model_order(projects_dir):
     result = runner.invoke(app, ["experiment", "generate", "--pid", pid])
     assert result.exit_code == 0
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
 
     # Expected order: D01+model-a, D02+model-a, D01+model-b, D02+model-b
     assert list(df["model_name"]) == ["model-a", "model-a", "model-b", "model-b"]
@@ -317,20 +323,32 @@ def test_generate_row_id_format(initialised_experiment, projects_dir):
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert df.iloc[0]["ID"] == 1
 
 
 def test_generate_output_filename_format(initialised_experiment, projects_dir):
-    """Output filename should start with 'experiment_' followed by YYYYMMDD-XXXXXXXX."""
+    """Output filename should be experiment_<YYYYMMDD>_<NN>.db."""
     pid, exp_subdir = initialised_experiment
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_files = list(exp_subdir.glob("experiment_*.csv"))
-    assert len(csv_files) == 1
-    assert csv_files[0].name.startswith("experiment_")
+    db_files = list(exp_subdir.glob("experiment_*.db"))
+    assert len(db_files) == 1
+    assert re.fullmatch(r"experiment_\d{8}_\d{2}\.db", db_files[0].name)
+
+
+def test_generate_counter_increments(initialised_experiment, projects_dir):
+    """A second generate run should produce a database with the next counter."""
+    pid, exp_subdir = initialised_experiment
+
+    runner.invoke(app, ["experiment", "generate", "--pid", pid])
+    runner.invoke(app, ["experiment", "generate", "--pid", pid])
+
+    names = list_dbs(exp_subdir)
+    assert len(names) == 2
+    counters = sorted(int(n[: -len(".db")].rsplit("_", 1)[-1]) for n in names)
+    assert counters == [1, 2]
 
 
 def test_generate_prints_success_message(initialised_experiment, projects_dir):
@@ -372,8 +390,7 @@ def test_generate_prompt_hash_deterministic(projects_dir):
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert list(df["ID"]) == [1, 2]
     assert df.iloc[0]["prompt_hash"] == df.iloc[1]["prompt_hash"]
     assert df.iloc[0]["original_data_hash"] == df.iloc[1]["original_data_hash"]
@@ -385,14 +402,14 @@ def test_generate_prompt_hash_deterministic(projects_dir):
 
 
 def test_generate_dry_run_no_files_written(initialised_experiment, projects_dir):
-    """With --dry-run, no output CSV should be written."""
+    """With --dry-run, no output database should be written."""
     pid, exp_subdir = initialised_experiment
 
     result = runner.invoke(app, ["--dry-run", "experiment", "generate", "--pid", pid])
 
     assert result.exit_code == 0
     assert "Dry run" in result.output
-    assert not list(exp_subdir.glob("experiment_*.csv"))
+    assert not list(exp_subdir.glob("experiment_*.db"))
 
 
 def test_generate_dry_run_shows_row_count(initialised_experiment, projects_dir):
@@ -520,8 +537,7 @@ def test_generate_missing_data_id_skips_row(projects_dir):
 
     assert result.exit_code == 0
     assert "Warning" in result.output
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert len(df) == 1  # Only D01 row is included
 
 
@@ -549,7 +565,7 @@ def test_generate_missing_prompt_file_skips_row(projects_dir):
 
     assert result.exit_code == 0
     assert "Warning" in result.output
-    assert not list(exp_subdir.glob("experiment_*.csv"))
+    assert not list(exp_subdir.glob("experiment_*.db"))
 
 
 def test_generate_uses_current_experiment_from_env(
@@ -579,7 +595,7 @@ def test_generate_uses_current_experiment_from_env(
 
     result = runner.invoke(app, ["experiment", "generate"])
     assert result.exit_code == 0
-    assert list(exp_subdir.glob("experiment_*.csv"))
+    assert list(exp_subdir.glob("experiment_*.db"))
 
 
 def test_generate_without_eid_and_no_env_raises(
@@ -628,14 +644,13 @@ def test_generate_missing_llm_params_raises(projects_dir):
     assert "llm-params.csv" in str(result.exception)
 
 
-def test_generate_includes_param_columns(initialised_experiment, projects_dir):
-    """Output CSV should contain all 12 llm-params column names."""
+def test_generate_includes_ollama_param_columns(initialised_experiment, projects_dir):
+    """The ollama table should carry the common params and ollama-specific params."""
     pid, exp_subdir = initialised_experiment
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    cols = table_columns(find_db(exp_subdir), "ollama")
     for col in [
         "profile_name",
         "param_model_name",
@@ -644,13 +659,9 @@ def test_generate_includes_param_columns(initialised_experiment, projects_dir):
         "top_p",
         "max_tokens",
         "ollama_context_window",
-        "openai_seed",
         "ollama_repeat_penalty",
-        "vllm_min_p",
-        "vllm_best_of",
-        "gemini_thinking_level",
     ]:
-        assert col in df.columns
+        assert col in cols
 
 
 def test_generate_param_values_embedded(initialised_experiment, projects_dir):
@@ -659,8 +670,7 @@ def test_generate_param_values_embedded(initialised_experiment, projects_dir):
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert df.iloc[0]["profile_name"] == "ollama-default"
     assert df.iloc[0]["param_model_name"] == "llama3.3:latest"
     assert df.iloc[0]["param_provider"] == "ollama"
@@ -694,8 +704,7 @@ def test_generate_row_count_with_multiple_profiles(projects_dir):
     result = runner.invoke(app, ["experiment", "generate", "--pid", pid])
     assert result.exit_code == 0
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert len(df) == 2
     assert list(df["profile_name"]) == ["profile-a", "profile-b"]
 
@@ -706,6 +715,5 @@ def test_generate_code_includes_profile_name(initialised_experiment, projects_di
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    csv_file = next(exp_subdir.glob("experiment_*.csv"))
-    df = pd.read_csv(csv_file, sep=";")
+    df = read_experiment_df(find_db(exp_subdir))
     assert df.iloc[0]["code"].endswith("_ollama-default")

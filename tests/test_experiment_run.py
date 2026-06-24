@@ -14,28 +14,18 @@ from llmexer.exceptions import (
     ProjectIDRequiredException,
     ProjectNotExistsException,
 )
+from tests.db_helpers import (
+    OLLAMA_ROW,
+    OPENAI_ROW,
+    find_db,
+    read_experiment_df,
+    seed_db,
+)
 
 runner = CliRunner()
 
-# The experiment CSV contains all 21 columns (prompt + tokens_estimate + embedded param columns).
-_EXPERIMENT_CSV_HEADER = (
-    "ID;code;prompt;tokens_estimate;original_data;model_name;provider_name;prompt_hash;original_data_hash;"
-    "profile_name;param_model_name;param_provider;temperature;top_p;max_tokens;"
-    "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level\n"
-)
-_EXPERIMENT_CSV_ROW = (
-    "1;D01_prompt01_llama3.3:latest_ollama-default;Hello world;2;"
-    '{"ID":"D01"};llama3.3:latest;ollama;abc123;def456;'
-    "ollama-default;llama3.3:latest;ollama;0.7;1.0;512;4096;1.1;;;;\n"
-)
-_EXPERIMENT_CSV_ROW_OPENAI = (
-    "2;D01_prompt01_gpt-4o_openai-default;Hello world;2;"
-    '{"ID":"D01"};gpt-4o;openai;abc123;def456;'
-    "openai-default;gpt-4o;openai;0.7;1.0;512;;;;42;\n"
-)
-
-# Results are named after the generated input file passed to `run`.
-_RESULTS_CSV_NAME = "experiment_20240101-abcd1234_results.csv"
+# Name of the generated experiment database used throughout these tests.
+_EXPERIMENT_DB_NAME = "experiment_20240101_01.db"
 
 
 # ---------------------------------------------------------------------------
@@ -63,16 +53,12 @@ def mock_no_dotenv(monkeypatch):
 
 
 @pytest.fixture()
-def experiment_with_csvs(projects_dir):
-    """Create a test experiment with a pre-built 20-column experiment CSV."""
+def experiment_with_db(projects_dir):
+    """Create a test experiment with a generated single-ollama-row database."""
     pid = "run-test-exp"
     exp_subdir = projects_dir / pid / "experiment"
     os.makedirs(exp_subdir)
-
-    (exp_subdir / "experiment_20240101-abcd1234.csv").write_text(
-        _EXPERIMENT_CSV_HEADER + _EXPERIMENT_CSV_ROW,
-        encoding="utf-8",
-    )
+    seed_db(exp_subdir / _EXPERIMENT_DB_NAME, {"ollama": [dict(OLLAMA_ROW)]})
     return pid, exp_subdir
 
 
@@ -121,49 +107,34 @@ def mock_llm_mapper(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_run_dry_run_no_files_written(experiment_with_csvs, mock_llm_mapper):
-    """With --dry-run, no results CSV or responses/ dir should be created."""
-    pid, exp_subdir = experiment_with_csvs
+def test_run_dry_run_no_files_written(experiment_with_db, mock_llm_mapper):
+    """With --dry-run, no responses/ dir should be created and rows stay pending."""
+    pid, exp_subdir = experiment_with_db
 
     result = runner.invoke(
         app,
-        [
-            "--dry-run",
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["--dry-run", "experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
     assert result.exit_code == 0
-    # No results CSV written
-    assert not any(f == _RESULTS_CSV_NAME for f in os.listdir(exp_subdir))
     # No responses directory created
     assert not (exp_subdir / "responses").exists()
+    # Row remains unrun (no status).
+    df = read_experiment_df(find_db(exp_subdir))
+    assert pd.isna(df.iloc[0]["status"])
 
 
-def test_run_dry_run_shows_row_count(experiment_with_csvs, mock_llm_mapper):
+def test_run_dry_run_shows_row_count(experiment_with_db, mock_llm_mapper):
     """Dry run output should mention the total number of rows to run."""
-    pid, _ = experiment_with_csvs
+    pid, _ = experiment_with_db
 
     result = runner.invoke(
         app,
-        [
-            "--dry-run",
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["--dry-run", "experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
     assert result.exit_code == 0
-    assert "1" in result.output  # 1 row in the experiment CSV
+    assert "1" in result.output  # 1 row in the experiment database
 
 
 # ---------------------------------------------------------------------------
@@ -171,131 +142,78 @@ def test_run_dry_run_shows_row_count(experiment_with_csvs, mock_llm_mapper):
 # ---------------------------------------------------------------------------
 
 
-def test_run_creates_results_csv(experiment_with_csvs, mock_llm_mapper):
-    """run should create a results CSV after execution."""
-    pid, exp_subdir = experiment_with_csvs
+def test_run_writes_results_into_db(experiment_with_db, mock_llm_mapper):
+    """run should write results back into the same database row."""
+    pid, exp_subdir = experiment_with_db
 
     result = runner.invoke(
         app,
-        [
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
     assert result.exit_code == 0
-    results_files = [
-        f
-        for f in os.listdir(exp_subdir)
-        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
-    ]
-    assert len(results_files) == 1
+    df = read_experiment_df(find_db(exp_subdir))
+    assert df.iloc[0]["status"] == "success"
+    assert df.iloc[0]["response_text"] == "mocked response"
 
 
-def test_run_results_csv_has_correct_columns(experiment_with_csvs, mock_llm_mapper):
-    """Results CSV should contain all experiment CSV columns plus 4 result fields."""
-    pid, exp_subdir = experiment_with_csvs
+def test_run_result_row_has_result_columns(experiment_with_db, mock_llm_mapper):
+    """The run row should carry the result columns, including response_json."""
+    pid, exp_subdir = experiment_with_db
 
     runner.invoke(
         app,
-        [
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
-    results_files = [
-        f
-        for f in os.listdir(exp_subdir)
-        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
-    ]
-    df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
-
-    # Columns from experiment CSV (prompt + embedded params)
+    df = read_experiment_df(find_db(exp_subdir))
     for col in [
-        "ID",
-        "code",
-        "prompt",
-        "model_name",
-        "provider_name",
-        "profile_name",
-        "param_model_name",
-        "param_provider",
+        "response_text",
+        "usage_tokens",
+        "status",
+        "timestamp",
+        "response_json",
     ]:
         assert col in df.columns
+    # response_json holds a parseable JSON payload of the call.
+    payload = json.loads(df.iloc[0]["response_json"])
+    assert payload["response_text"] == "mocked response"
+    assert payload["provider"] == "ollama"
 
-    # Result columns appended by run
-    for col in ["response_text", "usage_tokens", "status", "timestamp"]:
-        assert col in df.columns
 
-
-def test_run_results_csv_row_count(experiment_with_csvs, mock_llm_mapper):
-    """Result row count equals the number of rows in the experiment CSV."""
-    pid, exp_subdir = experiment_with_csvs
+def test_run_results_row_count(experiment_with_db, mock_llm_mapper):
+    """Result row count equals the number of rows in the experiment database."""
+    pid, exp_subdir = experiment_with_db
 
     runner.invoke(
         app,
-        [
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
-    results_files = [
-        f
-        for f in os.listdir(exp_subdir)
-        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
-    ]
-    df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
+    df = read_experiment_df(find_db(exp_subdir))
     assert len(df) == 1
 
 
-def test_run_creates_responses_directory(experiment_with_csvs, mock_llm_mapper):
+def test_run_creates_responses_directory(experiment_with_db, mock_llm_mapper):
     """run should create an experiment/responses/ directory."""
-    pid, exp_subdir = experiment_with_csvs
+    pid, exp_subdir = experiment_with_db
 
     result = runner.invoke(
         app,
-        [
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
     assert result.exit_code == 0
     assert (exp_subdir / "responses").is_dir()
 
 
-def test_run_creates_individual_json_files(experiment_with_csvs, mock_llm_mapper):
+def test_run_creates_individual_json_files(experiment_with_db, mock_llm_mapper):
     """run should save one JSON file per LLM call in responses/."""
-    pid, exp_subdir = experiment_with_csvs
+    pid, exp_subdir = experiment_with_db
 
     runner.invoke(
         app,
-        [
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
     json_files = list((exp_subdir / "responses").glob("*.json"))
@@ -312,35 +230,47 @@ def test_run_uses_current_experiment_from_env(
     pid = "env-run-exp"
     exp_subdir = projects_dir / pid / "experiment"
     os.makedirs(exp_subdir)
-    (exp_subdir / "experiment_20240101-abcd1234.csv").write_text(
-        _EXPERIMENT_CSV_HEADER + _EXPERIMENT_CSV_ROW, encoding="utf-8"
-    )
+    seed_db(exp_subdir / _EXPERIMENT_DB_NAME, {"ollama": [dict(OLLAMA_ROW)]})
     monkeypatch.setenv("PROJECT_ID", pid)
 
-    result = runner.invoke(
-        app, ["experiment", "run", "--file", "experiment_20240101-abcd1234.csv"]
-    )
+    result = runner.invoke(app, ["experiment", "run", "--file", _EXPERIMENT_DB_NAME])
 
     assert result.exit_code == 0
 
 
-def test_run_custom_experiment_csv(experiment_with_csvs, mock_llm_mapper, tmp_path):
-    """--file should override the auto-detected CSV."""
-    pid, exp_subdir = experiment_with_csvs
-    custom_csv = tmp_path / "custom_experiment.csv"
-    custom_csv.write_text(
-        _EXPERIMENT_CSV_HEADER + _EXPERIMENT_CSV_ROW, encoding="utf-8"
-    )
+def test_run_custom_experiment_db(experiment_with_db, mock_llm_mapper, tmp_path):
+    """--file should override the auto-detected database."""
+    pid, _ = experiment_with_db
+    custom_db = tmp_path / "custom_experiment.db"
+    seed_db(custom_db, {"ollama": [dict(OLLAMA_ROW)]})
 
     result = runner.invoke(
         app,
-        ["experiment", "run", "--pid", pid, "--file", str(custom_csv)],
+        ["experiment", "run", "--pid", pid, "--file", str(custom_db)],
     )
 
     assert result.exit_code == 0
+    df = read_experiment_df(custom_db)
+    assert df.iloc[0]["status"] == "success"
 
 
-def test_run_failed_call_still_writes_row(experiment_with_csvs, monkeypatch):
+def test_run_defaults_to_newest_db(experiment_with_db, mock_llm_mapper):
+    """With no --file, run uses the newest experiment database."""
+    pid, exp_subdir = experiment_with_db
+    # A second generation with a higher counter.
+    seed_db(exp_subdir / "experiment_20240101_02.db", {"ollama": [dict(OLLAMA_ROW)]})
+
+    result = runner.invoke(app, ["experiment", "run", "--pid", pid])
+
+    assert result.exit_code == 0
+    # The newest DB (counter 02) was the one run.
+    newest = read_experiment_df(exp_subdir / "experiment_20240101_02.db")
+    assert newest.iloc[0]["status"] == "success"
+    oldest = read_experiment_df(exp_subdir / _EXPERIMENT_DB_NAME)
+    assert pd.isna(oldest.iloc[0]["status"])
+
+
+def test_run_failed_call_still_writes_row(experiment_with_db, monkeypatch):
     """A failing LLM call should produce an Error status row; run should not abort."""
     import llmexer.base.llm_provider as llm_module
     from llmexer.base.llm_provider import CallerState, ProviderResponse
@@ -357,28 +287,15 @@ def test_run_failed_call_still_writes_row(experiment_with_csvs, monkeypatch):
 
     monkeypatch.setattr(llm_module, "OllamaProvider", ErrorOllamaProvider)
 
-    pid, exp_subdir = experiment_with_csvs
+    pid, exp_subdir = experiment_with_db
 
     result = runner.invoke(
         app,
-        [
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
     assert result.exit_code == 0
-    results_files = [
-        f
-        for f in os.listdir(exp_subdir)
-        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
-    ]
-    assert len(results_files) == 1
-    df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
+    df = read_experiment_df(find_db(exp_subdir))
     assert len(df) == 1
     assert "Error" in str(df["status"].iloc[0])
 
@@ -408,9 +325,9 @@ def test_run_uninitialised_experiment_raises(projects_dir):
     assert "init" in str(result.exception).lower()
 
 
-def test_run_no_experiment_csv_raises(projects_dir):
-    """run when experiment/ has no experiment_*.csv should raise LLMExerException."""
-    pid = "no-csv"
+def test_run_no_experiment_db_raises(projects_dir):
+    """run when experiment/ has no experiment_*.db should raise LLMExerException."""
+    pid = "no-db"
     exp_subdir = projects_dir / pid / "experiment"
     os.makedirs(exp_subdir)
 
@@ -434,7 +351,7 @@ def test_run_without_eid_and_no_env_raises(projects_dir, mock_no_dotenv, monkeyp
     assert isinstance(result.exception, ProjectIDRequiredException)
 
 
-def test_run_missing_openai_package_raises(experiment_with_csvs, monkeypatch):
+def test_run_missing_openai_package_raises(experiment_with_db, monkeypatch):
     """When openai is not installed, run should raise LLMExerException with install hint."""
     import builtins
 
@@ -447,18 +364,11 @@ def test_run_missing_openai_package_raises(experiment_with_csvs, monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", mock_import)
 
-    pid, _ = experiment_with_csvs
+    pid, _ = experiment_with_db
 
     result = runner.invoke(
         app,
-        [
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
     assert result.exit_code != 0
@@ -471,7 +381,7 @@ def test_run_missing_openai_package_raises(experiment_with_csvs, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_run_uses_provider_url_from_env(experiment_with_csvs, monkeypatch):
+def test_run_uses_provider_url_from_env(experiment_with_db, monkeypatch):
     """PROVIDER_OLLAMA_URL in env should override the built-in URL_MAP default."""
     import llmexer.base.llm_provider as llm_module
     from llmexer.base.llm_provider import CallerState, ProviderResponse
@@ -489,23 +399,16 @@ def test_run_uses_provider_url_from_env(experiment_with_csvs, monkeypatch):
     monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
     monkeypatch.setenv("PROVIDER_OLLAMA_URL", "http://custom-ollama:9999/v1")
 
-    pid, _ = experiment_with_csvs
+    pid, _ = experiment_with_db
     runner.invoke(
         app,
-        [
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
     assert captured.get("base_url") == "http://custom-ollama:9999/v1"
 
 
-def test_run_provider_url_falls_back_to_url_map(experiment_with_csvs, monkeypatch):
+def test_run_provider_url_falls_back_to_url_map(experiment_with_db, monkeypatch):
     """When PROVIDER_OLLAMA_URL is not set, the built-in URL_MAP default is used."""
     import llmexer.base.llm_provider as llm_module
     from llmexer.base.llm_provider import CallerState, ProviderResponse
@@ -523,23 +426,16 @@ def test_run_provider_url_falls_back_to_url_map(experiment_with_csvs, monkeypatc
     monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
     monkeypatch.delenv("PROVIDER_OLLAMA_URL", raising=False)
 
-    pid, _ = experiment_with_csvs
+    pid, _ = experiment_with_db
     runner.invoke(
         app,
-        [
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
     assert captured.get("base_url") == "http://localhost:11434/v1"
 
 
-def test_run_uses_provider_key_from_env(experiment_with_csvs, monkeypatch):
+def test_run_uses_provider_key_from_env(experiment_with_db, monkeypatch):
     """PROVIDER_OLLAMA_KEY in env should take precedence over LLM_API_KEY."""
     import llmexer.base.llm_provider as llm_module
     from llmexer.base.llm_provider import CallerState, ProviderResponse
@@ -558,23 +454,16 @@ def test_run_uses_provider_key_from_env(experiment_with_csvs, monkeypatch):
     monkeypatch.setenv("PROVIDER_OLLAMA_KEY", "provider-specific-key")
     monkeypatch.setenv("LLM_API_KEY", "generic-key")
 
-    pid, _ = experiment_with_csvs
+    pid, _ = experiment_with_db
     runner.invoke(
         app,
-        [
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
     assert captured.get("api_key") == "provider-specific-key"
 
 
-def test_run_provider_key_defaults_to_na_when_absent(experiment_with_csvs, monkeypatch):
+def test_run_provider_key_defaults_to_na_when_absent(experiment_with_db, monkeypatch):
     """When PROVIDER_OLLAMA_KEY is absent, api_key defaults to 'na'."""
     import llmexer.base.llm_provider as llm_module
     from llmexer.base.llm_provider import CallerState, ProviderResponse
@@ -592,17 +481,10 @@ def test_run_provider_key_defaults_to_na_when_absent(experiment_with_csvs, monke
     monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
     monkeypatch.delenv("PROVIDER_OLLAMA_KEY", raising=False)
 
-    pid, _ = experiment_with_csvs
+    pid, _ = experiment_with_db
     runner.invoke(
         app,
-        [
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_20240101-abcd1234.csv",
-        ],
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
     )
 
     assert captured.get("api_key") == "na"
@@ -614,14 +496,14 @@ def test_run_provider_key_defaults_to_na_when_absent(experiment_with_csvs, monke
 
 
 @pytest.fixture()
-def experiment_with_two_provider_rows(projects_dir, mock_llm_mapper):
-    """Experiment CSV with one ollama row and one openai row."""
+def experiment_with_two_provider_rows(projects_dir):
+    """Experiment database with one ollama row and one openai row."""
     pid = "filter-test-exp"
     exp_subdir = projects_dir / pid / "experiment"
     os.makedirs(exp_subdir)
-    (exp_subdir / "experiment_20240101-abcd1234.csv").write_text(
-        _EXPERIMENT_CSV_HEADER + _EXPERIMENT_CSV_ROW + _EXPERIMENT_CSV_ROW_OPENAI,
-        encoding="utf-8",
+    seed_db(
+        exp_subdir / _EXPERIMENT_DB_NAME,
+        {"ollama": [dict(OLLAMA_ROW)], "openai": [dict(OPENAI_ROW)]},
     )
     return pid, exp_subdir
 
@@ -629,7 +511,7 @@ def experiment_with_two_provider_rows(projects_dir, mock_llm_mapper):
 def test_run_filter_provider_runs_only_matching_rows(
     experiment_with_two_provider_rows, mock_llm_mapper
 ):
-    """--filter-provider ollama runs only ollama rows but persists the full set."""
+    """--filter-provider ollama runs only ollama rows; openai stays pending."""
     pid, exp_subdir = experiment_with_two_provider_rows
 
     result = runner.invoke(
@@ -640,21 +522,15 @@ def test_run_filter_provider_runs_only_matching_rows(
             "--pid",
             pid,
             "--file",
-            "experiment_20240101-abcd1234.csv",
+            _EXPERIMENT_DB_NAME,
             "--filter-provider",
             "ollama",
         ],
     )
 
     assert result.exit_code == 0
-    results_files = [
-        f
-        for f in os.listdir(exp_subdir)
-        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
-    ]
-    assert len(results_files) == 1
-    df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
-    # The single results file keeps every row; only the ollama row was run.
+    df = read_experiment_df(find_db(exp_subdir))
+    # The single database keeps every row; only the ollama row was run.
     assert len(df) == 2
     ollama_row = df[df["param_provider"].str.lower() == "ollama"].iloc[0]
     openai_row = df[df["param_provider"].str.lower() == "openai"].iloc[0]
@@ -665,7 +541,7 @@ def test_run_filter_provider_runs_only_matching_rows(
 def test_run_filter_provider_no_match_exits_cleanly(
     experiment_with_two_provider_rows, mock_llm_mapper
 ):
-    """--filter-provider gemini on a CSV with no gemini rows exits 0, writes no results file."""
+    """--filter-provider gemini on a DB with no gemini rows exits 0, runs nothing."""
     pid, exp_subdir = experiment_with_two_provider_rows
 
     result = runner.invoke(
@@ -676,26 +552,23 @@ def test_run_filter_provider_no_match_exits_cleanly(
             "--pid",
             pid,
             "--file",
-            "experiment_20240101-abcd1234.csv",
+            _EXPERIMENT_DB_NAME,
             "--filter-provider",
             "gemini",
         ],
     )
 
     assert result.exit_code == 0
-    results_files = [
-        f
-        for f in os.listdir(exp_subdir)
-        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
-    ]
-    assert len(results_files) == 0
     assert "nothing to run" in result.output.lower()
+    # Nothing was run: both rows stay pending.
+    df = read_experiment_df(find_db(exp_subdir))
+    assert df["status"].isna().all()
 
 
 def test_run_filter_provider_case_insensitive(
     experiment_with_two_provider_rows, mock_llm_mapper
 ):
-    """--filter-provider OLLAMA (upper-case) should match rows with param_provider=ollama."""
+    """--filter-provider OLLAMA (upper-case) should match the ollama table."""
     pid, exp_subdir = experiment_with_two_provider_rows
 
     result = runner.invoke(
@@ -706,20 +579,14 @@ def test_run_filter_provider_case_insensitive(
             "--pid",
             pid,
             "--file",
-            "experiment_20240101-abcd1234.csv",
+            _EXPERIMENT_DB_NAME,
             "--filter-provider",
             "OLLAMA",
         ],
     )
 
     assert result.exit_code == 0
-    results_files = [
-        f
-        for f in os.listdir(exp_subdir)
-        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
-    ]
-    assert len(results_files) == 1
-    df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
+    df = read_experiment_df(find_db(exp_subdir))
     assert len(df) == 2
     ollama_row = df[df["param_provider"].str.lower() == "ollama"].iloc[0]
     assert ollama_row["status"] == "success"
@@ -728,7 +595,7 @@ def test_run_filter_provider_case_insensitive(
 def test_run_filter_provider_dry_run_shows_filtered_count(
     experiment_with_two_provider_rows, mock_llm_mapper
 ):
-    """Dry-run with --filter-provider should print the filtered row count (1), not the total (2)."""
+    """Dry-run with --filter-provider should print the filtered row count (1)."""
     pid, _ = experiment_with_two_provider_rows
 
     result = runner.invoke(
@@ -740,7 +607,7 @@ def test_run_filter_provider_dry_run_shows_filtered_count(
             "--pid",
             pid,
             "--file",
-            "experiment_20240101-abcd1234.csv",
+            _EXPERIMENT_DB_NAME,
             "--filter-provider",
             "ollama",
         ],
@@ -751,10 +618,10 @@ def test_run_filter_provider_dry_run_shows_filtered_count(
     assert "1" in result.output
 
 
-def test_run_sequential_filtered_runs_merge_into_one_file(
+def test_run_sequential_filtered_runs_persist_into_one_db(
     experiment_with_two_provider_rows, mock_llm_mapper
 ):
-    """Two filtered runs leave a single results file with both providers' rows filled."""
+    """Two filtered runs leave a single database with both providers' rows filled."""
     pid, exp_subdir = experiment_with_two_provider_rows
 
     for provider in ("ollama", "openai"):
@@ -766,21 +633,14 @@ def test_run_sequential_filtered_runs_merge_into_one_file(
                 "--pid",
                 pid,
                 "--file",
-                "experiment_20240101-abcd1234.csv",
+                _EXPERIMENT_DB_NAME,
                 "--filter-provider",
                 provider,
             ],
         )
         assert result.exit_code == 0
 
-    # Exactly one results file exists after both runs.
-    results_files = [
-        f
-        for f in os.listdir(exp_subdir)
-        if f == _RESULTS_CSV_NAME and f.endswith(".csv")
-    ]
-    assert len(results_files) == 1
-    df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
+    df = read_experiment_df(find_db(exp_subdir))
     assert len(df) == 2
     # Both rows are now populated (ollama from run 1, openai from run 2).
     assert (

@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+from collections import defaultdict
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -10,12 +11,11 @@ import typer
 from jinja2 import BaseLoader, DebugUndefined, Environment
 from rich.table import Table
 
+from llmexer.base.dao import ExperimentDAO, latest_db, list_db_files, next_db_filename
 from llmexer.base.experiment import (
-    _OUTPUT_COLUMNS,
     _PARAM_COLUMNS,
     DIR_EXPERIMENT,
     DIR_RESPONSES,
-    generate_project_id,
 )
 from llmexer.common import (
     ensure_directory_exists,
@@ -29,40 +29,39 @@ from llmexer.exceptions import LLMExerException
 app = typer.Typer(help="Manage LLM experiments.")
 
 
-def _find_results_files(experiment_subdir_path: str) -> list[str]:
-    """List results CSVs (``experiment_*_results.csv``) in the experiment subdir."""
+def _find_db_files(experiment_subdir_path: str) -> list[str]:
+    """List experiment SQLite databases (``experiment*.db``) in the subdir."""
 
-    if not os.path.exists(experiment_subdir_path):
-        return []
-    return sorted(
-        f
-        for f in os.listdir(experiment_subdir_path)
-        if f.startswith("experiment_") and f.endswith("_results.csv")
-    )
+    return list_db_files(experiment_subdir_path)
 
 
-def _resolve_experiment_csv(pid: str, file: str) -> tuple[str, str]:
-    """Resolve and validate a generated experiment CSV path for a project.
+def _resolve_experiment_db(pid: str, file: str) -> tuple[str, str]:
+    """Resolve and validate a generated experiment database path for a project.
 
-    Returns ``(file_path, experiment_subdir_path)``. Raises ``LLMExerException``
-    if the project is not initialised, no file is given, or the file is
-    missing.
+    Returns ``(db_path, experiment_subdir_path)``. When ``file`` is omitted the
+    newest ``experiment*.db`` (highest counter) is used. Raises
+    ``LLMExerException`` if the project is not initialised or no database exists.
     """
 
     experiment_subdir_path = get_experiment_subdir_path(pid)
 
     if file is None:
-        raise LLMExerException(
-            f"No experiment CSV provided. Run `experiment generate --pid {pid}` first."
-        )
-    file_path = (
+        db_path = latest_db(experiment_subdir_path)
+        if db_path is None:
+            raise LLMExerException(
+                f"No experiment database found for project '{pid}'. "
+                f"Run `experiment generate --pid {pid}` first."
+            )
+        return db_path, experiment_subdir_path
+
+    db_path = (
         file if os.path.isabs(file) else os.path.join(experiment_subdir_path, file)
     )
 
-    if not os.path.exists(file_path):
-        raise LLMExerException(f"Experiment CSV not found: '{file_path}'.")
+    if not os.path.exists(db_path):
+        raise LLMExerException(f"Experiment database not found: '{db_path}'.")
 
-    return file_path, experiment_subdir_path
+    return db_path, experiment_subdir_path
 
 
 @app.command()
@@ -250,27 +249,39 @@ def generate(
         )
         return
 
-    result_df = pd.DataFrame(rows, columns=_OUTPUT_COLUMNS)
+    # Sort by model order (stable -> preserves mapping order within a model),
+    # then renumber IDs 1..N across the whole generation.
     model_order = list(models_df["name"].astype(str))
-    result_df["model_name"] = pd.Categorical(
-        result_df["model_name"], categories=model_order, ordered=True
-    )
-    result_df = result_df.sort_values("model_name").reset_index(drop=True)
-    result_df["model_name"] = result_df["model_name"].astype(str)
-    result_df["ID"] = range(1, len(result_df) + 1)
-    output_filename = f"experiment_{generate_project_id()}.csv"
+
+    def _model_rank(row: dict) -> int:
+        name = str(row["model_name"])
+        return model_order.index(name) if name in model_order else len(model_order)
+
+    rows.sort(key=_model_rank)
+    for new_id, row in enumerate(rows, start=1):
+        row["ID"] = new_id
+
+    output_filename = next_db_filename(experiment_subdir_path)
     output_path = os.path.join(experiment_subdir_path, output_filename)
 
     if settings.dry_run:
         cprint(
-            f"[bold yellow]Dry run:[/bold yellow] would write {len(result_df)} row(s) to '{output_path}'"
+            f"[bold yellow]Dry run:[/bold yellow] would write {len(rows)} row(s) to '{output_path}'"
         )
-        cprint(f"Columns: {_OUTPUT_COLUMNS}")
         return
 
-    result_df.to_csv(output_path, index=False, encoding="utf-8", sep=";")
+    # Each provider gets its own table holding only its parameters.
+    by_provider: dict = defaultdict(list)
+    for row in rows:
+        by_provider[str(row["param_provider"]).lower()].append(row)
+
+    with ExperimentDAO(output_path, create=True) as dao:
+        for provider, provider_rows in by_provider.items():
+            dao.insert_rows(provider, provider_rows)
+
     cprint(
-        f"Generated [bold green]{len(result_df)}[/bold green] row(s) → "
+        f"Generated [bold green]{len(rows)}[/bold green] row(s) across "
+        f"[bold green]{len(by_provider)}[/bold green] provider table(s) → "
         f"[bold yellow]{output_filename}[/bold yellow]"
     )
 
@@ -285,12 +296,13 @@ def run(
     file: str = typer.Option(
         None,
         "--file",
-        help="Path to a specific experiment_NAME.csv file. Results are written into a single experiment_NAME_results.csv next to it.",
+        help="Path to a specific experiment_*.db database. Defaults to the newest one. "
+        "Results are written back into the same database.",
     ),
     filter_provider: str = typer.Option(
         None,
         "--filter-provider",
-        help="Only run rows whose param_provider matches this value (case-insensitive). "
+        help="Only run rows whose provider matches this value (case-insensitive). "
         "E.g. --filter-provider ollama",
     ),
     id: str = typer.Option(
@@ -299,115 +311,94 @@ def run(
         help="Run only a single combination by its ID (or code) instead of all rows.",
     ),
 ) -> None:
-    """Run all rows in the generated experiment CSV and save results"""
+    """Run rows from the generated experiment database and save results"""
 
     pid = get_proper_pid(pid)
-    file_path, experiment_subdir_path = _resolve_experiment_csv(pid, file)
+    db_path, experiment_subdir_path = _resolve_experiment_db(pid, file)
 
     # Lazy import to keep openai optional
     try:
         import llmexer.base.llm_provider  # noqa: F401  (validates LLM deps importable)
-        from llmexer.base.llm_manager import ExperimentsManager
+        from llmexer.base.llm_manager import (
+            build_response_payload,
+            result_values,
+            run_experiment_row,
+        )
     except ImportError as exc:
         raise LLMExerException(
             "Missing required packages for LLM calls. "
             "Install them with: pip install openai pydantic"
         ) from exc
 
-    manager = ExperimentsManager()
-    prompts_df = manager.load(file_path)
+    cprint(
+        f"Using experiment database: [bold yellow]{os.path.basename(db_path)}[/bold yellow]"
+    )
 
-    if prompts_df.empty:
-        cprint(
-            "[bold yellow]Warning:[/bold yellow] Experiment CSV is empty — nothing to run."
-        )
-        return
+    with ExperimentDAO(db_path) as dao:
+        rows = dao.fetch_rows(provider=filter_provider, id_experiment=id)
 
-    # Build the run view (which rows to execute) without shrinking manager.df,
-    # so the full row set is always persisted to the single results file.
-    mask = pd.Series(True, index=prompts_df.index)
-    if filter_provider is not None:
-        mask &= prompts_df["param_provider"].str.lower() == filter_provider.lower()
-        if not mask.any():
+        if not rows:
+            if filter_provider is not None:
+                cprint(
+                    f"[bold yellow]Warning:[/bold yellow] No rows found for provider "
+                    f"'{filter_provider}' — nothing to run."
+                )
+                return
+            if id is not None:
+                raise LLMExerException(f"No experiment row found with id '{id}'.")
             cprint(
-                f"[bold yellow]Warning:[/bold yellow] No rows found for provider "
-                f"'{filter_provider}' — nothing to run."
+                "[bold yellow]Warning:[/bold yellow] Experiment database is empty — "
+                "nothing to run."
             )
             return
 
-    if id is not None:
-        id_mask = prompts_df["ID"].astype("string") == str(id)
-        if "code" in prompts_df.columns:
-            id_mask = id_mask | (prompts_df["code"].astype("string") == str(id))
-        mask &= id_mask
-        if not mask.any():
-            raise LLMExerException(f"No experiment row found with id '{id}'.")
-
-    run_df = prompts_df[mask].reset_index(drop=True)
-
-    # A single, stable results file named after the generated input file
-    # (e.g. experiment_<X>.csv -> experiment_<X>_results.csv), no per-run timestamp.
-    results_path = manager.results_path()
-    cprint(
-        f"Output results will be saved into: [bold yellow]{results_path}[/bold yellow]"
-    )
-
-    if not settings.dry_run:
         responses_dir = os.path.join(experiment_subdir_path, DIR_RESPONSES)
-        ensure_directory_exists(responses_dir)
-        cprint(
-            f"JSON responses will be saved into: [bold yellow]{responses_dir}[/bold yellow]"
-        )
-        # Retain results from earlier runs for rows not executed this time.
-        manager.merge_results(results_path)
+        if not settings.dry_run:
+            ensure_directory_exists(responses_dir)
+            cprint(
+                f"JSON responses will be saved into: [bold yellow]{responses_dir}[/bold yellow]"
+            )
 
-    total_runs = len(run_df)
-    cprint(f"Total experiments to run: [bold green]{total_runs}[/bold green]")
+        total_runs = len(rows)
+        cprint(f"Total experiments to run: [bold green]{total_runs}[/bold green]")
 
-    for index, p_row in run_df.iterrows():
-        current_run_info = f"[[green]{index+1}[/green]/[cyan]{total_runs}[/cyan]]"
-        experiment_info = f"[[yellow]{p_row['code']}[/yellow]]"
-        run_info_prefix = f"{current_run_info}{experiment_info}"
-        cprint(f"{run_info_prefix} running")
-        provider = str(p_row["param_provider"]).lower()
+        for index, row in enumerate(rows):
+            current_run_info = f"[[green]{index+1}[/green]/[cyan]{total_runs}[/cyan]]"
+            experiment_info = f"[[yellow]{row['code']}[/yellow]]"
+            run_info_prefix = f"{current_run_info}{experiment_info}"
+            cprint(f"{run_info_prefix} running")
+            provider = row.get("_provider") or str(row["param_provider"]).lower()
 
-        if settings.dry_run:
-            continue
+            if settings.dry_run:
+                continue
 
-        experiment = manager.run(p_row["ID"])
-        status = experiment.status
+            experiment = run_experiment_row(row)
+            status = experiment.status
 
-        json_payload: dict = {
-            "model": experiment.param_model_name or experiment.model_name,
-            "provider": provider,
-            "prompt": experiment.prompt,
-            "profile": experiment.profile_name,
-            "response_text": experiment.response_text,
-            "usage_tokens": experiment.usage_tokens,
-            "status": status,
-            "timestamp": experiment.timestamp,
-        }
+            json_payload = build_response_payload(experiment, provider)
 
-        # Save individual JSON response
-        file_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
-        safe_model = str(p_row["param_model_name"]).replace("/", "-").replace(":", "-")
-        json_path = os.path.join(
-            responses_dir, f"{file_ts}_{safe_model}_{provider}.json"
-        )
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(json_payload, f, indent=2, ensure_ascii=False)
+            # Save individual JSON response (kept alongside the DB row).
+            file_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+            safe_model = (
+                str(row["param_model_name"]).replace("/", "-").replace(":", "-")
+            )
+            json_path = os.path.join(
+                responses_dir, f"{file_ts}_{safe_model}_{provider}.json"
+            )
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(json_payload, f, indent=2, ensure_ascii=False)
 
-        status_color = "green" if status == "success" else "red"
-        run_status_info = f"[bold {status_color}]{status} [/bold {status_color}]"
-        cprint(f"{run_info_prefix} finished {run_status_info}")
+            dao.update_result(provider, row["ID"], result_values(experiment, provider))
 
-    if not settings.dry_run:
-        manager.save_results(results_path)
-        output_filename = os.path.basename(results_path)
-        cprint(
-            f"Saved [bold green]{total_runs}[/bold green] result(s) → "
-            f"[bold yellow]{output_filename}[/bold yellow]"
-        )
+            status_color = "green" if status == "success" else "red"
+            run_status_info = f"[bold {status_color}]{status} [/bold {status_color}]"
+            cprint(f"{run_info_prefix} finished {run_status_info}")
+
+        if not settings.dry_run:
+            cprint(
+                f"Saved [bold green]{total_runs}[/bold green] result(s) → "
+                f"[bold yellow]{os.path.basename(db_path)}[/bold yellow]"
+            )
 
 
 @app.command()
@@ -420,39 +411,36 @@ def stats(
     file: str = typer.Option(
         None,
         "--file",
-        help="CSV to read stats from. Defaults to the single experiment_<pid>_results.csv.",
+        help="Experiment database to read stats from. Defaults to the single experiment_*.db.",
     ),
 ) -> None:
     """Show aggregate statistics for a project's experiment results.
 
-    Defaults to the single ``experiment_<pid>_results.csv`` produced by
-    ``experiment run``; pass ``--file`` to inspect a specific CSV instead.
+    Defaults to the single ``experiment_*.db`` produced by ``experiment
+    generate``/``run``; pass ``--file`` to inspect a specific database instead.
     """
 
     pid = get_proper_pid(pid)
     if file is not None:
-        file_path, _ = _resolve_experiment_csv(pid, file)
+        db_path, _ = _resolve_experiment_db(pid, file)
     else:
         experiment_subdir_path = get_experiment_subdir_path(pid)
-        results_files = _find_results_files(experiment_subdir_path)
-        if not results_files:
+        db_files = _find_db_files(experiment_subdir_path)
+        if not db_files:
             raise LLMExerException(
-                f"No results file found for project '{pid}'. "
-                f"Run `experiment run --pid {pid}` first."
+                f"No experiment database found for project '{pid}'. "
+                f"Run `experiment generate --pid {pid}` first."
             )
-        if len(results_files) > 1:
-            joined = ", ".join(results_files)
+        if len(db_files) > 1:
+            joined = ", ".join(db_files)
             raise LLMExerException(
-                f"Multiple results files found for project '{pid}': {joined}. "
+                f"Multiple experiment databases found for project '{pid}': {joined}. "
                 f"Pass --file to choose one."
             )
-        file_path = os.path.join(experiment_subdir_path, results_files[0])
+        db_path = os.path.join(experiment_subdir_path, db_files[0])
 
-    from llmexer.base.llm_manager import ExperimentsManager
-
-    manager = ExperimentsManager()
-    manager.load(file_path)
-    data = manager.stats()
+    with ExperimentDAO(db_path) as dao:
+        data = dao.stats()
 
     summary = Table(title=f"Experiment stats — {pid}")
     summary.add_column("Metric", style="cyan")

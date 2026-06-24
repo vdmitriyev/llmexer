@@ -2,6 +2,14 @@
 History
 =======
 
+0.2.20 (2026-06-24)
+-------------------
+
+* **Breaking:** store generated experiments and their results in a per-generation **SQLite database** (via SQLAlchemy) instead of CSV files; ``experiment generate`` now writes ``experiment/experiment_<YYYYMMDD>_<NN>.db`` (``<NN>`` is a zero-padded counter starting at ``01``). Input config (``models.csv``, ``data.csv``, ``mapping.csv``, ``llm-params.csv``, ``prompts/*.txt``) stays as CSV/text
+* Use **one table per LLM provider** (e.g. ``experiment_ollama``, ``experiment_openai``), each holding only its own parameter columns plus the generated rows and their results (status, tokens, timestamps, and the call payload as ``response_json``)
+* Add a data access layer ``llmexer/base/dao.py`` (``ExperimentDAO``) that isolates all database access; ``experiment run`` writes results back into the database in place and ``experiment stats`` aggregates across provider tables
+* Add ``SQLAlchemy>=2.0.36`` as a dependency
+
 0.2.19 (2026-06-24)
 -------------------
 

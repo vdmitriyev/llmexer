@@ -1,4 +1,4 @@
-"""Tests for the Experiment data class and ExperimentsManager mapper."""
+"""Tests for the Experiment data class and the DAO-backed ExperimentsManager."""
 
 import json
 import os
@@ -8,35 +8,23 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from llmexer.base.dao import ExperimentDAO
 from llmexer.base.llm_manager import Experiment, ExperimentsManager
 from llmexer.base.llm_provider import CallerState, ProviderResponse
 from llmexer.cli import app
 from llmexer.exceptions import LLMExerException
+from tests.db_helpers import OLLAMA_ROW, OPENAI_ROW, read_experiment_df, seed_db
 
 runner = CliRunner()
 
-_HEADER = (
-    "ID;code;prompt;tokens_estimate;original_data;model_name;provider_name;prompt_hash;"
-    "original_data_hash;profile_name;param_model_name;param_provider;temperature;top_p;"
-    "max_tokens;ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;"
-    "openai_seed;gemini_thinking_level\n"
-)
-_ROW_OLLAMA = (
-    "1;D01_prompt01_llama3.3:latest_ollama-default;Hello world;2;"
-    '{"ID":"D01"};llama3.3:latest;ollama;abc123;def456;'
-    "ollama-default;llama3.3:latest;ollama;0.7;1.0;512;4096;1.1;;;;\n"
-)
-_ROW_OPENAI = (
-    "2;D01_prompt01_gpt-4o_openai-default;Hello world;2;"
-    '{"ID":"D01"};gpt-4o;openai;abc123;def456;'
-    "openai-default;gpt-4o;openai;0.7;1.0;512;;;;42;\n"
-)
+_DB_NAME = "experiment_20240101_01.db"
 
 
 @pytest.fixture()
-def csv_file(tmp_path):
-    path = tmp_path / "experiment_test.csv"
-    path.write_text(_HEADER + _ROW_OLLAMA + _ROW_OPENAI, encoding="utf-8")
+def db_file(tmp_path):
+    """A two-provider experiment database (ollama ID 1, openai ID 2)."""
+    path = tmp_path / "experiment_test.db"
+    seed_db(path, {"ollama": [dict(OLLAMA_ROW)], "openai": [dict(OPENAI_ROW)]})
     return str(path)
 
 
@@ -145,105 +133,46 @@ def test_experiment_to_yaml(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# ExperimentsManager I/O
+# DAO: schema + I/O
 # ---------------------------------------------------------------------------
 
 
-def test_load_returns_dataframe(csv_file):
-    mgr = ExperimentsManager()
-    df = mgr.load(csv_file)
-    assert isinstance(df, pd.DataFrame)
-    assert len(df) == 2
-    assert mgr.file == csv_file
-
-
-def test_load_without_file_raises():
+def test_open_missing_database_raises(tmp_path):
     with pytest.raises(LLMExerException):
-        ExperimentsManager().load()
+        ExperimentsManager().open(str(tmp_path / "nope.db"))
 
 
-def test_unload_roundtrip_preserves_data(csv_file, tmp_path):
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
-    out = str(tmp_path / "dump.csv")
-    mgr.unload(out)
-    reloaded = pd.read_csv(out, sep=";", encoding="utf-8")
-    assert list(reloaded["code"]) == list(mgr.df["code"])
-    assert len(reloaded) == 2
-
-
-def test_sync_writes_back_to_source(csv_file):
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
-    mgr.df.loc[0, "prompt"] = "changed"
-    mgr.sync()
-    reloaded = pd.read_csv(csv_file, sep=";", encoding="utf-8")
-    assert reloaded.loc[0, "prompt"] == "changed"
-
-
-def test_operations_before_load_raise(csv_file):
-    mgr = ExperimentsManager()
+def test_run_without_open_raises():
     with pytest.raises(LLMExerException):
-        mgr.stats()
-    with pytest.raises(LLMExerException):
-        mgr.unload()
+        ExperimentsManager().run(1)
 
 
-# ---------------------------------------------------------------------------
-# ExperimentsManager results file
-# ---------------------------------------------------------------------------
+def test_provider_tables_are_isolated(db_file):
+    """Each provider table carries only its own parameter columns."""
+    with ExperimentDAO(db_file) as dao:
+        tables = dao.provider_tables()
+        assert set(tables) == {"ollama", "openai"}
+        ollama_cols = list(tables["ollama"].c.keys())
+        openai_cols = list(tables["openai"].c.keys())
+    assert "ollama_context_window" in ollama_cols
+    assert "ollama_context_window" not in openai_cols
+    assert "openai_seed" in openai_cols
+    assert "openai_seed" not in ollama_cols
 
 
-def test_results_path_derivation(csv_file):
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
-    expected = csv_file.replace("experiment_test.csv", "experiment_test_results.csv")
-    assert mgr.results_path() == expected
+def test_fetch_rows_tags_provider(db_file):
+    with ExperimentDAO(db_file) as dao:
+        rows = dao.fetch_rows()
+    providers = {r["_provider"] for r in rows}
+    assert providers == {"ollama", "openai"}
 
 
-def test_results_path_idempotent(tmp_path):
-    results = tmp_path / "experiment_x_results.csv"
-    results.write_text(_HEADER + _ROW_OLLAMA, encoding="utf-8")
-    mgr = ExperimentsManager()
-    mgr.load(str(results))
-    # Loading a *_results.csv returns the same path (no double suffix).
-    assert mgr.results_path() == str(results)
-
-
-def test_results_path_before_load_raises():
-    with pytest.raises(LLMExerException):
-        ExperimentsManager().results_path()
-
-
-def test_save_results_writes_single_file(csv_file, mock_providers):
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
-    mgr.run(1)
-    out = mgr.save_results()
-    assert out == mgr.results_path()
-    saved = pd.read_csv(out, sep=";", encoding="utf-8")
-    assert len(saved) == 2  # full row set persisted
-
-
-def test_merge_results_retains_prior_run(csv_file, mock_providers):
-    # First run: only the ollama row (ID 1), then save.
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
-    mgr.run(1)
-    results_file = mgr.save_results()
-
-    # Fresh manager: reload the original file, merge prior results, run row 2.
-    mgr2 = ExperimentsManager()
-    mgr2.load(csv_file)
-    mgr2.merge_results(results_file)
-    mgr2.run(2)
-    mgr2.save_results(results_file)
-
-    saved = pd.read_csv(results_file, sep=";", encoding="utf-8")
-    by_id = saved.set_index("ID")
-    # Row 1's result survived the second run (merge), row 2 was just filled.
-    assert by_id.loc[1, "status"] == "success"
-    assert by_id.loc[2, "status"] == "success"
+def test_fetch_rows_by_id_and_code(db_file):
+    with ExperimentDAO(db_file) as dao:
+        by_id = dao.fetch_rows(id_experiment=2)
+        by_code = dao.fetch_rows(id_experiment="D01_prompt01_gpt-4o_openai-default")
+    assert len(by_id) == 1 and by_id[0]["param_provider"] == "openai"
+    assert len(by_code) == 1 and by_code[0]["ID"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -251,45 +180,43 @@ def test_merge_results_retains_prior_run(csv_file, mock_providers):
 # ---------------------------------------------------------------------------
 
 
-def test_run_ollama_writes_state_back(csv_file, mock_providers):
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
+def test_run_ollama_writes_state_back(db_file, mock_providers):
+    mgr = ExperimentsManager(db_file)
     exp = mgr.run(1)
 
     assert exp.status == "success"
     assert exp.state == CallerState.SUCCESS.value
     assert exp.response_text == "mocked response"
     assert exp.call_count == 1
-    # State written back into the DataFrame.
-    assert mgr.df.loc[0, "status"] == "success"
-    assert mgr.df.loc[0, "state"] == CallerState.SUCCESS.value
-    assert mgr.df.loc[0, "response_text"] == "mocked response"
+    # State persisted into the database row.
+    row = mgr.dao.fetch_rows(id_experiment=1)[0]
+    assert row["status"] == "success"
+    assert row["state"] == CallerState.SUCCESS.value
+    assert row["response_text"] == "mocked response"
+    assert json.loads(row["response_json"])["provider"] == "ollama"
 
 
-def test_run_openai_branch(csv_file, mock_providers):
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
+def test_run_openai_branch(db_file, mock_providers):
+    mgr = ExperimentsManager(db_file)
     exp = mgr.run(2)
     assert exp.status == "success"
     assert exp.state == CallerState.SUCCESS.value
     assert exp.usage_tokens == 42
 
 
-def test_run_by_code(csv_file, mock_providers):
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
+def test_run_by_code(db_file, mock_providers):
+    mgr = ExperimentsManager(db_file)
     exp = mgr.run("D01_prompt01_gpt-4o_openai-default")
     assert exp.param_provider == "openai"
 
 
-def test_run_unknown_id_raises(csv_file, mock_providers):
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
+def test_run_unknown_id_raises(db_file, mock_providers):
+    mgr = ExperimentsManager(db_file)
     with pytest.raises(LLMExerException):
         mgr.run(999)
 
 
-def test_run_error_state_recorded(csv_file, monkeypatch):
+def test_run_error_state_recorded(db_file, monkeypatch):
     import llmexer.base.llm_provider as llm_module
 
     class ErrorOllamaProvider:
@@ -302,8 +229,7 @@ def test_run_error_state_recorded(csv_file, monkeypatch):
 
     monkeypatch.setattr(llm_module, "OllamaProvider", ErrorOllamaProvider)
 
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
+    mgr = ExperimentsManager(db_file)
     exp = mgr.run(1)
     assert exp.state == CallerState.ERROR.value
     assert "Error" in str(exp.status)
@@ -314,9 +240,8 @@ def test_run_error_state_recorded(csv_file, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_stats_pending_before_run(csv_file):
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
+def test_stats_pending_before_run(db_file):
+    mgr = ExperimentsManager(db_file)
     data = mgr.stats()
     assert data["total"] == 2
     assert data["completed"] == 0
@@ -325,9 +250,8 @@ def test_stats_pending_before_run(csv_file):
     assert set(data["models"]) == {"llama3.3:latest", "gpt-4o"}
 
 
-def test_stats_after_run(csv_file, mock_providers):
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
+def test_stats_after_run(db_file, mock_providers):
+    mgr = ExperimentsManager(db_file)
     mgr.run(1)
     mgr.run(2)
     data = mgr.stats()
@@ -337,7 +261,7 @@ def test_stats_after_run(csv_file, mock_providers):
     assert data["total_tokens"] == 84
 
 
-def test_stats_counts_errors(csv_file, monkeypatch):
+def test_stats_counts_errors(db_file, monkeypatch):
     import llmexer.base.llm_provider as llm_module
 
     class ErrorOllamaProvider:
@@ -350,8 +274,7 @@ def test_stats_counts_errors(csv_file, monkeypatch):
 
     monkeypatch.setattr(llm_module, "OllamaProvider", ErrorOllamaProvider)
 
-    mgr = ExperimentsManager()
-    mgr.load(csv_file)
+    mgr = ExperimentsManager(db_file)
     mgr.run(1)
     data = mgr.stats()
     assert data["errors"] == 1
@@ -367,13 +290,13 @@ def test_cli_stats_command(projects_dir):
     pid = "stats-exp"
     exp_subdir = projects_dir / pid / "experiment"
     os.makedirs(exp_subdir)
-    (exp_subdir / "experiment_test.csv").write_text(
-        _HEADER + _ROW_OLLAMA + _ROW_OPENAI, encoding="utf-8"
+    seed_db(
+        exp_subdir / _DB_NAME,
+        {"ollama": [dict(OLLAMA_ROW)], "openai": [dict(OPENAI_ROW)]},
     )
 
     result = runner.invoke(
-        app,
-        ["experiment", "stats", "--pid", pid, "--file", "experiment_test.csv"],
+        app, ["experiment", "stats", "--pid", pid, "--file", _DB_NAME]
     )
 
     assert result.exit_code == 0, result.exception
@@ -381,53 +304,43 @@ def test_cli_stats_command(projects_dir):
     assert "ollama" in result.output
 
 
-def test_cli_stats_defaults_to_results_file(projects_dir, mock_providers):
-    """With no --file, stats auto-discovers the single results file."""
+def test_cli_stats_defaults_to_single_db(projects_dir, mock_providers):
+    """With no --file, stats auto-discovers the single database."""
     pid = "stats-default-exp"
     exp_subdir = projects_dir / pid / "experiment"
     os.makedirs(exp_subdir)
-    (exp_subdir / "experiment_test.csv").write_text(
-        _HEADER + _ROW_OLLAMA + _ROW_OPENAI, encoding="utf-8"
-    )
+    seed_db(exp_subdir / _DB_NAME, {"ollama": [dict(OLLAMA_ROW)]})
 
-    # Produce the results file (named after the input file).
     run_result = runner.invoke(
-        app,
-        ["experiment", "run", "--pid", pid, "--file", "experiment_test.csv"],
+        app, ["experiment", "run", "--pid", pid, "--file", _DB_NAME]
     )
     assert run_result.exit_code == 0, run_result.exception
-    assert (exp_subdir / "experiment_test_results.csv").exists()
 
-    # No --file: stats should pick up the results file and show completed > 0.
     result = runner.invoke(app, ["experiment", "stats", "--pid", pid])
     assert result.exit_code == 0, result.exception
     assert "completed" in result.output
     assert "ollama" in result.output
 
 
-def test_cli_stats_missing_results_file_raises(projects_dir):
-    """stats with no --file and no results file errors, pointing to `run`."""
-    pid = "stats-no-results"
+def test_cli_stats_missing_db_raises(projects_dir):
+    """stats with no --file and no database errors, pointing to `generate`."""
+    pid = "stats-no-db"
     exp_subdir = projects_dir / pid / "experiment"
     os.makedirs(exp_subdir)
 
     result = runner.invoke(app, ["experiment", "stats", "--pid", pid])
     assert result.exit_code != 0
     assert isinstance(result.exception, LLMExerException)
-    assert "run" in str(result.exception).lower()
+    assert "generate" in str(result.exception).lower()
 
 
-def test_cli_stats_multiple_results_requires_file(projects_dir):
-    """stats with no --file errors when several results files exist."""
+def test_cli_stats_multiple_dbs_requires_file(projects_dir):
+    """stats with no --file errors when several databases exist."""
     pid = "stats-multi"
     exp_subdir = projects_dir / pid / "experiment"
     os.makedirs(exp_subdir)
-    (exp_subdir / "experiment_aaa_results.csv").write_text(
-        _HEADER + _ROW_OLLAMA, encoding="utf-8"
-    )
-    (exp_subdir / "experiment_bbb_results.csv").write_text(
-        _HEADER + _ROW_OPENAI, encoding="utf-8"
-    )
+    seed_db(exp_subdir / "experiment_20240101_01.db", {"ollama": [dict(OLLAMA_ROW)]})
+    seed_db(exp_subdir / "experiment_20240101_02.db", {"openai": [dict(OPENAI_ROW)]})
 
     result = runner.invoke(app, ["experiment", "stats", "--pid", pid])
     assert result.exit_code != 0
@@ -439,32 +352,18 @@ def test_cli_run_single_id(projects_dir, mock_providers):
     pid = "single-id-exp"
     exp_subdir = projects_dir / pid / "experiment"
     os.makedirs(exp_subdir)
-    (exp_subdir / "experiment_test.csv").write_text(
-        _HEADER + _ROW_OLLAMA + _ROW_OPENAI, encoding="utf-8"
+    seed_db(
+        exp_subdir / _DB_NAME,
+        {"ollama": [dict(OLLAMA_ROW)], "openai": [dict(OPENAI_ROW)]},
     )
 
     result = runner.invoke(
         app,
-        [
-            "experiment",
-            "run",
-            "--pid",
-            pid,
-            "--file",
-            "experiment_test.csv",
-            "--id",
-            "1",
-        ],
+        ["experiment", "run", "--pid", pid, "--file", _DB_NAME, "--id", "1"],
     )
 
     assert result.exit_code == 0, result.exception
-    results_files = [
-        f
-        for f in os.listdir(exp_subdir)
-        if f == "experiment_test_results.csv" and f.endswith(".csv")
-    ]
-    assert len(results_files) == 1
-    df = pd.read_csv(exp_subdir / results_files[0], sep=";", encoding="utf-8")
+    df = read_experiment_df(exp_subdir / _DB_NAME)
     # Full row set persisted; only the --id 1 (ollama) row was run.
     assert len(df) == 2
     by_id = df.set_index("ID")
