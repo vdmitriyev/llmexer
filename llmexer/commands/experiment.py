@@ -358,10 +358,19 @@ def run(
         total_runs = len(rows)
         cprint(f"Total experiments to run: [bold green]{total_runs}[/bold green]")
 
+        ran = 0
         for index, row in enumerate(rows):
             current_run_info = f"[[green]{index+1}[/green]/[cyan]{total_runs}[/cyan]]"
             experiment_info = f"[[yellow]{row['code']}[/yellow]]"
             run_info_prefix = f"{current_run_info}{experiment_info}"
+
+            # Skip rows that already completed successfully on an earlier run.
+            if row.get("status") == "success":
+                cprint(
+                    f"{run_info_prefix} [bold yellow]skipped[/bold yellow] (already success)"
+                )
+                continue
+
             cprint(f"{run_info_prefix} running")
             provider = row.get("_provider") or str(row["provider_name"]).lower()
 
@@ -383,6 +392,7 @@ def run(
                 json.dump(json_payload, f, indent=2, ensure_ascii=False)
 
             dao.update_result(provider, row["ID"], result_values(experiment, provider))
+            ran += 1
 
             status_color = "green" if status == "success" else "red"
             run_status_info = f"[bold {status_color}]{status} [/bold {status_color}]"
@@ -390,7 +400,7 @@ def run(
 
         if not settings.dry_run:
             cprint(
-                f"Saved [bold green]{total_runs}[/bold green] result(s) → "
+                f"Saved [bold green]{ran}[/bold green] result(s) → "
                 f"[bold yellow]{os.path.basename(db_path)}[/bold yellow]"
             )
 
@@ -439,7 +449,7 @@ def stats(
     summary = Table(title=f"Experiment stats — {pid}")
     summary.add_column("Metric", style="cyan")
     summary.add_column("Value", justify="right", style="green")
-    for key in ("total", "completed", "running", "errors", "pending", "total_tokens"):
+    for key in ("total", "finished", "running", "errors", "total_tokens"):
         summary.add_row(key, str(data[key]))
     console.print(summary)
 

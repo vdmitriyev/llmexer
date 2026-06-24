@@ -327,7 +327,7 @@ class ExperimentDAO:
     def stats(self) -> Dict[str, Any]:
         """Aggregate statistics across every provider table in the database."""
 
-        total = completed = running = errors = pending = total_tokens = 0
+        total = finished = running = errors = total_tokens = 0
         providers: Dict[str, int] = {}
         models: Dict[str, int] = {}
 
@@ -343,10 +343,9 @@ class ExperimentDAO:
                 rows = count()
                 total += rows
                 providers[prov] = providers.get(prov, 0) + rows
-                completed += count(table.c.status == "success")
+                finished += count(table.c.status == "success")
                 errors += count(table.c.status.like("Error%"))
                 running += count(table.c.state == "running")
-                pending += count(table.c.status.is_(None))
 
                 token_sum = conn.execute(
                     select(
@@ -367,10 +366,9 @@ class ExperimentDAO:
 
         return {
             "total": total,
-            "completed": completed,
+            "finished": finished,
             "running": running,
             "errors": errors,
-            "pending": pending,
             "total_tokens": total_tokens,
             "providers": providers,
             "models": models,

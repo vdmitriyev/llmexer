@@ -91,10 +91,10 @@ def mock_llm_mapper(monkeypatch):
 
     class FakeOllamaProvider:
         def __init__(self, provider, auth=None, base_url=None, **kwargs):
-            self.state = CallerState.SUCCESS
+            self.state = CallerState.FINISHED
 
         def execute(self, prompt, row):
-            self.state = CallerState.SUCCESS
+            self.state = CallerState.FINISHED
             return ProviderResponse(text="mocked response", usage_tokens=42)
 
     monkeypatch.setattr(llm_module, "LLMRequestsMapper", FakeMapper)
@@ -301,6 +301,67 @@ def test_run_failed_call_still_writes_row(experiment_with_db, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Skip already-successful rows
+# ---------------------------------------------------------------------------
+
+
+def test_run_skips_already_successful_row(projects_dir, mock_llm_mapper):
+    """A row already in 'success' state is skipped (no LLM call, result untouched)."""
+    pid = "skip-success-exp"
+    exp_subdir = projects_dir / pid / "experiment"
+    os.makedirs(exp_subdir)
+    seed_db(
+        exp_subdir / _EXPERIMENT_DB_NAME,
+        {
+            "ollama": [
+                {**OLLAMA_ROW, "status": "success", "response_text": "prior result"}
+            ]
+        },
+    )
+
+    result = runner.invoke(
+        app,
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
+    )
+
+    assert result.exit_code == 0
+    assert "skipped" in result.output.lower()
+    # The existing result is preserved; the mock's "mocked response" was not written.
+    df = read_experiment_df(find_db(exp_subdir))
+    assert df.iloc[0]["status"] == "success"
+    assert df.iloc[0]["response_text"] == "prior result"
+    # Nothing ran, so no per-call JSON file was created.
+    assert not list((exp_subdir / "responses").glob("*.json"))
+
+
+def test_run_skips_success_runs_only_pending(projects_dir, mock_llm_mapper):
+    """With one success and one pending row, only the pending row is executed."""
+    pid = "skip-mixed-exp"
+    exp_subdir = projects_dir / pid / "experiment"
+    os.makedirs(exp_subdir)
+    seed_db(
+        exp_subdir / _EXPERIMENT_DB_NAME,
+        {
+            "ollama": [{**OLLAMA_ROW, "status": "success", "response_text": "prior"}],
+            "openai": [dict(OPENAI_ROW)],
+        },
+    )
+
+    result = runner.invoke(
+        app,
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
+    )
+
+    assert result.exit_code == 0
+    assert "skipped" in result.output.lower()
+    df = read_experiment_df(find_db(exp_subdir)).set_index("ID")
+    # ollama row untouched, openai row freshly run.
+    assert df.loc[1, "response_text"] == "prior"
+    assert df.loc[2, "status"] == "success"
+    assert df.loc[2, "response_text"] == "mocked response"
+
+
+# ---------------------------------------------------------------------------
 # Error / edge-case tests
 # ---------------------------------------------------------------------------
 
@@ -393,7 +454,7 @@ def test_run_uses_provider_url_from_env(experiment_with_db, monkeypatch):
             captured["base_url"] = base_url
 
         def execute(self, prompt, row):
-            self.state = CallerState.SUCCESS
+            self.state = CallerState.FINISHED
             return ProviderResponse(text="x", usage_tokens=1)
 
     monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
@@ -420,7 +481,7 @@ def test_run_provider_url_falls_back_to_url_map(experiment_with_db, monkeypatch)
             captured["base_url"] = base_url
 
         def execute(self, prompt, row):
-            self.state = CallerState.SUCCESS
+            self.state = CallerState.FINISHED
             return ProviderResponse(text="x", usage_tokens=1)
 
     monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
@@ -447,7 +508,7 @@ def test_run_uses_provider_key_from_env(experiment_with_db, monkeypatch):
             captured["api_key"] = auth.api_key if auth else "na"
 
         def execute(self, prompt, row):
-            self.state = CallerState.SUCCESS
+            self.state = CallerState.FINISHED
             return ProviderResponse(text="x", usage_tokens=1)
 
     monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
@@ -475,7 +536,7 @@ def test_run_provider_key_defaults_to_na_when_absent(experiment_with_db, monkeyp
             captured["api_key"] = auth.api_key if auth else "na"
 
         def execute(self, prompt, row):
-            self.state = CallerState.SUCCESS
+            self.state = CallerState.FINISHED
             return ProviderResponse(text="x", usage_tokens=1)
 
     monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)

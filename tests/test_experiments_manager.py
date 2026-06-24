@@ -59,11 +59,11 @@ def mock_providers(monkeypatch):
 
     class FakeOllamaProvider:
         def __init__(self, provider, auth=None, base_url=None, **kwargs):
-            self.state = CallerState.SUCCESS
+            self.state = CallerState.FINISHED
             self.stats = CallerStats(call_count=1, total_tokens=42, elapsed_seconds=0.5)
 
         def execute(self, prompt, row):
-            self.state = CallerState.SUCCESS
+            self.state = CallerState.FINISHED
             return ProviderResponse(text="mocked response", usage_tokens=42)
 
     monkeypatch.setattr(llm_module, "LLMRequestsMapper", FakeMapper)
@@ -185,13 +185,13 @@ def test_run_ollama_writes_state_back(db_file, mock_providers):
     exp = mgr.run(1)
 
     assert exp.status == "success"
-    assert exp.state == CallerState.SUCCESS.value
+    assert exp.state == CallerState.FINISHED.value
     assert exp.response_text == "mocked response"
     assert exp.call_count == 1
     # State persisted into the database row.
     row = mgr.dao.fetch_rows(id_experiment=1)[0]
     assert row["status"] == "success"
-    assert row["state"] == CallerState.SUCCESS.value
+    assert row["state"] == CallerState.FINISHED.value
     assert row["response_text"] == "mocked response"
     assert json.loads(row["response_json"])["provider"] == "ollama"
 
@@ -200,7 +200,7 @@ def test_run_openai_branch(db_file, mock_providers):
     mgr = ExperimentsManager(db_file)
     exp = mgr.run(2)
     assert exp.status == "success"
-    assert exp.state == CallerState.SUCCESS.value
+    assert exp.state == CallerState.FINISHED.value
     assert exp.usage_tokens == 42
 
 
@@ -240,12 +240,12 @@ def test_run_error_state_recorded(db_file, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_stats_pending_before_run(db_file):
+def test_stats_before_run(db_file):
     mgr = ExperimentsManager(db_file)
     data = mgr.stats()
     assert data["total"] == 2
-    assert data["completed"] == 0
-    assert data["pending"] == 2
+    assert data["finished"] == 0
+    assert "pending" not in data
     assert data["providers"] == {"ollama": 1, "openai": 1}
     assert set(data["models"]) == {"llama3.3:latest", "gpt-4o"}
 
@@ -255,9 +255,8 @@ def test_stats_after_run(db_file, mock_providers):
     mgr.run(1)
     mgr.run(2)
     data = mgr.stats()
-    assert data["completed"] == 2
+    assert data["finished"] == 2
     assert data["errors"] == 0
-    assert data["pending"] == 0
     assert data["total_tokens"] == 84
 
 
@@ -278,7 +277,7 @@ def test_stats_counts_errors(db_file, monkeypatch):
     mgr.run(1)
     data = mgr.stats()
     assert data["errors"] == 1
-    assert data["pending"] == 1
+    assert data["finished"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -318,7 +317,7 @@ def test_cli_stats_defaults_to_single_db(projects_dir, mock_providers):
 
     result = runner.invoke(app, ["experiment", "stats", "--pid", pid])
     assert result.exit_code == 0, result.exception
-    assert "completed" in result.output
+    assert "finished" in result.output
     assert "ollama" in result.output
 
 

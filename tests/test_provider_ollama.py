@@ -161,7 +161,7 @@ def test_execute_success_state():
     caller = OllamaProvider(provider="ollama")
     caller.session = _mock_client("world", total_tokens=10)
     caller.execute("say hello", _row())
-    assert caller.state == CallerState.SUCCESS
+    assert caller.state == CallerState.FINISHED
 
 
 def test_execute_success_response_text():

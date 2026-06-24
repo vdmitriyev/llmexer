@@ -32,7 +32,7 @@ class _StubProvider(LLMProviderBase):
             self.response = ProviderResponse(text="ok", usage_tokens=10)
             self.stats.call_count += 1
             self.stats.total_tokens += 10
-            self.state = CallerState.SUCCESS
+            self.state = CallerState.FINISHED
         except Exception as exc:
             self.state = CallerState.ERROR
             self.response = ProviderResponse(text=str(exc))
@@ -47,18 +47,18 @@ class _StubProvider(LLMProviderBase):
 def test_caller_state_values():
     assert CallerState.STARTED == "started"
     assert CallerState.RUNNING == "running"
-    assert CallerState.SUCCESS == "success"
+    assert CallerState.FINISHED == "finished"
     assert CallerState.ERROR == "error"
     assert set(CallerState) == {
         CallerState.STARTED,
         CallerState.RUNNING,
-        CallerState.SUCCESS,
+        CallerState.FINISHED,
         CallerState.ERROR,
     }
 
 
 def test_caller_state_is_str():
-    assert isinstance(CallerState.SUCCESS, str)
+    assert isinstance(CallerState.FINISHED, str)
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +163,7 @@ def test_stub_timeout_default():
 def test_stub_execute_updates_state():
     stub = _StubProvider(provider="stub")
     stub.execute("say hello", {"model": "stub-model"})
-    assert stub.state == CallerState.SUCCESS
+    assert stub.state == CallerState.FINISHED
 
 
 def test_stub_execute_populates_response():

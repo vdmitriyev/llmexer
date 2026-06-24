@@ -2,6 +2,13 @@
 History
 =======
 
+0.2.22 (2026-06-25)
+-------------------
+
+* ``experiment run`` now skips rows already in the ``success`` state (no LLM call, result left untouched) and prints the skip to the console
+* Rename ``CallerState.SUCCESS`` to ``CallerState.FINISHED`` (value ``"success"`` → ``"finished"``); the per-row ``state`` column now stores ``"finished"`` on success (the ``status`` column still uses ``"success"`` / ``"Error: …"``)
+* ``experiment stats``: drop the ``pending`` metric and rename ``completed`` → ``finished``; metrics are now total, finished, running, errors, total_tokens (plus per-provider and per-model breakdowns)
+
 0.2.21 (2026-06-25)
 -------------------
 

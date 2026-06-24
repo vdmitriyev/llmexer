@@ -195,7 +195,7 @@ def run_experiment_row(row: Dict[str, Any]) -> Experiment:
         experiment.status = (
             f"Error: {resp.raw}" if caller.state == CallerState.ERROR else "success"
         )
-        state = getattr(caller, "state", CallerState.SUCCESS)
+        state = getattr(caller, "state", CallerState.FINISHED)
         experiment.state = getattr(state, "value", str(state))
         stats = getattr(caller, "stats", None)
         experiment.call_count = getattr(stats, "call_count", 1)
@@ -214,7 +214,7 @@ def run_experiment_row(row: Dict[str, Any]) -> Experiment:
         experiment.status = result.status
         # LLMRequestsMapper has no CallerState/CallerStats; derive them.
         experiment.state = (
-            CallerState.SUCCESS.value
+            CallerState.FINISHED.value
             if result.status == "success"
             else CallerState.ERROR.value
         )

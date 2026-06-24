@@ -41,7 +41,7 @@ def resolve_provider_config(provider: str) -> Tuple[Optional[str], str]:
 class CallerState(str, Enum):
     STARTED = "started"
     RUNNING = "running"
-    SUCCESS = "success"
+    FINISHED = "finished"
     ERROR = "error"
 
 
@@ -247,7 +247,7 @@ class OllamaProvider(LLMProviderBase):
             self.response = ProviderResponse(
                 text=text, usage_tokens=tokens, raw=completion  # gitleaks:allow
             )
-            self.state = CallerState.SUCCESS
+            self.state = CallerState.FINISHED
         except Exception as exc:
             self.response = ProviderResponse(text="", usage_tokens=None, raw=str(exc))
             self.state = CallerState.ERROR
