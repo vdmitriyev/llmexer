@@ -51,11 +51,11 @@ def mock_s2_session(mock_detect_language):
 
 
 @pytest.fixture()
-def experiments_dir(tmp_path, monkeypatch):
-    """Redirect EXPERIMENTS_PATH to a temporary directory for each test."""
+def projects_dir(tmp_path, monkeypatch):
+    """Redirect PROJECTS_PATH to a temporary directory for each test."""
     import llmexer.constants as constants
 
-    monkeypatch.setattr(constants, "EXPERIMENTS_PATH", str(tmp_path))
+    monkeypatch.setattr(constants, "PROJECTS_PATH", str(tmp_path))
     return tmp_path
 
 
@@ -68,11 +68,11 @@ def mock_no_dotenv(monkeypatch):
 
 
 def test_search_run_with_query(
-    experiments_dir, mock_no_dotenv, mock_s2_session, monkeypatch
+    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
 ):
     """Running search with --query should work."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     result = runner.invoke(app, ["search", "run", "--query", "test query"])
     assert result.exit_code == 0
@@ -85,14 +85,14 @@ def test_search_run_with_query(
 
 
 def test_search_run_with_file_file(
-    experiments_dir, mock_no_dotenv, mock_s2_session, monkeypatch
+    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
 ):
     """Running search with --file should load parameters from YAML."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     # Create a search file
-    search_file_path = experiments_dir / "test-exp" / "test_search_file.yaml"
+    search_file_path = projects_dir / "test-exp" / "test_search_file.yaml"
     search_file_data = {
         "query": "neural networks",
         "year": "2022-2024",
@@ -112,12 +112,10 @@ def test_search_run_with_file_file(
     assert "True" in result.output
 
 
-def test_search_run_nonexistent_file_raises(
-    experiments_dir, mock_no_dotenv, monkeypatch
-):
+def test_search_run_nonexistent_file_raises(projects_dir, mock_no_dotenv, monkeypatch):
     """Using a nonexistent search file should raise error."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     result = runner.invoke(
         app, ["search", "run", "--file", "/nonexistent/search_file.yaml"]
@@ -128,11 +126,11 @@ def test_search_run_nonexistent_file_raises(
 
 
 def test_search_run_without_query_or_file_raises(
-    experiments_dir, mock_no_dotenv, monkeypatch
+    projects_dir, mock_no_dotenv, monkeypatch
 ):
     """Running search without query or config should raise error."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     result = runner.invoke(app, ["search", "run"])
     assert result.exit_code != 0
@@ -141,14 +139,14 @@ def test_search_run_without_query_or_file_raises(
 
 
 def test_search_run_file_with_missing_fields(
-    experiments_dir, mock_no_dotenv, mock_s2_session, monkeypatch
+    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
 ):
     """search file with missing fields should use defaults."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     # Create a search file with only query
-    search_file_path = experiments_dir / "test-exp" / "minimal_search_file.yaml"
+    search_file_path = projects_dir / "test-exp" / "minimal_search_file.yaml"
     search_file_data = {"query": "minimal query"}
     with open(search_file_path, "w") as f:
         yaml.dump(search_file_data, f)
@@ -164,11 +162,11 @@ def test_search_run_file_with_missing_fields(
 
 
 def test_search_run_creates_output_files(
-    experiments_dir, mock_no_dotenv, mock_s2_session, monkeypatch
+    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
 ):
     """Happy path: running search creates JSON and CSV result files."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     result = runner.invoke(
         app, ["search", "run", "--query", "test query", "--limit", "10"]
@@ -177,7 +175,7 @@ def test_search_run_creates_output_files(
     assert result.exit_code == 0
     assert "File with results" in result.output
 
-    searches_dir = experiments_dir / "test-exp" / "searches"
+    searches_dir = projects_dir / "test-exp" / "searches"
     json_files = list(searches_dir.glob("*_results_raw.json"))
     csv_files = list(searches_dir.glob("*_results.csv"))
     assert len(json_files) == 1
@@ -198,17 +196,17 @@ def test_search_run_creates_output_files(
 
 
 def test_search_run_fails_if_files_exist(
-    experiments_dir, mock_no_dotenv, mock_s2_session, monkeypatch
+    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
 ):
     """If result files already exist, raises SearchResultsAlreadyExistException."""
-    os.makedirs(experiments_dir / "test-exp" / "searches", exist_ok=True)
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    os.makedirs(projects_dir / "test-exp" / "searches", exist_ok=True)
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     # First run to create the files
     result1 = runner.invoke(app, ["search", "run", "--query", "test query"])
     assert result1.exit_code == 0
 
-    searches_dir = experiments_dir / "test-exp" / "searches"
+    searches_dir = projects_dir / "test-exp" / "searches"
     yaml_files = list(searches_dir.glob("*.yaml"))
     assert yaml_files, "Expected a search YAML file to have been created"
 
@@ -220,16 +218,16 @@ def test_search_run_fails_if_files_exist(
 
 
 def test_search_run_rewrite_overwrites(
-    experiments_dir, mock_no_dotenv, mock_s2_session, monkeypatch
+    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
 ):
     """--rewrite allows overwriting existing result files."""
-    os.makedirs(experiments_dir / "test-exp" / "searches", exist_ok=True)
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    os.makedirs(projects_dir / "test-exp" / "searches", exist_ok=True)
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     result1 = runner.invoke(app, ["search", "run", "--query", "test query"])
     assert result1.exit_code == 0
 
-    searches_dir = experiments_dir / "test-exp" / "searches"
+    searches_dir = projects_dir / "test-exp" / "searches"
     yaml_files = list(searches_dir.glob("*.yaml"))
 
     result2 = runner.invoke(
@@ -242,11 +240,11 @@ def test_search_run_rewrite_overwrites(
 
 
 def test_search_run_language_unknown_on_empty(
-    experiments_dir, mock_no_dotenv, monkeypatch
+    projects_dir, mock_no_dotenv, monkeypatch
 ):
     """Paper with no title and no abstract gets language='unknown'."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     empty_paper = {
         "paperId": "empty1",
@@ -266,24 +264,24 @@ def test_search_run_language_unknown_on_empty(
             result = runner.invoke(app, ["search", "run", "--query", "test"])
 
     assert result.exit_code == 0
-    searches_dir = experiments_dir / "test-exp" / "searches"
+    searches_dir = projects_dir / "test-exp" / "searches"
     csv_files = list(searches_dir.glob("*_results.csv"))
     assert len(csv_files) == 1
     df = pd.read_csv(csv_files[0], sep=";")
     assert df.iloc[0]["language"] == "unknown"
 
 
-def test_search_run_dry_run_no_files(experiments_dir, mock_no_dotenv, monkeypatch):
+def test_search_run_dry_run_no_files(projects_dir, mock_no_dotenv, monkeypatch):
     """With --dry-run, no output files are written."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     result = runner.invoke(app, ["--dry-run", "search", "run", "--query", "test query"])
 
     assert result.exit_code == 0
     assert "Dry run" in result.output
 
-    searches_dir = experiments_dir / "test-exp" / "searches"
+    searches_dir = projects_dir / "test-exp" / "searches"
     if searches_dir.exists():
         assert not list(searches_dir.glob("*_results_raw.json"))
         assert not list(searches_dir.glob("*_results.csv"))

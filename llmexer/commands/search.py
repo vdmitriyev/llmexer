@@ -20,8 +20,8 @@ from llmexer.base.search import (
 )
 from llmexer.common import (
     ensure_directory_exists,
-    get_experiment_directory_path,
-    get_proper_eid,
+    get_project_directory_path,
+    get_proper_pid,
 )
 from llmexer.configs import console, cprint, settings
 from llmexer.constants import PAPERS_DIR, SEARCHES_DIR
@@ -154,11 +154,11 @@ def _build_stats_grid(df):
     return layout
 
 
-def print_search_header(eid, search_id, query, year, only_open_access):
+def print_search_header(pid, search_id, query, year, only_open_access):
     header = Table(show_header=False, box=None, padding=(0, 1))
     header.add_column(style="bold white", no_wrap=True)
     header.add_column()
-    header.add_row("Experiment:", f"[bold yellow]{eid}[/bold yellow]")
+    header.add_row("Project:", f"[bold yellow]{pid}[/bold yellow]")
     header.add_row("Search ID:", f"[bold yellow]{search_id}[/bold yellow]")
     header.add_row("Query:", f"[bold green]{query}[/bold green]")
     header.add_row("Year:", f"[bold cyan]{year}[/bold cyan]")
@@ -175,16 +175,16 @@ def create(
         "--query",
         help="Query string for the search",
     ),
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID to store the search config. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID to store the search config. If not provided, uses PROJECT_ID from .env.",
     ),
 ) -> None:
     """Create a new search configuration YAML file"""
 
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
 
     search_id, yaml_filename = save_search_query(
         experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM
@@ -196,17 +196,17 @@ def create(
 
 @app.command(name="list")
 def list_searches(
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
 ) -> None:
-    """List all search YAML files for an experiment"""
+    """List all search YAML files for a project"""
     from datetime import datetime, timezone
 
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
 
     if not os.path.isdir(searches_path):
@@ -269,10 +269,10 @@ def rename_search(
         "--new-id",
         help="New search ID.",
     ),
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
 ) -> None:
     """Rename a search and all its associated files"""
@@ -281,8 +281,8 @@ def rename_search(
     old_id = os.path.splitext(old_id)[0]
     new_id = os.path.splitext(new_id)[0]
 
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
 
     old_yaml = os.path.join(searches_path, f"{old_id}.yaml")
@@ -317,10 +317,10 @@ def run(
         "--file",
         help="Name of the YAML file with search parameters",
     ),
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID to be used to store search results. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID to be used to store search results. If not provided, uses PROJECT_ID from .env.",
     ),
     limit: int = typer.Option(
         None,
@@ -343,8 +343,8 @@ def run(
     if query is not None and file is not None:
         raise UnexpectedCLIParamsException("Only one can be set: query or file")
 
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
 
     if query:
         year = DEFAULT_SEARCH_YEAR_PARAM
@@ -383,7 +383,7 @@ def run(
         cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{csv_path}'")
         return
 
-    print_search_header(eid, search_id, query, year, only_open_access)
+    print_search_header(pid, search_id, query, year, only_open_access)
 
     records = run_semantic_scholar_search(
         query, year, only_open_access, batch, limit, json_path, csv_path
@@ -401,10 +401,10 @@ def stats(
         "--file",
         help="YAML search config filename or bare search ID.",
     ),
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID to look up results for. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID to look up results for. If not provided, uses PROJECT_ID from .env.",
     ),
 ) -> None:
     """Display statistics for a completed search result"""
@@ -412,11 +412,11 @@ def stats(
     if file is None:
         raise UnexpectedCLIParamsException("--file is required.")
 
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
 
     search_id, query, year, only_open_access = read_search_params(file, experiment_path)
-    print_search_header(eid, search_id, query, year, only_open_access)
+    print_search_header(pid, search_id, query, year, only_open_access)
 
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
     csv_path = os.path.join(searches_path, f"{search_id}_results.csv")
@@ -454,10 +454,10 @@ def filter_results(
         "--file",
         help="YAML search config filename or bare search ID.",
     ),
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID to look up results for. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID to look up results for. If not provided, uses PROJECT_ID from .env.",
     ),
     language: str = typer.Option(
         "en",
@@ -470,11 +470,11 @@ def filter_results(
     if file is None:
         raise UnexpectedCLIParamsException("--file is required.")
 
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
 
     search_id, query, year, only_open_access = read_search_params(file, experiment_path)
-    print_search_header(eid, search_id, query, year, only_open_access)
+    print_search_header(pid, search_id, query, year, only_open_access)
 
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
     csv_path = os.path.join(searches_path, f"{search_id}_results.csv")
@@ -511,22 +511,22 @@ def sync(
         "--file",
         help="YAML search config filename or bare search ID.",
     ),
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
 ) -> None:
-    """Sync CSV result files against the papers/ folder of the experiment"""
+    """Sync CSV result files against the papers/ folder of the project"""
 
     if file is None:
         raise UnexpectedCLIParamsException("--file is required.")
 
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
 
     search_id, query, year, only_open_access = read_search_params(file, experiment_path)
-    print_search_header(eid, search_id, query, year, only_open_access)
+    print_search_header(pid, search_id, query, year, only_open_access)
 
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
     papers_path = os.path.join(experiment_path, PAPERS_DIR)

@@ -2,6 +2,14 @@
 History
 =======
 
+0.2.19 (2026-06-24)
+-------------------
+
+* **Breaking:** rename the top-level container from "experiment" to "project". Artifacts now live under ``.projects/<PROJECT_ID>/`` (was ``.experiments/<EXPERIMENT_ID>/``); the CLI flag ``--eid`` becomes ``--pid`` and the env var ``EXPERIMENT_ID`` becomes ``PROJECT_ID`` across all commands
+* Add a new ``project`` command group (alias ``proj``) that manages the project lifecycle — ``create``, ``list``, ``rename``, ``current`` — moved out of the ``experiment`` group
+* The ``experiment`` group now contains the experiment setup & execution commands: ``init``, ``generate``, ``run``, ``stats`` (all operate on a project via ``--pid``)
+* Rename internal symbols for consistency: ``EXPERIMENTS_PATH``→``PROJECTS_PATH``, ``get_proper_eid``→``get_proper_pid``, ``get_experiment_directory_path``→``get_project_directory_path`` (plus new ``get_experiment_subdir_path``), ``generate_experiment_id``→``generate_project_id``, ``settings.experiment_id``→``settings.project_id``, and exceptions ``Experiment{IDRequired,NotExists,AlreadyExists}Exception``→``Project{...}Exception``
+
 0.2.18 (2026-06-14)
 -------------------
 

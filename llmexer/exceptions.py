@@ -5,16 +5,16 @@ class LLMExerException(Exception):
     """Generic exception for LLMExerException."""
 
 
-class ExperimentAlreadyExistsException(LLMExerException):
-    """Raised when an experiment with the given ID already exists."""
+class ProjectAlreadyExistsException(LLMExerException):
+    """Raised when a project with the given ID already exists."""
 
 
-class ExperimentNotExistsException(LLMExerException):
-    """Raised when an experiment with the given ID does not exists."""
+class ProjectNotExistsException(LLMExerException):
+    """Raised when a project with the given ID does not exists."""
 
 
-class ExperimentIDRequiredException(LLMExerException):
-    """Raised an experiment ID has not been passed."""
+class ProjectIDRequiredException(LLMExerException):
+    """Raised a project ID has not been passed."""
 
 
 class UnexpectedCLIParamsException(LLMExerException):

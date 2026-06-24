@@ -9,19 +9,19 @@ from typer.testing import CliRunner
 
 from llmexer.cli import app
 from llmexer.exceptions import (
-    ExperimentIDRequiredException,
-    ExperimentNotExistsException,
+    ProjectIDRequiredException,
+    ProjectNotExistsException,
 )
 
 runner = CliRunner()
 
 
 @pytest.fixture()
-def experiments_dir(tmp_path, monkeypatch):
-    """Redirect EXPERIMENTS_PATH to a temporary directory for each test."""
+def projects_dir(tmp_path, monkeypatch):
+    """Redirect PROJECTS_PATH to a temporary directory for each test."""
     import llmexer.constants as constants
 
-    monkeypatch.setattr(constants, "EXPERIMENTS_PATH", str(tmp_path))
+    monkeypatch.setattr(constants, "PROJECTS_PATH", str(tmp_path))
     return tmp_path
 
 
@@ -40,32 +40,32 @@ def _make_yaml(searches_dir, search_id, query="test query", year="2020-2025"):
     return yaml_path
 
 
-def test_search_list_no_searches_dir(experiments_dir, mock_no_dotenv, monkeypatch):
+def test_search_list_no_searches_dir(projects_dir, mock_no_dotenv, monkeypatch):
     """Experiment exists but has no searches/ directory -> prints no searches found."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     result = runner.invoke(app, ["search", "list"])
     assert result.exit_code == 0
     assert "No searches found." in result.output
 
 
-def test_search_list_empty_dir(experiments_dir, mock_no_dotenv, monkeypatch):
+def test_search_list_empty_dir(projects_dir, mock_no_dotenv, monkeypatch):
     """searches/ directory exists but contains no YAML files -> prints no searches found."""
-    searches_dir = experiments_dir / "test-exp" / "searches"
+    searches_dir = projects_dir / "test-exp" / "searches"
     searches_dir.mkdir(parents=True)
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     result = runner.invoke(app, ["search", "list"])
     assert result.exit_code == 0
     assert "No searches found." in result.output
 
 
-def test_search_list_shows_yaml_files(experiments_dir, mock_no_dotenv, monkeypatch):
+def test_search_list_shows_yaml_files(projects_dir, mock_no_dotenv, monkeypatch):
     """Two YAML files in searches/ should both appear in the table output."""
-    searches_dir = experiments_dir / "test-exp" / "searches"
+    searches_dir = projects_dir / "test-exp" / "searches"
     searches_dir.mkdir(parents=True)
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     _make_yaml(searches_dir, "20260101-aaaaaaaa", query="first query")
     _make_yaml(searches_dir, "20260102-bbbbbbbb", query="second query")
@@ -79,11 +79,11 @@ def test_search_list_shows_yaml_files(experiments_dir, mock_no_dotenv, monkeypat
     assert "Results" in result.output
 
 
-def test_search_list_shows_results_column(experiments_dir, mock_no_dotenv, monkeypatch):
+def test_search_list_shows_results_column(projects_dir, mock_no_dotenv, monkeypatch):
     """Row with a matching _results.csv shows Yes; row without shows No."""
-    searches_dir = experiments_dir / "test-exp" / "searches"
+    searches_dir = projects_dir / "test-exp" / "searches"
     searches_dir.mkdir(parents=True)
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     _make_yaml(searches_dir, "20260101-aaaaaaaa")
     _make_yaml(searches_dir, "20260102-bbbbbbbb")
@@ -97,34 +97,34 @@ def test_search_list_shows_results_column(experiments_dir, mock_no_dotenv, monke
     assert "No" in result.output
 
 
-def test_search_list_without_eid_raises(experiments_dir, mock_no_dotenv, monkeypatch):
-    """Omitting --eid with no EXPERIMENT_ID env var should raise ExperimentIDRequiredException."""
+def test_search_list_without_eid_raises(projects_dir, mock_no_dotenv, monkeypatch):
+    """Omitting --pid with no PROJECT_ID env var should raise ProjectIDRequiredException."""
     from llmexer.configs import settings
 
-    monkeypatch.setattr(settings, "experiment_id", None)
-    monkeypatch.delenv("EXPERIMENT_ID", raising=False)
+    monkeypatch.setattr(settings, "project_id", None)
+    monkeypatch.delenv("PROJECT_ID", raising=False)
 
     result = runner.invoke(app, ["search", "list"])
     assert result.exit_code != 0
-    assert isinstance(result.exception, ExperimentIDRequiredException)
+    assert isinstance(result.exception, ProjectIDRequiredException)
 
 
 def test_search_list_nonexistent_experiment_raises(
-    experiments_dir, mock_no_dotenv, monkeypatch
+    projects_dir, mock_no_dotenv, monkeypatch
 ):
-    """Providing a non-existent experiment ID should raise ExperimentNotExistsException."""
-    monkeypatch.setenv("EXPERIMENT_ID", "nonexistent")
+    """Providing a non-existent experiment ID should raise ProjectNotExistsException."""
+    monkeypatch.setenv("PROJECT_ID", "nonexistent")
 
     result = runner.invoke(app, ["search", "list"])
     assert result.exit_code != 0
-    assert isinstance(result.exception, ExperimentNotExistsException)
+    assert isinstance(result.exception, ProjectNotExistsException)
 
 
-def test_search_list_shows_stats_hint(experiments_dir, mock_no_dotenv, monkeypatch):
+def test_search_list_shows_stats_hint(projects_dir, mock_no_dotenv, monkeypatch):
     """The hint after the table should reference the latest (last alphabetically) YAML file."""
-    searches_dir = experiments_dir / "test-exp" / "searches"
+    searches_dir = projects_dir / "test-exp" / "searches"
     searches_dir.mkdir(parents=True)
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     _make_yaml(searches_dir, "20260101-aaaaaaaa")
     _make_yaml(searches_dir, "20260102-bbbbbbbb")

@@ -46,9 +46,9 @@ _PARAM_COLUMNS = [
 ]
 
 
-def generate_experiment_id() -> str:
+def generate_project_id() -> str:
     """
-    Generate a unique experiment ID formatted as 'YYYYMMDD-GUID'
+    Generate a unique project ID formatted as 'YYYYMMDD-GUID'
 
     Returns:
       str: A string in the format 'YYYYMMDD-UUID'.

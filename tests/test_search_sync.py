@@ -19,10 +19,10 @@ runner = CliRunner()
 
 
 @pytest.fixture()
-def experiments_dir(tmp_path, monkeypatch):
+def projects_dir(tmp_path, monkeypatch):
     import llmexer.constants as constants
 
-    monkeypatch.setattr(constants, "EXPERIMENTS_PATH", str(tmp_path))
+    monkeypatch.setattr(constants, "PROJECTS_PATH", str(tmp_path))
     return tmp_path
 
 
@@ -36,14 +36,14 @@ def mock_no_dotenv(monkeypatch):
 
 
 @pytest.fixture()
-def experiment(experiments_dir, monkeypatch):
-    """Create a minimal experiment directory tree and set EXPERIMENT_ID."""
-    eid = "test-exp"
-    exp_path = experiments_dir / eid
+def experiment(projects_dir, monkeypatch):
+    """Create a minimal experiment directory tree and set PROJECT_ID."""
+    pid = "test-exp"
+    exp_path = projects_dir / pid
     os.makedirs(exp_path / "searches", exist_ok=True)
     os.makedirs(exp_path / "papers", exist_ok=True)
-    monkeypatch.setenv("EXPERIMENT_ID", eid)
-    return eid, exp_path
+    monkeypatch.setenv("PROJECT_ID", pid)
+    return pid, exp_path
 
 
 def _write_search_yaml(exp_path, search_id):
@@ -81,9 +81,9 @@ SEARCH_ID = "20260410-aabbccdd"
 # ---------------------------------------------------------------------------
 
 
-def test_sync_updates_pdf_downloaded(experiments_dir, mock_no_dotenv, experiment):
+def test_sync_updates_pdf_downloaded(projects_dir, mock_no_dotenv, experiment):
     """If pdf_filename exists in papers/, pdf_downloaded must be set to True."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     yaml_filename = _write_search_yaml(exp_path, SEARCH_ID)
 
     pdf_name = "2023_Smith_Test_Paper_10.1234_test.pdf"
@@ -101,9 +101,9 @@ def test_sync_updates_pdf_downloaded(experiments_dir, mock_no_dotenv, experiment
     assert df.iloc[0]["pdf_downloaded"] == True
 
 
-def test_sync_updates_txt_filename(experiments_dir, mock_no_dotenv, experiment):
+def test_sync_updates_txt_filename(projects_dir, mock_no_dotenv, experiment):
     """If a .txt file matching the pdf stem exists in papers/, txt_filename is updated."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     yaml_filename = _write_search_yaml(exp_path, SEARCH_ID)
 
     pdf_name = "2023_Smith_Test_Paper_10.1234_test.pdf"
@@ -120,9 +120,9 @@ def test_sync_updates_txt_filename(experiments_dir, mock_no_dotenv, experiment):
     assert df.iloc[0]["txt_filename"] == f"{stem}.txt"
 
 
-def test_sync_updates_markdown_filename(experiments_dir, mock_no_dotenv, experiment):
+def test_sync_updates_markdown_filename(projects_dir, mock_no_dotenv, experiment):
     """If a .md file matching the pdf stem exists in papers/, markdown_filename is updated."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     yaml_filename = _write_search_yaml(exp_path, SEARCH_ID)
 
     pdf_name = "2023_Smith_Test_Paper_10.1234_test.pdf"
@@ -139,9 +139,9 @@ def test_sync_updates_markdown_filename(experiments_dir, mock_no_dotenv, experim
     assert df.iloc[0]["markdown_filename"] == f"{stem}.md"
 
 
-def test_sync_adds_new_pdf(experiments_dir, mock_no_dotenv, experiment):
+def test_sync_adds_new_pdf(projects_dir, mock_no_dotenv, experiment):
     """A PDF in papers/ that is not in the CSV must be added as a new row."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     yaml_filename = _write_search_yaml(exp_path, SEARCH_ID)
 
     _write_results_csv(
@@ -163,9 +163,9 @@ def test_sync_adds_new_pdf(experiments_dir, mock_no_dotenv, experiment):
     assert "New rows added: 1" in result.output
 
 
-def test_sync_new_pdf_with_txt_and_md(experiments_dir, mock_no_dotenv, experiment):
+def test_sync_new_pdf_with_txt_and_md(projects_dir, mock_no_dotenv, experiment):
     """A newly discovered PDF whose .txt and .md companions exist should have those fields set."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     yaml_filename = _write_search_yaml(exp_path, SEARCH_ID)
 
     _write_results_csv(exp_path, SEARCH_ID, [])
@@ -185,9 +185,9 @@ def test_sync_new_pdf_with_txt_and_md(experiments_dir, mock_no_dotenv, experimen
     assert row["markdown_filename"] == f"{stem}.md"
 
 
-def test_sync_updates_filtered_csv(experiments_dir, mock_no_dotenv, experiment):
+def test_sync_updates_filtered_csv(projects_dir, mock_no_dotenv, experiment):
     """When a filtered CSV also exists, it must be synced too."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     yaml_filename = _write_search_yaml(exp_path, SEARCH_ID)
 
     pdf_name = "2023_Smith_Test_Paper_10.1234_test.pdf"
@@ -214,16 +214,16 @@ def test_sync_updates_filtered_csv(experiments_dir, mock_no_dotenv, experiment):
     assert df_filtered_after.iloc[0]["pdf_downloaded"] == True
 
 
-def test_sync_missing_file_raises(experiments_dir, mock_no_dotenv, experiment):
+def test_sync_missing_file_raises(projects_dir, mock_no_dotenv, experiment):
     """Calling sync without --file must raise UnexpectedCLIParamsException."""
     result = runner.invoke(app, ["search", "sync"])
     assert result.exit_code != 0
     assert isinstance(result.exception, UnexpectedCLIParamsException)
 
 
-def test_sync_dry_run_no_writes(experiments_dir, mock_no_dotenv, experiment):
+def test_sync_dry_run_no_writes(projects_dir, mock_no_dotenv, experiment):
     """With --dry-run the CSV files must not be modified."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     yaml_filename = _write_search_yaml(exp_path, SEARCH_ID)
 
     pdf_name = "2023_Smith_Test_Paper_10.1234_test.pdf"

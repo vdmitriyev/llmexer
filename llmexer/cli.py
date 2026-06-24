@@ -7,7 +7,7 @@ from rich.table import Table
 from rich.text import Text
 from typing_extensions import Annotated
 
-from llmexer.commands import experiment, papers, search
+from llmexer.commands import experiment, papers, project, search
 from llmexer.commands import self as self_module
 from llmexer.common import ensure_directory_exists
 from llmexer.configs import console, cprint, settings
@@ -16,6 +16,9 @@ from llmexer.version import package_summary, package_version
 app = typer.Typer(
     help="`llmexer` is a framework and CLI utility to plan, design, run and control various LLM experiments."
 )
+
+app.add_typer(project.app, name="project")
+app.add_typer(project.app, name="proj", hidden=True)
 
 app.add_typer(experiment.app, name="experiment")
 app.add_typer(experiment.app, name="exp", hidden=True)
@@ -105,22 +108,22 @@ def main(
     else:
         load_dotenv()
 
-    # Load EXPERIMENT_ID from environment
+    # Load PROJECT_ID from environment
     import os
 
-    experiment_id = os.getenv("EXPERIMENT_ID")
-    if experiment_id:
-        settings.experiment_id = experiment_id
+    project_id = os.getenv("PROJECT_ID")
+    if project_id:
+        settings.project_id = project_id
         if settings.verbose:
             cprint(
                 Text("✅", style="bold green"),
-                "Current experiment:",
-                Text(f"{experiment_id}", style="bold yellow"),
+                "Current project:",
+                Text(f"{project_id}", style="bold yellow"),
             )
 
-    from llmexer.constants import EXPERIMENTS_PATH
+    from llmexer.constants import PROJECTS_PATH
 
-    ensure_directory_exists(EXPERIMENTS_PATH)
+    ensure_directory_exists(PROJECTS_PATH)
 
     if version:
         if settings.verbose:

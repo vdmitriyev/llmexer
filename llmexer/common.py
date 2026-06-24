@@ -8,8 +8,9 @@ import llmexer.constants as _constants
 from llmexer.configs import settings
 from llmexer.constants import TEMP_PATH
 from llmexer.exceptions import (
-    ExperimentIDRequiredException,
-    ExperimentNotExistsException,
+    LLMExerException,
+    ProjectIDRequiredException,
+    ProjectNotExistsException,
 )
 from llmexer.logger import get_logger
 from llmexer.version import package_version
@@ -79,37 +80,54 @@ def ensure_directory_exists(path: str):
         logger.error(f"Error creating directory '{path}': {e}")
 
 
-def get_proper_eid(eid: str) -> str:
-    """Use current experiment if eid not provided.
+def get_proper_pid(pid: str) -> str:
+    """Use current project if pid not provided.
 
     Args:
-        eid (str): experiment ID
+        pid (str): project ID
 
     Raises:
-        ExperimentIDRequiredException: _description_
+        ProjectIDRequiredException: when no project ID is available.
 
     Returns:
-        str: _description_
+        str: the resolved project ID.
     """
 
-    if eid is None:
-        if settings.experiment_id:
-            eid = settings.experiment_id
+    if pid is None:
+        if settings.project_id:
+            pid = settings.project_id
         else:
-            raise ExperimentIDRequiredException(
-                "No experiment ID provided. Use --eid or set EXPERIMENT_ID in .env file."
+            raise ProjectIDRequiredException(
+                "No project ID provided. Use --pid or set PROJECT_ID in .env file."
             )
 
-    return eid
+    return pid
 
 
-def get_experiment_directory_path(eid: str):
+def get_project_directory_path(pid: str):
     """
-    Ensures a directory exists using the os module.
+    Return the project directory path, raising if it does not exist.
     """
 
-    experiment_path = os.path.join(_constants.EXPERIMENTS_PATH, eid)
-    if not os.path.exists(experiment_path):
-        raise ExperimentNotExistsException(f"Experiment '{eid}' does not exist.")
+    project_path = os.path.join(_constants.PROJECTS_PATH, pid)
+    if not os.path.exists(project_path):
+        raise ProjectNotExistsException(f"Project '{pid}' does not exist.")
 
-    return experiment_path
+    return project_path
+
+
+def get_experiment_subdir_path(pid: str) -> str:
+    """Return the ``experiment/`` subdir for a project, raising if missing.
+
+    Raises ``LLMExerException`` if the project has not been initialised.
+    """
+    from llmexer.base.experiment import DIR_EXPERIMENT
+
+    project_path = get_project_directory_path(pid)
+    experiment_subdir_path = os.path.join(project_path, DIR_EXPERIMENT)
+    if not os.path.exists(experiment_subdir_path):
+        raise LLMExerException(
+            f"Project '{pid}' has not been initialised. "
+            f"Run `experiment init --pid {pid}` first."
+        )
+    return experiment_subdir_path

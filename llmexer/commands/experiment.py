@@ -4,7 +4,6 @@ import hashlib
 import json
 import os
 from datetime import datetime, timezone
-from enum import Enum
 
 import pandas as pd
 import typer
@@ -16,41 +15,18 @@ from llmexer.base.experiment import (
     _PARAM_COLUMNS,
     DIR_EXPERIMENT,
     DIR_RESPONSES,
-    _get_generated_experiment_files,
-    _is_experiment_initialized,
-    generate_experiment_id,
+    generate_project_id,
 )
 from llmexer.common import (
     ensure_directory_exists,
-    get_experiment_directory_path,
-    get_proper_eid,
+    get_experiment_subdir_path,
+    get_project_directory_path,
+    get_proper_pid,
 )
 from llmexer.configs import console, cprint, settings
-from llmexer.constants import EXPERIMENTS_PATH
-from llmexer.exceptions import ExperimentAlreadyExistsException, LLMExerException
+from llmexer.exceptions import LLMExerException
 
 app = typer.Typer(help="Manage LLM experiments.")
-
-
-class SortBy(str, Enum):
-    alpha = "alpha"
-    date = "date"
-
-
-def _experiment_subdir(eid: str) -> str:
-    """Return the ``experiment/`` subdir for an experiment, raising if missing.
-
-    Raises ``LLMExerException`` if the experiment has not been initialised.
-    """
-
-    experiment_path = get_experiment_directory_path(eid)
-    experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
-    if not os.path.exists(experiment_subdir_path):
-        raise LLMExerException(
-            f"Experiment '{eid}' has not been initialised. "
-            f"Run `experiment init --eid {eid}` first."
-        )
-    return experiment_subdir_path
 
 
 def _find_results_files(experiment_subdir_path: str) -> list[str]:
@@ -65,19 +41,19 @@ def _find_results_files(experiment_subdir_path: str) -> list[str]:
     )
 
 
-def _resolve_experiment_csv(eid: str, file: str) -> tuple[str, str]:
-    """Resolve and validate a generated experiment CSV path for an experiment.
+def _resolve_experiment_csv(pid: str, file: str) -> tuple[str, str]:
+    """Resolve and validate a generated experiment CSV path for a project.
 
     Returns ``(file_path, experiment_subdir_path)``. Raises ``LLMExerException``
-    if the experiment is not initialised, no file is given, or the file is
+    if the project is not initialised, no file is given, or the file is
     missing.
     """
 
-    experiment_subdir_path = _experiment_subdir(eid)
+    experiment_subdir_path = get_experiment_subdir_path(pid)
 
     if file is None:
         raise LLMExerException(
-            f"No experiment CSV provided. Run `experiment generate --eid {eid}` first."
+            f"No experiment CSV provided. Run `experiment generate --pid {pid}` first."
         )
     file_path = (
         file if os.path.isabs(file) else os.path.join(experiment_subdir_path, file)
@@ -90,153 +66,22 @@ def _resolve_experiment_csv(eid: str, file: str) -> tuple[str, str]:
 
 
 @app.command()
-def create(
-    id: str = typer.Option(
-        None,
-        "--id",
-        help="Custom experiment ID. If not provided, one is auto-generated.",
-    )
-) -> None:
-    """Create a new experiment folder under .experiments"""
-    experiment_id = id if id else generate_experiment_id()
-    experiment_path = os.path.join(EXPERIMENTS_PATH, experiment_id)
-
-    if os.path.exists(experiment_path):
-        raise ExperimentAlreadyExistsException(
-            f"Experiment '{experiment_id}' already exists."
-        )
-
-    ensure_directory_exists(experiment_path)
-    cprint(f"Created experiment: [bold yellow]{experiment_id}[/bold yellow]")
-
-
-@app.command(name="list")
-def list_experiments(
-    sort_by: SortBy = typer.Option(
-        SortBy.alpha,
-        "--sort-by",
-        help="Sort experiments by 'alpha' (alphabetical) or 'date' (creation date).",
-    ),
-    desc: bool = typer.Option(False, "--desc", help="Sort in descending order."),
-) -> None:
-    """List all experiments in the experiments folder"""
-    if not os.path.exists(EXPERIMENTS_PATH):
-        cprint("No experiments found.")
-        return
-
-    entries = [e for e in os.scandir(EXPERIMENTS_PATH) if e.is_dir()]
-
-    if not entries:
-        cprint("No experiments found.")
-        return
-
-    if sort_by == SortBy.date:
-        entries.sort(key=lambda e: e.stat().st_ctime, reverse=desc)
-    else:
-        entries.sort(key=lambda e: e.name, reverse=desc)
-
-    table = Table()
-    table.add_column("#", justify="right", style="cyan", no_wrap=True)
-    table.add_column("Name", style="cyan")
-    table.add_column("Created", style="cyan", no_wrap=True)
-    table.add_column("Initialized", justify="center", style="red", no_wrap=True)
-    table.add_column("Experiments", style="white")
-
-    current_eid = settings.experiment_id
-    experiment_file_to_run = ""
-    for i, entry in enumerate(entries, start=1):
-        ctime = datetime.fromtimestamp(entry.stat().st_ctime, tz=timezone.utc).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-        is_initialized = _is_experiment_initialized(entry.path)
-        init_display = "[green]Yes[/green]" if is_initialized else "[dim]No[/dim]"
-
-        generated_files = _get_generated_experiment_files(entry.path)
-        files_display = (
-            "\n".join(generated_files) if generated_files else "[dim]-[/dim]"
-        )
-        files_display_plain = "\n".join(generated_files) if generated_files else "-"
-
-        # Check if this is the current experiment
-        is_current = current_eid and entry.name == current_eid
-
-        if is_current:
-            # Bold yellow for current experiment, underline only on counter
-            table.add_row(
-                f"[bold underline yellow]{i}[/bold underline yellow]",
-                f"[bold yellow]{entry.name}[/bold yellow]",
-                f"[bold yellow]{ctime}[/bold yellow]",
-                f"[bold yellow]{'Yes' if is_initialized else 'No'}[/bold yellow]",
-                f"[bold yellow]{files_display_plain}[/bold yellow]",
-            )
-            if len(generated_files) > 0:
-                experiment_file_to_run = generated_files[-1]
-        else:
-            table.add_row(str(i), entry.name, ctime, init_display, files_display)
-
-    console.print(table)
-    cprint("\nExample to run an experiment:")
-    cprint(
-        f"[bold yellow]llmexer experiment run --file {experiment_file_to_run}[/bold yellow]"
-    )
-
-
-@app.command()
-def rename(
-    old_id: str = typer.Option(
-        None,
-        "--old-id",
-        help="Current experiment ID to rename. If not provided, uses EXPERIMENT_ID from .env.",
-    ),
-    new_id: str = typer.Option(
-        ...,
-        "--new-id",
-        help="New experiment ID name.",
-    ),
-) -> None:
-    """Rename an existing experiment"""
-
-    # Use current experiment if old_id not provided
-    if old_id is None:
-        if settings.experiment_id:
-            old_id = settings.experiment_id
-        else:
-            raise LLMExerException(
-                "No experiment ID provided. Use --old-id or set EXPERIMENT_ID in .env file."
-            )
-
-    old_path = os.path.join(EXPERIMENTS_PATH, old_id)
-    new_path = os.path.join(EXPERIMENTS_PATH, new_id)
-
-    if not os.path.exists(old_path):
-        raise LLMExerException(f"Experiment '{old_id}' does not exist.")
-
-    if os.path.exists(new_path):
-        raise ExperimentAlreadyExistsException(f"Experiment '{new_id}' already exists.")
-
-    os.rename(old_path, new_path)
-    cprint(
-        f"Renamed experiment: [bold yellow]{old_id}[/bold yellow] → [bold yellow]{new_id}[/bold yellow]"
-    )
-
-
-@app.command()
 def init(
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID to initialise. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID to initialise. If not provided, uses PROJECT_ID from .env.",
     )
 ) -> None:
-    """Initialise an experiment with a standard folder structure and template files"""
+    """Initialise a project with a standard folder structure and template files"""
 
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
+    pid = get_proper_pid(pid)
+    project_path = get_project_directory_path(pid)
 
     # Raise if already initialised
-    experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
+    experiment_subdir_path = os.path.join(project_path, DIR_EXPERIMENT)
     if os.path.exists(experiment_subdir_path):
-        raise LLMExerException(f"Experiment '{eid}' has already been initialised.")
+        raise LLMExerException(f"Project '{pid}' has already been initialised.")
 
     # Create subfolders
     prompts_subdir = os.path.join(experiment_subdir_path, "prompts")
@@ -292,27 +137,21 @@ def init(
         f.write("vllm-default;meta-llama/Llama-3-8b;vllm;0.7;0.9;512;;;0.05;1;;\n")
         f.write("gemini-default;gemini-2.0-flash;gemini;0.7;1.0;512;;;;;standard\n")
 
-    cprint(f"Init experiment [bold yellow]{eid}[/bold yellow] with standard structure.")
+    cprint(f"Init project [bold yellow]{pid}[/bold yellow] with standard structure.")
 
 
 @app.command()
 def generate(
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID to generate prompts for. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID to generate prompts for. If not provided, uses PROJECT_ID from .env.",
     ),
 ) -> None:
-    """Generate rendered prompts for all data-model combinations defined in the experiment"""
+    """Generate rendered prompts for all data-model combinations defined in the project"""
 
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
-
-    experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
-    if not os.path.exists(experiment_subdir_path):
-        raise LLMExerException(
-            f"Experiment '{eid}' has not been initialised. Run `experiment init --eid {eid}` first."
-        )
+    pid = get_proper_pid(pid)
+    experiment_subdir_path = get_experiment_subdir_path(pid)
 
     models_path = os.path.join(experiment_subdir_path, "models.csv")
     data_path = os.path.join(experiment_subdir_path, "data.csv")
@@ -329,7 +168,7 @@ def generate(
     ]:
         if not os.path.exists(path):
             raise LLMExerException(
-                f"Required file or directory not found for experiment '{eid}': {label}"
+                f"Required file or directory not found for project '{pid}': {label}"
             )
 
     models_df = pd.read_csv(models_path, sep=";", encoding="utf-8")
@@ -419,7 +258,7 @@ def generate(
     result_df = result_df.sort_values("model_name").reset_index(drop=True)
     result_df["model_name"] = result_df["model_name"].astype(str)
     result_df["ID"] = range(1, len(result_df) + 1)
-    output_filename = f"experiment_{generate_experiment_id()}.csv"
+    output_filename = f"experiment_{generate_project_id()}.csv"
     output_path = os.path.join(experiment_subdir_path, output_filename)
 
     if settings.dry_run:
@@ -437,32 +276,11 @@ def generate(
 
 
 @app.command()
-def current() -> None:
-    """Display the current experiment ID loaded from .env"""
-
-    if settings.experiment_id:
-        experiment_path = os.path.join(EXPERIMENTS_PATH, settings.experiment_id)
-        if os.path.exists(experiment_path):
-            cprint(
-                f"Current experiment: [bold yellow]{settings.experiment_id}[/bold yellow]"
-            )
-        else:
-            cprint(
-                f"Current experiment: [bold yellow]{settings.experiment_id}[/bold yellow] "
-                f"[bold red](not found in {EXPERIMENTS_PATH})[/bold red]"
-            )
-    else:
-        cprint(
-            "[bold red]No current experiment set.[/bold red] Set EXPERIMENT_ID in .env file."
-        )
-
-
-@app.command()
 def run(
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
     file: str = typer.Option(
         None,
@@ -483,8 +301,8 @@ def run(
 ) -> None:
     """Run all rows in the generated experiment CSV and save results"""
 
-    eid = get_proper_eid(eid)
-    file_path, experiment_subdir_path = _resolve_experiment_csv(eid, file)
+    pid = get_proper_pid(pid)
+    file_path, experiment_subdir_path = _resolve_experiment_csv(pid, file)
 
     # Lazy import to keep openai optional
     try:
@@ -594,38 +412,38 @@ def run(
 
 @app.command()
 def stats(
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
     file: str = typer.Option(
         None,
         "--file",
-        help="CSV to read stats from. Defaults to the single experiment_<eid>_results.csv.",
+        help="CSV to read stats from. Defaults to the single experiment_<pid>_results.csv.",
     ),
 ) -> None:
-    """Show aggregate statistics for an experiment's results.
+    """Show aggregate statistics for a project's experiment results.
 
-    Defaults to the single ``experiment_<eid>_results.csv`` produced by
+    Defaults to the single ``experiment_<pid>_results.csv`` produced by
     ``experiment run``; pass ``--file`` to inspect a specific CSV instead.
     """
 
-    eid = get_proper_eid(eid)
+    pid = get_proper_pid(pid)
     if file is not None:
-        file_path, _ = _resolve_experiment_csv(eid, file)
+        file_path, _ = _resolve_experiment_csv(pid, file)
     else:
-        experiment_subdir_path = _experiment_subdir(eid)
+        experiment_subdir_path = get_experiment_subdir_path(pid)
         results_files = _find_results_files(experiment_subdir_path)
         if not results_files:
             raise LLMExerException(
-                f"No results file found for experiment '{eid}'. "
-                f"Run `experiment run --eid {eid}` first."
+                f"No results file found for project '{pid}'. "
+                f"Run `experiment run --pid {pid}` first."
             )
         if len(results_files) > 1:
             joined = ", ".join(results_files)
             raise LLMExerException(
-                f"Multiple results files found for experiment '{eid}': {joined}. "
+                f"Multiple results files found for project '{pid}': {joined}. "
                 f"Pass --file to choose one."
             )
         file_path = os.path.join(experiment_subdir_path, results_files[0])
@@ -636,7 +454,7 @@ def stats(
     manager.load(file_path)
     data = manager.stats()
 
-    summary = Table(title=f"Experiment stats — {eid}")
+    summary = Table(title=f"Experiment stats — {pid}")
     summary.add_column("Metric", style="cyan")
     summary.add_column("Value", justify="right", style="green")
     for key in ("total", "completed", "running", "errors", "pending", "total_tokens"):

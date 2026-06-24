@@ -10,19 +10,19 @@ from typer.testing import CliRunner
 
 from llmexer.cli import app
 from llmexer.exceptions import (
-    ExperimentIDRequiredException,
-    ExperimentNotExistsException,
+    ProjectIDRequiredException,
+    ProjectNotExistsException,
 )
 
 runner = CliRunner()
 
 
 @pytest.fixture()
-def experiments_dir(tmp_path, monkeypatch):
-    """Redirect EXPERIMENTS_PATH to a temporary directory for each test."""
+def projects_dir(tmp_path, monkeypatch):
+    """Redirect PROJECTS_PATH to a temporary directory for each test."""
     import llmexer.constants as constants
 
-    monkeypatch.setattr(constants, "EXPERIMENTS_PATH", str(tmp_path))
+    monkeypatch.setattr(constants, "PROJECTS_PATH", str(tmp_path))
     return tmp_path
 
 
@@ -35,12 +35,12 @@ def mock_no_dotenv(monkeypatch):
 
 
 @pytest.fixture()
-def experiment(experiments_dir):
-    """Create a test experiment directory and return (eid, exp_path)."""
-    eid = "20260402-test-extract"
-    exp_path = experiments_dir / eid
+def experiment(projects_dir):
+    """Create a test experiment directory and return (pid, exp_path)."""
+    pid = "20260402-test-extract"
+    exp_path = projects_dir / pid
     os.makedirs(exp_path)
-    return eid, exp_path
+    return pid, exp_path
 
 
 def _make_pdf(text: str) -> bytes:
@@ -52,49 +52,49 @@ def _make_pdf(text: str) -> bytes:
     return buf.getvalue()
 
 
-def test_extract_no_eid(experiments_dir, mock_no_dotenv, monkeypatch):
-    """When --eid is not provided and EXPERIMENT_ID is not set, raises ExperimentIDRequiredException."""
+def test_extract_no_eid(projects_dir, mock_no_dotenv, monkeypatch):
+    """When --pid is not provided and PROJECT_ID is not set, raises ProjectIDRequiredException."""
     from llmexer.configs import settings
 
-    monkeypatch.setattr(settings, "experiment_id", None)
-    monkeypatch.delenv("EXPERIMENT_ID", raising=False)
+    monkeypatch.setattr(settings, "project_id", None)
+    monkeypatch.delenv("PROJECT_ID", raising=False)
 
     result = runner.invoke(app, ["papers", "extract"])
     assert result.exit_code != 0
-    assert isinstance(result.exception, ExperimentIDRequiredException)
+    assert isinstance(result.exception, ProjectIDRequiredException)
 
 
-def test_extract_experiment_not_exists(experiments_dir, mock_no_dotenv, monkeypatch):
-    """When experiment does not exist, raises ExperimentNotExistsException."""
-    monkeypatch.setenv("EXPERIMENT_ID", "nonexistent-exp")
+def test_extract_experiment_not_exists(projects_dir, mock_no_dotenv, monkeypatch):
+    """When experiment does not exist, raises ProjectNotExistsException."""
+    monkeypatch.setenv("PROJECT_ID", "nonexistent-exp")
 
     result = runner.invoke(app, ["papers", "extract"])
     assert result.exit_code != 0
-    assert isinstance(result.exception, ExperimentNotExistsException)
+    assert isinstance(result.exception, ProjectNotExistsException)
 
 
-def test_extract_no_papers_dir(experiments_dir, mock_no_dotenv, experiment):
+def test_extract_no_papers_dir(projects_dir, mock_no_dotenv, experiment):
     """When experiment exists but has no papers/ dir, exits 0 with a warning."""
-    eid, _ = experiment
+    pid, _ = experiment
 
-    result = runner.invoke(app, ["papers", "extract", "--eid", eid])
+    result = runner.invoke(app, ["papers", "extract", "--pid", pid])
     assert result.exit_code == 0
     assert "Warning" in result.output
 
 
-def test_extract_no_pdfs(experiments_dir, mock_no_dotenv, experiment):
+def test_extract_no_pdfs(projects_dir, mock_no_dotenv, experiment):
     """When papers/ dir exists but has no PDFs, exits 0 with a warning."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     os.makedirs(exp_path / "papers")
 
-    result = runner.invoke(app, ["papers", "extract", "--eid", eid])
+    result = runner.invoke(app, ["papers", "extract", "--pid", pid])
     assert result.exit_code == 0
     assert "Warning" in result.output
 
 
-def test_extract_happy_path(experiments_dir, mock_no_dotenv, experiment):
+def test_extract_happy_path(projects_dir, mock_no_dotenv, experiment):
     """When valid PDFs exist, produces .txt files alongside them."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
 
@@ -107,7 +107,7 @@ def test_extract_happy_path(experiments_dir, mock_no_dotenv, experiment):
         mock_page.extract_text.return_value = "Hello extraction world"
         mock_reader.return_value.pages = [mock_page]
 
-        result = runner.invoke(app, ["papers", "extract", "--eid", eid])
+        result = runner.invoke(app, ["papers", "extract", "--pid", pid])
 
     assert result.exit_code == 0
     assert (papers_path / "mypaper.txt").exists()
@@ -115,9 +115,9 @@ def test_extract_happy_path(experiments_dir, mock_no_dotenv, experiment):
     assert "Extracted:" in result.output
 
 
-def test_extract_dry_run(experiments_dir, mock_no_dotenv, experiment):
+def test_extract_dry_run(projects_dir, mock_no_dotenv, experiment):
     """With --dry-run, no output files are written."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
 
@@ -125,14 +125,14 @@ def test_extract_dry_run(experiments_dir, mock_no_dotenv, experiment):
     pdf_file = papers_path / "dryrun.pdf"
     pdf_file.write_bytes(pdf_bytes)
 
-    result = runner.invoke(app, ["--dry-run", "papers", "extract", "--eid", eid])
+    result = runner.invoke(app, ["--dry-run", "papers", "extract", "--pid", pid])
     assert result.exit_code == 0
     assert not (papers_path / "dryrun.txt").exists()
 
 
-def test_extract_pdf_failure(experiments_dir, mock_no_dotenv, experiment):
+def test_extract_pdf_failure(projects_dir, mock_no_dotenv, experiment):
     """When pypdf raises an exception, the PDF is skipped with a warning and exit code is 0."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
 
@@ -142,16 +142,16 @@ def test_extract_pdf_failure(experiments_dir, mock_no_dotenv, experiment):
     with patch(
         "llmexer.commands.papers.pypdf.PdfReader", side_effect=Exception("corrupt")
     ):
-        result = runner.invoke(app, ["papers", "extract", "--eid", eid])
+        result = runner.invoke(app, ["papers", "extract", "--pid", pid])
 
     assert result.exit_code == 0
     assert "Skipped" in result.output
     assert not (papers_path / "bad.txt").exists()
 
 
-def test_extract_empty_content(experiments_dir, mock_no_dotenv, experiment):
+def test_extract_empty_content(projects_dir, mock_no_dotenv, experiment):
     """When extracted text is empty (whitespace-only), warns and skips writing .txt file."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
 
@@ -164,7 +164,7 @@ def test_extract_empty_content(experiments_dir, mock_no_dotenv, experiment):
         mock_page.extract_text.return_value = "   \n\t  "
         mock_reader.return_value.pages = [mock_page]
 
-        result = runner.invoke(app, ["papers", "extract", "--eid", eid])
+        result = runner.invoke(app, ["papers", "extract", "--pid", pid])
 
     assert result.exit_code == 0
     assert "warning:" in result.output
@@ -177,9 +177,9 @@ def test_extract_empty_content(experiments_dir, mock_no_dotenv, experiment):
 # ---------------------------------------------------------------------------
 
 
-def test_extract_skips_existing_txt(experiments_dir, mock_no_dotenv, experiment):
+def test_extract_skips_existing_txt(projects_dir, mock_no_dotenv, experiment):
     """Without --rewrite, a pre-existing .txt file is skipped."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
 
@@ -193,16 +193,16 @@ def test_extract_skips_existing_txt(experiments_dir, mock_no_dotenv, experiment)
         mock_page.extract_text.return_value = "new content"
         mock_reader.return_value.pages = [mock_page]
 
-        result = runner.invoke(app, ["papers", "extract", "--eid", eid])
+        result = runner.invoke(app, ["papers", "extract", "--pid", pid])
 
     assert result.exit_code == 0
     assert "skipped" in result.output
     assert txt_file.read_text(encoding="utf-8") == "original content"
 
 
-def test_extract_rewrite_overwrites_txt(experiments_dir, mock_no_dotenv, experiment):
+def test_extract_rewrite_overwrites_txt(projects_dir, mock_no_dotenv, experiment):
     """With --rewrite, a pre-existing .txt file is overwritten."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
 
@@ -216,7 +216,7 @@ def test_extract_rewrite_overwrites_txt(experiments_dir, mock_no_dotenv, experim
         mock_page.extract_text.return_value = "new content"
         mock_reader.return_value.pages = [mock_page]
 
-        result = runner.invoke(app, ["papers", "extract", "--eid", eid, "--rewrite"])
+        result = runner.invoke(app, ["papers", "extract", "--pid", pid, "--rewrite"])
 
     assert result.exit_code == 0
     assert "extracted:" in result.output
@@ -237,10 +237,10 @@ def _make_docling_response(md_content: str) -> Mock:
 
 
 def test_extract_docling_happy_path(
-    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+    projects_dir, mock_no_dotenv, experiment, monkeypatch
 ):
     """With --processor docling, valid PDF produces a .md file."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
     (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
@@ -253,7 +253,7 @@ def test_extract_docling_happy_path(
     mock_session.post.return_value = _make_docling_response("# Title\n\nBody text.")
     with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
-            app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
+            app, ["papers", "extract", "--pid", pid, "--processor", "docling"]
         )
 
     assert result.exit_code == 0
@@ -264,11 +264,9 @@ def test_extract_docling_happy_path(
     assert "extracted:" in result.output
 
 
-def test_extract_docling_dry_run(
-    experiments_dir, mock_no_dotenv, experiment, monkeypatch
-):
+def test_extract_docling_dry_run(projects_dir, mock_no_dotenv, experiment, monkeypatch):
     """With --dry-run and --processor docling, no .md file is written."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
     (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
@@ -282,7 +280,7 @@ def test_extract_docling_dry_run(
     with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
-            ["--dry-run", "papers", "extract", "--eid", eid, "--processor", "docling"],
+            ["--dry-run", "papers", "extract", "--pid", pid, "--processor", "docling"],
         )
 
     assert result.exit_code == 0
@@ -290,10 +288,10 @@ def test_extract_docling_dry_run(
 
 
 def test_extract_docling_server_error(
-    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+    projects_dir, mock_no_dotenv, experiment, monkeypatch
 ):
     """When docling server returns HTTP 500, the paper is skipped with a warning."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
     (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
@@ -308,7 +306,7 @@ def test_extract_docling_server_error(
     mock_session.post.return_value = mock_resp
     with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
-            app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
+            app, ["papers", "extract", "--pid", pid, "--processor", "docling"]
         )
 
     assert result.exit_code == 0
@@ -317,10 +315,10 @@ def test_extract_docling_server_error(
 
 
 def test_extract_docling_cli_url_override(
-    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+    projects_dir, mock_no_dotenv, experiment, monkeypatch
 ):
     """--docling-url overrides the DOCLING_URL env var."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
     (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
@@ -335,8 +333,8 @@ def test_extract_docling_cli_url_override(
             [
                 "papers",
                 "extract",
-                "--eid",
-                eid,
+                "--pid",
+                pid,
                 "--processor",
                 "docling",
                 "--docling-url",
@@ -351,10 +349,10 @@ def test_extract_docling_cli_url_override(
 
 
 def test_extract_docling_default_url(
-    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+    projects_dir, mock_no_dotenv, experiment, monkeypatch
 ):
     """When no DOCLING_URL is set and no --docling-url given, uses http://localhost:5001/."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
     (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
@@ -365,7 +363,7 @@ def test_extract_docling_default_url(
     mock_session.post.return_value = _make_docling_response("# Default")
     with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
-            app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
+            app, ["papers", "extract", "--pid", pid, "--processor", "docling"]
         )
 
     assert result.exit_code == 0
@@ -374,10 +372,10 @@ def test_extract_docling_default_url(
 
 
 def test_extract_docling_skips_existing_md(
-    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+    projects_dir, mock_no_dotenv, experiment, monkeypatch
 ):
     """Without --rewrite, a pre-existing .md file is skipped (docling processor)."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
     (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
@@ -392,7 +390,7 @@ def test_extract_docling_skips_existing_md(
     mock_session.post.return_value = _make_docling_response("# New Content")
     with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
-            app, ["papers", "extract", "--eid", eid, "--processor", "docling"]
+            app, ["papers", "extract", "--pid", pid, "--processor", "docling"]
         )
 
     assert result.exit_code == 0
@@ -401,10 +399,10 @@ def test_extract_docling_skips_existing_md(
 
 
 def test_extract_docling_rewrite_overwrites_md(
-    experiments_dir, mock_no_dotenv, experiment, monkeypatch
+    projects_dir, mock_no_dotenv, experiment, monkeypatch
 ):
     """With --rewrite, a pre-existing .md file is overwritten (docling processor)."""
-    eid, exp_path = experiment
+    pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
     (papers_path / "paper.pdf").write_bytes(_make_pdf("content"))
@@ -420,7 +418,7 @@ def test_extract_docling_rewrite_overwrites_md(
     with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
         result = runner.invoke(
             app,
-            ["papers", "extract", "--eid", eid, "--processor", "docling", "--rewrite"],
+            ["papers", "extract", "--pid", pid, "--processor", "docling", "--rewrite"],
         )
 
     assert result.exit_code == 0

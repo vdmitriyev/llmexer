@@ -14,6 +14,7 @@ configs/*
 .jsons/*
 llmexer/.jsons/*
 .experiments/*
+.projects/*
 
 # extentions
 *.env

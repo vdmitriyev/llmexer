@@ -13,7 +13,7 @@ from llmexer.version import package_version
 app = typer.Typer(help="Helps with the self-manage of the llmexer CLI.")
 
 LLMEXER_ENV_VARS = [
-    ("EXPERIMENT_ID", "bold cyan", False),
+    ("PROJECT_ID", "bold cyan", False),
     ("UNPAYWALL_EMAIL", None, False),
     ("DOCLING_URL", None, False),
     ("DOCLING_USER", None, False),

@@ -15,11 +15,11 @@ runner = CliRunner()
 
 
 @pytest.fixture()
-def experiments_dir(tmp_path, monkeypatch):
-    """Redirect EXPERIMENTS_PATH to a temporary directory for each test."""
+def projects_dir(tmp_path, monkeypatch):
+    """Redirect PROJECTS_PATH to a temporary directory for each test."""
     import llmexer.constants as constants
 
-    monkeypatch.setattr(constants, "EXPERIMENTS_PATH", str(tmp_path))
+    monkeypatch.setattr(constants, "PROJECTS_PATH", str(tmp_path))
     return tmp_path
 
 
@@ -32,13 +32,13 @@ def mock_no_dotenv(monkeypatch):
 
 
 @pytest.fixture()
-def experiment_with_search(experiments_dir, monkeypatch):
+def experiment_with_search(projects_dir, monkeypatch):
     """Create an experiment with a search YAML and a _results.csv."""
-    eid = "20260409-test-filter"
-    exp_path = experiments_dir / eid
+    pid = "20260409-test-filter"
+    exp_path = projects_dir / pid
     searches_path = exp_path / "searches"
     os.makedirs(searches_path)
-    monkeypatch.setenv("EXPERIMENT_ID", eid)
+    monkeypatch.setenv("PROJECT_ID", pid)
 
     search_id = "20260409-aabbccdd"
     yaml_file = searches_path / f"{search_id}.yaml"
@@ -92,17 +92,15 @@ def experiment_with_search(experiments_dir, monkeypatch):
     csv_path = searches_path / f"{search_id}_results.csv"
     df.to_csv(csv_path, index=False, encoding="utf-8", sep=";")
 
-    return eid, search_id, searches_path
+    return pid, search_id, searches_path
 
 
-def test_search_filter_happy_path(
-    experiments_dir, mock_no_dotenv, experiment_with_search
-):
+def test_search_filter_happy_path(projects_dir, mock_no_dotenv, experiment_with_search):
     """Default --language en filters to only English papers."""
-    eid, search_id, searches_path = experiment_with_search
+    pid, search_id, searches_path = experiment_with_search
 
     result = runner.invoke(
-        app, ["search", "filter", "--eid", eid, "--file", f"{search_id}.yaml"]
+        app, ["search", "filter", "--pid", pid, "--file", f"{search_id}.yaml"]
     )
 
     assert result.exit_code == 0
@@ -120,18 +118,18 @@ def test_search_filter_happy_path(
 
 
 def test_search_filter_custom_language(
-    experiments_dir, mock_no_dotenv, experiment_with_search
+    projects_dir, mock_no_dotenv, experiment_with_search
 ):
     """--language de filters to only German papers."""
-    eid, search_id, searches_path = experiment_with_search
+    pid, search_id, searches_path = experiment_with_search
 
     result = runner.invoke(
         app,
         [
             "search",
             "filter",
-            "--eid",
-            eid,
+            "--pid",
+            pid,
             "--file",
             f"{search_id}.yaml",
             "--language",
@@ -148,10 +146,10 @@ def test_search_filter_custom_language(
     assert df.iloc[0]["language"] == "de"
 
 
-def test_search_filter_no_file_raises(experiments_dir, mock_no_dotenv, monkeypatch):
+def test_search_filter_no_file_raises(projects_dir, mock_no_dotenv, monkeypatch):
     """Omitting --file raises UnexpectedCLIParamsException."""
-    os.makedirs(experiments_dir / "test-exp")
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
 
     result = runner.invoke(app, ["search", "filter"])
     assert result.exit_code != 0
@@ -159,14 +157,14 @@ def test_search_filter_no_file_raises(experiments_dir, mock_no_dotenv, monkeypat
 
 
 def test_search_filter_missing_csv_warns(
-    experiments_dir, mock_no_dotenv, experiment_with_search
+    projects_dir, mock_no_dotenv, experiment_with_search
 ):
     """When _results.csv is missing, exits 0 with a warning."""
-    eid, search_id, searches_path = experiment_with_search
+    pid, search_id, searches_path = experiment_with_search
     (searches_path / f"{search_id}_results.csv").unlink()
 
     result = runner.invoke(
-        app, ["search", "filter", "--eid", eid, "--file", f"{search_id}.yaml"]
+        app, ["search", "filter", "--pid", pid, "--file", f"{search_id}.yaml"]
     )
 
     assert result.exit_code == 0
@@ -174,13 +172,13 @@ def test_search_filter_missing_csv_warns(
     assert not (searches_path / f"{search_id}_filtered.csv").exists()
 
 
-def test_search_filter_dry_run(experiments_dir, mock_no_dotenv, experiment_with_search):
+def test_search_filter_dry_run(projects_dir, mock_no_dotenv, experiment_with_search):
     """With --dry-run, no _filtered.csv is written."""
-    eid, search_id, searches_path = experiment_with_search
+    pid, search_id, searches_path = experiment_with_search
 
     result = runner.invoke(
         app,
-        ["--dry-run", "search", "filter", "--eid", eid, "--file", f"{search_id}.yaml"],
+        ["--dry-run", "search", "filter", "--pid", pid, "--file", f"{search_id}.yaml"],
     )
 
     assert result.exit_code == 0
@@ -188,19 +186,17 @@ def test_search_filter_dry_run(experiments_dir, mock_no_dotenv, experiment_with_
     assert not (searches_path / f"{search_id}_filtered.csv").exists()
 
 
-def test_search_filter_no_matches(
-    experiments_dir, mock_no_dotenv, experiment_with_search
-):
+def test_search_filter_no_matches(projects_dir, mock_no_dotenv, experiment_with_search):
     """When no rows match, _filtered.csv is written with header only (0 data rows)."""
-    eid, search_id, searches_path = experiment_with_search
+    pid, search_id, searches_path = experiment_with_search
 
     result = runner.invoke(
         app,
         [
             "search",
             "filter",
-            "--eid",
-            eid,
+            "--pid",
+            pid,
             "--file",
             f"{search_id}.yaml",
             "--language",

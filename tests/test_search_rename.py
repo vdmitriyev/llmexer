@@ -9,20 +9,20 @@ from typer.testing import CliRunner
 
 from llmexer.cli import app
 from llmexer.exceptions import (
-    ExperimentIDRequiredException,
-    ExperimentNotExistsException,
     LLMExerException,
+    ProjectIDRequiredException,
+    ProjectNotExistsException,
 )
 
 runner = CliRunner()
 
 
 @pytest.fixture()
-def experiments_dir(tmp_path, monkeypatch):
-    """Redirect EXPERIMENTS_PATH to a temporary directory for each test."""
+def projects_dir(tmp_path, monkeypatch):
+    """Redirect PROJECTS_PATH to a temporary directory for each test."""
     import llmexer.constants as constants
 
-    monkeypatch.setattr(constants, "EXPERIMENTS_PATH", str(tmp_path))
+    monkeypatch.setattr(constants, "PROJECTS_PATH", str(tmp_path))
     return tmp_path
 
 
@@ -35,10 +35,10 @@ def mock_no_dotenv(monkeypatch):
 
 
 @pytest.fixture()
-def searches_dir(experiments_dir, monkeypatch):
-    """Create experiment + searches/ directory and set EXPERIMENT_ID."""
-    monkeypatch.setenv("EXPERIMENT_ID", "test-exp")
-    s = experiments_dir / "test-exp" / "searches"
+def searches_dir(projects_dir, monkeypatch):
+    """Create experiment + searches/ directory and set PROJECT_ID."""
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
+    s = projects_dir / "test-exp" / "searches"
     s.mkdir(parents=True)
     return s
 
@@ -136,30 +136,30 @@ def test_search_rename_existing_new_id_raises(searches_dir, mock_no_dotenv):
     assert isinstance(result.exception, LLMExerException)
 
 
-def test_search_rename_without_eid_raises(experiments_dir, mock_no_dotenv, monkeypatch):
-    """Omitting --eid with no EXPERIMENT_ID env var should raise ExperimentIDRequiredException."""
+def test_search_rename_without_eid_raises(projects_dir, mock_no_dotenv, monkeypatch):
+    """Omitting --pid with no PROJECT_ID env var should raise ProjectIDRequiredException."""
     from llmexer.configs import settings
 
-    monkeypatch.setattr(settings, "experiment_id", None)
-    monkeypatch.delenv("EXPERIMENT_ID", raising=False)
+    monkeypatch.setattr(settings, "project_id", None)
+    monkeypatch.delenv("PROJECT_ID", raising=False)
 
     result = runner.invoke(
         app,
         ["search", "rename", "--old-id", "old-search", "--new-id", "new-search"],
     )
     assert result.exit_code != 0
-    assert isinstance(result.exception, ExperimentIDRequiredException)
+    assert isinstance(result.exception, ProjectIDRequiredException)
 
 
 def test_search_rename_nonexistent_experiment_raises(
-    experiments_dir, mock_no_dotenv, monkeypatch
+    projects_dir, mock_no_dotenv, monkeypatch
 ):
-    """Providing a non-existent experiment ID should raise ExperimentNotExistsException."""
-    monkeypatch.setenv("EXPERIMENT_ID", "nonexistent")
+    """Providing a non-existent experiment ID should raise ProjectNotExistsException."""
+    monkeypatch.setenv("PROJECT_ID", "nonexistent")
 
     result = runner.invoke(
         app,
         ["search", "rename", "--old-id", "old-search", "--new-id", "new-search"],
     )
     assert result.exit_code != 0
-    assert isinstance(result.exception, ExperimentNotExistsException)
+    assert isinstance(result.exception, ProjectNotExistsException)

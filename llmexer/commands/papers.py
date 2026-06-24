@@ -18,8 +18,8 @@ from llmexer.base.papers import (
 )
 from llmexer.common import (
     ensure_directory_exists,
-    get_experiment_directory_path,
-    get_proper_eid,
+    get_project_directory_path,
+    get_proper_pid,
 )
 from llmexer.configs import console, cprint, logger, settings
 from llmexer.constants import (
@@ -28,11 +28,11 @@ from llmexer.constants import (
     SEARCHES_DIR,
 )
 from llmexer.exceptions import (
-    ExperimentNotExistsException,
     PaperAddException,
     PaperAlreadyExistsException,
     PaperDownloadException,
     PaperExtractException,
+    ProjectNotExistsException,
     UnexpectedCLIParamsException,
 )
 
@@ -41,10 +41,10 @@ app = typer.Typer(help="Work with papers.")
 
 @app.command()
 def add(
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID to add papers to. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID to add papers to. If not provided, uses PROJECT_ID from .env.",
     ),
     file: Optional[Path] = typer.Option(
         None,
@@ -64,7 +64,7 @@ def add(
         help="URL of a PDF to download into the papers subdirectory.",
     ),
 ) -> None:
-    """Adds PDF paper(s) to the papers subdirectory of the current experiment"""
+    """Adds PDF paper(s) to the papers subdirectory of the current project"""
 
     provided = sum(p is not None for p in [file, directory, url])
     if provided != 1:
@@ -72,8 +72,8 @@ def add(
             "Exactly one of --file, --directory, or --url must be provided."
         )
 
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
 
     papers_path = os.path.join(experiment_path, PAPERS_DIR)
     ensure_directory_exists(papers_path)
@@ -94,7 +94,7 @@ def add(
             shutil.copy2(str(src), dst)
 
         logger.debug("Copied '%s' -> '%s'", src, dst)
-        cprint(f"[bold green]Added[/bold green] '{src.name}' to experiment '{eid}'.")
+        cprint(f"[bold green]Added[/bold green] '{src.name}' to project '{pid}'.")
 
     elif directory is not None:
         dir_path = Path(directory).resolve()
@@ -125,22 +125,20 @@ def add(
                     copied_papers_cnt += 1
 
         cprint(
-            f"[bold green]Added[/bold green] {copied_papers_cnt} PDF(s) to experiment '{eid}'."
+            f"[bold green]Added[/bold green] {copied_papers_cnt} PDF(s) to project '{pid}'."
         )
 
     else:  # url
         filename = download_pdf_from_url(url, papers_path)
-        cprint(
-            f"[bold green]Downloaded[/bold green] '{filename}' to experiment '{eid}'."
-        )
+        cprint(f"[bold green]Downloaded[/bold green] '{filename}' to project '{pid}'.")
 
 
 @app.command()
 def download(
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID to download papers into. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID to download papers into. If not provided, uses PROJECT_ID from .env.",
     ),
     doi: List[str] = typer.Option(
         None,
@@ -173,8 +171,8 @@ def download(
             "Unpaywall email is required. Use --email or set UNPAYWALL_EMAIL in .env."
         )
 
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
 
     papers_path = os.path.join(experiment_path, PAPERS_DIR)
     ensure_directory_exists(papers_path)
@@ -196,7 +194,7 @@ def download(
         csv_path = os.path.join(searches_path, search_file)
         if not os.path.exists(csv_path):
             raise PaperDownloadException(
-                f"Search file '{search_file}' not found in searches/ directory for experiment '{eid}'."
+                f"Search file '{search_file}' not found in searches/ directory for project '{pid}'."
             )
         stem = Path(search_file).stem
         failed_csv_path = os.path.join(searches_path, f"{stem}_download_failed.csv")
@@ -298,10 +296,10 @@ def download(
 
 @app.command()
 def extract(
-    eid: str = typer.Option(
+    pid: str = typer.Option(
         None,
-        "--eid",
-        help="Experiment ID to extract papers from. If not provided, uses EXPERIMENT_ID from .env.",
+        "--pid",
+        help="Project ID to extract papers from. If not provided, uses PROJECT_ID from .env.",
     ),
     processor: PDFProcessor = typer.Option(
         PDFProcessor.pypdf,
@@ -331,17 +329,17 @@ def extract(
 ) -> None:
     """Extracts text from all PDFs in the papers subdirectory and saves as .txt (pypdf) or .md (docling) files"""
 
-    eid = get_proper_eid(eid)
-    experiment_path = get_experiment_directory_path(eid)
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
 
     if not os.path.exists(experiment_path):
-        raise ExperimentNotExistsException(f"Experiment '{eid}' not exist.")
+        raise ProjectNotExistsException(f"Project '{pid}' not exist.")
 
     papers_path = os.path.join(experiment_path, PAPERS_DIR)
 
     if not os.path.exists(papers_path):
         cprint(
-            f"[bold yellow]Warning:[/bold yellow] No papers directory found for experiment '{eid}'."
+            f"[bold yellow]Warning:[/bold yellow] No papers directory found for project '{pid}'."
         )
         return
 
@@ -353,7 +351,7 @@ def extract(
 
     if not pdfs:
         cprint(
-            f"[bold yellow]Warning:[/bold yellow] No PDF files found in papers directory for experiment '{eid}'."
+            f"[bold yellow]Warning:[/bold yellow] No PDF files found in papers directory for project '{pid}'."
         )
         return
 

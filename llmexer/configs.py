@@ -11,7 +11,7 @@ class GlobalFlags:
 
     dry_run: bool = False
     verbose: bool = False
-    experiment_id: str = None
+    project_id: str = None
 
 
 logger = get_logger()
