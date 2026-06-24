@@ -80,14 +80,14 @@ def test_experiment_from_row_and_to_dict_roundtrip():
         "ID": 1,
         "code": "D01_p01",
         "prompt": "Hi",
-        "param_provider": "ollama",
-        "param_model_name": "llama3.3:latest",
+        "provider_name": "ollama",
+        "model_name": "llama3.3:latest",
         "temperature": 0.7,
     }
     exp = Experiment.from_row(row)
     assert exp.experiment_id == "D01_p01"
     assert exp.row_id == 1
-    assert exp.param_provider == "ollama"
+    assert exp.provider_name == "ollama"
 
     merged = exp.to_dict()
     assert merged["code"] == "D01_p01"
@@ -171,7 +171,7 @@ def test_fetch_rows_by_id_and_code(db_file):
     with ExperimentDAO(db_file) as dao:
         by_id = dao.fetch_rows(id_experiment=2)
         by_code = dao.fetch_rows(id_experiment="D01_prompt01_gpt-4o_openai-default")
-    assert len(by_id) == 1 and by_id[0]["param_provider"] == "openai"
+    assert len(by_id) == 1 and by_id[0]["provider_name"] == "openai"
     assert len(by_code) == 1 and by_code[0]["ID"] == 2
 
 
@@ -207,7 +207,7 @@ def test_run_openai_branch(db_file, mock_providers):
 def test_run_by_code(db_file, mock_providers):
     mgr = ExperimentsManager(db_file)
     exp = mgr.run("D01_prompt01_gpt-4o_openai-default")
-    assert exp.param_provider == "openai"
+    assert exp.provider_name == "openai"
 
 
 def test_run_unknown_id_raises(db_file, mock_providers):

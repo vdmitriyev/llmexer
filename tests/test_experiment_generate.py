@@ -122,11 +122,7 @@ def test_generate_ollama_table_has_correct_columns(
         "original_data",
         "model_name",
         "provider_name",
-        "prompt_hash",
-        "original_data_hash",
         "profile_name",
-        "param_model_name",
-        "param_provider",
         "temperature",
         "top_p",
         "max_tokens",
@@ -141,6 +137,8 @@ def test_generate_ollama_table_has_correct_columns(
         "elapsed_seconds",
         "timestamp",
         "response_json",
+        "prompt_hash",
+        "original_data_hash",
     ]
     # Other providers' parameter columns must NOT appear in the ollama table.
     for absent in (
@@ -653,8 +651,6 @@ def test_generate_includes_ollama_param_columns(initialised_experiment, projects
     cols = table_columns(find_db(exp_subdir), "ollama")
     for col in [
         "profile_name",
-        "param_model_name",
-        "param_provider",
         "temperature",
         "top_p",
         "max_tokens",
@@ -662,6 +658,9 @@ def test_generate_includes_ollama_param_columns(initialised_experiment, projects
         "ollama_repeat_penalty",
     ]:
         assert col in cols
+    # The duplicate param_* columns are gone; identity columns carry the model/provider.
+    assert "param_model_name" not in cols
+    assert "param_provider" not in cols
 
 
 def test_generate_param_values_embedded(initialised_experiment, projects_dir):
@@ -672,8 +671,8 @@ def test_generate_param_values_embedded(initialised_experiment, projects_dir):
 
     df = read_experiment_df(find_db(exp_subdir))
     assert df.iloc[0]["profile_name"] == "ollama-default"
-    assert df.iloc[0]["param_model_name"] == "llama3.3:latest"
-    assert df.iloc[0]["param_provider"] == "ollama"
+    assert df.iloc[0]["model_name"] == "llama3.3:latest"
+    assert df.iloc[0]["provider_name"] == "ollama"
     assert float(df.iloc[0]["temperature"]) == 0.7
 
 

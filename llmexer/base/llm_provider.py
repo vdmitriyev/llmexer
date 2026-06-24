@@ -161,7 +161,7 @@ class LLMRequestsMapper:
 
     def execute(self, prompt: str, row: dict) -> LLMRunResult:
         """Execute a single LLM call and return a standardised result."""
-        model = str(row.get("param_model_name", row.get("model_name", "")))
+        model = str(row.get("model_name", ""))
         profile = str(row.get("profile_name", ""))
         std_payload, extra = self._map_params(row)
 
@@ -221,7 +221,7 @@ class OllamaProvider(LLMProviderBase):
         if extra_body:
             params["extra_body"] = extra_body
         self.request = ProviderRequest(
-            model=str(row.get("param_model_name", "")),
+            model=str(row.get("model_name", "")),
             prompt=prompt,
             params=params,
         )

@@ -2,9 +2,10 @@
 
 Each LLM provider that appears in a generation run gets its own table named
 ``experiment_<provider>`` (e.g. ``experiment_ollama``). A provider table holds
-the common identity/prompt columns, that provider's own parameter columns, and
-the result columns (including ``response_json``) — so the generated rows and
-their future results live together in one table per provider.
+the common identity/prompt columns, that provider's own parameter columns, the
+result columns (including ``response_json``), and finally the SHA-256 hash
+columns — so the generated rows and their future results live together in one
+table per provider.
 
 All SQLAlchemy access is funnelled through :class:`ExperimentDAO`; the rest of
 the codebase passes and receives plain ``dict`` rows and never touches the
@@ -37,6 +38,7 @@ from sqlalchemy import (
 from llmexer.base.experiment import (
     COMMON_IDENTITY_COLUMNS,
     COMMON_PARAM_COLUMNS,
+    HASH_COLUMNS,
     PROVIDER_PARAM_COLUMNS,
     RESULT_COLUMNS,
 )
@@ -64,8 +66,6 @@ COLUMN_TYPES: Dict[str, Any] = {
     "original_data_hash": String(64),
     # common params
     "profile_name": String,
-    "param_model_name": String,
-    "param_provider": String,
     "temperature": Float,
     "top_p": Float,
     "max_tokens": Integer,
@@ -110,6 +110,7 @@ def _provider_columns(provider: str) -> List[str]:
         + list(COMMON_PARAM_COLUMNS)
         + list(extra)
         + list(RESULT_COLUMNS)
+        + list(HASH_COLUMNS)
     )
 
 
@@ -357,8 +358,8 @@ class ExperimentDAO:
                 total_tokens += int(token_sum or 0)
 
                 for name, cnt in conn.execute(
-                    select(table.c.param_model_name, func.count()).group_by(
-                        table.c.param_model_name
+                    select(table.c.model_name, func.count()).group_by(
+                        table.c.model_name
                     )
                 ):
                     key = str(name)

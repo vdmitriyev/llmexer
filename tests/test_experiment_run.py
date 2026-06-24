@@ -532,8 +532,8 @@ def test_run_filter_provider_runs_only_matching_rows(
     df = read_experiment_df(find_db(exp_subdir))
     # The single database keeps every row; only the ollama row was run.
     assert len(df) == 2
-    ollama_row = df[df["param_provider"].str.lower() == "ollama"].iloc[0]
-    openai_row = df[df["param_provider"].str.lower() == "openai"].iloc[0]
+    ollama_row = df[df["provider_name"].str.lower() == "ollama"].iloc[0]
+    openai_row = df[df["provider_name"].str.lower() == "openai"].iloc[0]
     assert ollama_row["status"] == "success"
     assert pd.isna(openai_row["status"])
 
@@ -588,7 +588,7 @@ def test_run_filter_provider_case_insensitive(
     assert result.exit_code == 0
     df = read_experiment_df(find_db(exp_subdir))
     assert len(df) == 2
-    ollama_row = df[df["param_provider"].str.lower() == "ollama"].iloc[0]
+    ollama_row = df[df["provider_name"].str.lower() == "ollama"].iloc[0]
     assert ollama_row["status"] == "success"
 
 
@@ -644,8 +644,8 @@ def test_run_sequential_filtered_runs_persist_into_one_db(
     assert len(df) == 2
     # Both rows are now populated (ollama from run 1, openai from run 2).
     assert (
-        df[df["param_provider"].str.lower() == "ollama"].iloc[0]["status"] == "success"
+        df[df["provider_name"].str.lower() == "ollama"].iloc[0]["status"] == "success"
     )
     assert (
-        df[df["param_provider"].str.lower() == "openai"].iloc[0]["status"] == "success"
+        df[df["provider_name"].str.lower() == "openai"].iloc[0]["status"] == "success"
     )

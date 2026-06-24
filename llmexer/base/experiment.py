@@ -17,8 +17,6 @@ _OUTPUT_COLUMNS = [
     "prompt_hash",
     "original_data_hash",
     "profile_name",
-    "param_model_name",
-    "param_provider",
     "temperature",
     "top_p",
     "max_tokens",
@@ -30,10 +28,11 @@ _OUTPUT_COLUMNS = [
     "gemini_thinking_level",
 ]
 
+# Parameter columns copied from each ``llm-params.csv`` row into a generated
+# row (``model_name``/``provider`` from that file are the join key / captured by
+# models.csv, so they are not duplicated here).
 _PARAM_COLUMNS = [
     "profile_name",
-    "param_model_name",
-    "param_provider",
     "temperature",
     "top_p",
     "max_tokens",
@@ -48,8 +47,9 @@ _PARAM_COLUMNS = [
 # --------------------------------------------------------------------- SQLite
 # Schema partition for the per-provider SQLite tables. Each provider table is
 # built from COMMON_IDENTITY_COLUMNS + COMMON_PARAM_COLUMNS + that provider's
-# entry in PROVIDER_PARAM_COLUMNS + RESULT_COLUMNS. This keeps every provider's
-# parameters in its own table (e.g. the openai table has no ollama_* columns).
+# entry in PROVIDER_PARAM_COLUMNS + RESULT_COLUMNS + HASH_COLUMNS. This keeps
+# every provider's parameters in its own table (e.g. the openai table has no
+# ollama_* columns), with the reproducibility hashes trailing at the end.
 
 # Identity / prompt columns shared by every provider table.
 COMMON_IDENTITY_COLUMNS = [
@@ -60,15 +60,13 @@ COMMON_IDENTITY_COLUMNS = [
     "original_data",
     "model_name",
     "provider_name",
-    "prompt_hash",
-    "original_data_hash",
 ]
 
-# Parameter columns shared by every provider table.
+# Parameter columns shared by every provider table. ``model_name`` and
+# ``provider_name`` (identity columns) already capture the model/provider, so
+# they are not duplicated here.
 COMMON_PARAM_COLUMNS = [
     "profile_name",
-    "param_model_name",
-    "param_provider",
     "temperature",
     "top_p",
     "max_tokens",
@@ -95,6 +93,12 @@ RESULT_COLUMNS = [
     "elapsed_seconds",
     "timestamp",
     "response_json",
+]
+
+# SHA-256 reproducibility hashes, kept as the trailing columns of every table.
+HASH_COLUMNS = [
+    "prompt_hash",
+    "original_data_hash",
 ]
 
 

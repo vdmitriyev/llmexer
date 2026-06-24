@@ -2,6 +2,13 @@
 History
 =======
 
+0.2.21 (2026-06-25)
+-------------------
+
+* Refine the per-provider experiment-table schema introduced in 0.2.20: drop the duplicate ``param_model_name`` / ``param_provider`` columns, since ``model_name`` / ``provider_name`` already carry the model and provider
+* Move the SHA-256 hash columns (``prompt_hash``, ``original_data_hash``) to the end of each provider table
+* ``README.md``: add a hint that the generated experiment database (``experiment/experiment_*.db``) can be opened and edited with an external SQLite tool such as `DBeaver <https://dbeaver.io/>`_
+
 0.2.20 (2026-06-24)
 -------------------
 

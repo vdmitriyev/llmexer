@@ -36,7 +36,7 @@ def _mock_client(text="hello", total_tokens=42, side_effect=None):
 
 def _row(**kwargs):
     base = {
-        "param_model_name": "llama3.3:latest",
+        "model_name": "llama3.3:latest",
         "temperature": 0.7,
         "top_p": 1.0,
         "ollama_context_window": None,
@@ -148,7 +148,7 @@ def test_build_request_all_extra_body_fields():
 
 def test_build_request_model_from_row():
     caller = OllamaProvider(provider="ollama")
-    req = caller.build_request("hello", _row(param_model_name="phi4:14b"))
+    req = caller.build_request("hello", _row(model_name="phi4:14b"))
     assert req.model == "phi4:14b"
 
 

@@ -181,10 +181,6 @@ def generate(
         )
         return
 
-    params_df = params_df.rename(
-        columns={"model_name": "param_model_name", "provider": "param_provider"}
-    )
-
     data_lookup = data_df.set_index("ID").to_dict(orient="index")
     env = Environment(loader=BaseLoader(), undefined=DebugUndefined)
 
@@ -226,7 +222,7 @@ def generate(
 
         for _, model_row in models_df.iterrows():
             for _, param_row in params_df.iterrows():
-                if model_row["name"] == param_row["param_model_name"]:
+                if model_row["name"] == param_row["model_name"]:
                     rows.append(
                         {
                             "ID": row_counter,
@@ -273,7 +269,7 @@ def generate(
     # Each provider gets its own table holding only its parameters.
     by_provider: dict = defaultdict(list)
     for row in rows:
-        by_provider[str(row["param_provider"]).lower()].append(row)
+        by_provider[str(row["provider_name"]).lower()].append(row)
 
     with ExperimentDAO(output_path, create=True) as dao:
         for provider, provider_rows in by_provider.items():
@@ -367,7 +363,7 @@ def run(
             experiment_info = f"[[yellow]{row['code']}[/yellow]]"
             run_info_prefix = f"{current_run_info}{experiment_info}"
             cprint(f"{run_info_prefix} running")
-            provider = row.get("_provider") or str(row["param_provider"]).lower()
+            provider = row.get("_provider") or str(row["provider_name"]).lower()
 
             if settings.dry_run:
                 continue
@@ -379,9 +375,7 @@ def run(
 
             # Save individual JSON response (kept alongside the DB row).
             file_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
-            safe_model = (
-                str(row["param_model_name"]).replace("/", "-").replace(":", "-")
-            )
+            safe_model = str(row["model_name"]).replace("/", "-").replace(":", "-")
             json_path = os.path.join(
                 responses_dir, f"{file_ts}_{safe_model}_{provider}.json"
             )

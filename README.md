@@ -106,6 +106,10 @@ llmexer --dry-run experiment generate --pid llm-survey-2026
 ```
 </details>
 
+> 💡 **Hint — external tools:** the generated experiment store is a SQLite database
+> (`experiment/experiment_*.db`). Beyond the CLI, you can open and edit it directly with any
+> external SQLite tool — for example [DBeaver](https://dbeaver.io/).
+
 **5. Run the experiment - call LLMs and collect results**
 
 Once `experiment generate` has produced the CSV, run all combinations:

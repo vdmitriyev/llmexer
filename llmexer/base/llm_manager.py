@@ -38,8 +38,6 @@ class Experiment:
     provider_name: str = ""
 
     profile_name: str = ""
-    param_model_name: str = ""
-    param_provider: str = ""
     temperature: Optional[float] = None
     top_p: Optional[float] = None
     max_tokens: Optional[int] = None
@@ -72,8 +70,6 @@ class Experiment:
             model_name=str(row.get("model_name") or ""),
             provider_name=str(row.get("provider_name") or ""),
             profile_name=str(row.get("profile_name") or ""),
-            param_model_name=str(row.get("param_model_name") or ""),
-            param_provider=str(row.get("param_provider") or ""),
             temperature=row.get("temperature"),
             top_p=row.get("top_p"),
             max_tokens=row.get("max_tokens"),
@@ -147,7 +143,7 @@ def build_response_payload(experiment: Experiment, provider: str) -> Dict[str, A
     """Build the per-call JSON payload exported to ``responses/`` and the DB."""
 
     return {
-        "model": experiment.param_model_name or experiment.model_name,
+        "model": experiment.model_name,
         "provider": provider,
         "prompt": experiment.prompt,
         "profile": experiment.profile_name,
@@ -178,13 +174,13 @@ def result_values(experiment: Experiment, provider: str) -> Dict[str, Any]:
 def run_experiment_row(row: Dict[str, Any]) -> Experiment:
     """Execute a single generated row against its provider and return results.
 
-    Resolves the provider from ``param_provider``, runs the LLM call, and copies
+    Resolves the provider from ``provider_name``, runs the LLM call, and copies
     the provider's :class:`CallerState`/:class:`CallerStats` into the returned
     :class:`Experiment`. Pure: it does not persist anything.
     """
 
     experiment = Experiment.from_row(row)
-    provider = (experiment.param_provider or "").lower()
+    provider = (experiment.provider_name or "").lower()
     base_url, api_key = llm_module.resolve_provider_config(provider)
 
     if provider == "ollama":
@@ -271,7 +267,7 @@ class ExperimentsManager:
 
         row = rows[0]
         experiment = run_experiment_row(row)
-        provider = row.get("_provider") or (experiment.param_provider or "").lower()
+        provider = row.get("_provider") or (experiment.provider_name or "").lower()
         self.dao.update_result(provider, row["ID"], result_values(experiment, provider))
         return experiment
 
