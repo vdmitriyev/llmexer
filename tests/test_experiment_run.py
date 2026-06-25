@@ -73,6 +73,7 @@ def mock_llm_mapper(monkeypatch):
         usage_tokens = 42
         status = "success"
         timestamp = "2024-01-01T00:00:00"
+        raw = {"id": "cmpl-1", "usage": {"prompt_tokens": 10, "total_tokens": 42}}
 
         def model_dump(self):
             return {

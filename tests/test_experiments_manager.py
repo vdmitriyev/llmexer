@@ -49,6 +49,7 @@ def mock_providers(monkeypatch):
         usage_tokens = 42
         status = "success"
         timestamp = "2024-01-01T00:00:00"
+        raw = {"id": "cmpl-1", "usage": {"prompt_tokens": 10, "total_tokens": 42}}
 
     class FakeMapper:
         def __init__(self, provider, base_url=None, api_key="na"):
@@ -202,6 +203,22 @@ def test_run_openai_branch(db_file, mock_providers):
     assert exp.status == "success"
     assert exp.state == CallerState.FINISHED.value
     assert exp.usage_tokens == 42
+    # The full backend response is captured and persisted into response_json.
+    assert exp.raw_response["usage"]["prompt_tokens"] == 10
+    saved = json.loads(mgr.dao.fetch_rows(id_experiment=2)[0]["response_json"])
+    assert saved["raw_response"]["usage"]["total_tokens"] == 42
+
+
+def test_build_response_payload_includes_raw_response():
+    from llmexer.base.llm_manager import build_response_payload
+
+    exp = Experiment(
+        model_name="gemma4:31b",
+        response_text="hi",
+        raw_response={"usage": {"prompt_tokens": 3}, "eval_count": 9},
+    )
+    payload = build_response_payload(exp, "ollama")
+    assert payload["raw_response"] == {"usage": {"prompt_tokens": 3}, "eval_count": 9}
 
 
 def test_run_by_code(db_file, mock_providers):

@@ -38,6 +38,23 @@ def resolve_provider_config(provider: str) -> Tuple[Optional[str], str]:
     return base_url, api_key
 
 
+def serialize_response(obj: Any) -> Optional[Dict[str, Any]]:
+    """Best-effort JSON-safe dict of an SDK response object.
+
+    The OpenAI SDK response models allow extra fields (``extra="allow"``), so
+    ``model_dump`` preserves provider-specific extras (e.g. ollama's
+    ``eval_count`` / ``*_duration``). Returns ``None`` when ``obj`` is not a
+    serializable model (e.g. an error string) or if the dump fails.
+    """
+
+    if obj is not None and hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump(mode="json")
+        except Exception:
+            return None
+    return None
+
+
 class CallerState(str, Enum):
     STARTED = "started"
     RUNNING = "running"
@@ -180,6 +197,7 @@ class LLMRequestsMapper:
                 parameters=row,
                 response_text=response.choices[0].message.content or "",
                 usage_tokens=response.usage.total_tokens if response.usage else None,
+                raw=serialize_response(response),
             )
         except Exception as e:
             return LLMRunResult(

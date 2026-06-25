@@ -2,6 +2,12 @@
 History
 =======
 
+0.2.26 (2026-06-25)
+-------------------
+
+* ``experiment run`` now persists the **complete raw backend response** under a ``raw_response`` key in both the per-call ``experiment/responses/*.json`` files and the database ``response_json`` column, instead of only the response text and total token count; this captures all provider fields (e.g. ``finish_reason``, per-token ``usage``, and ollama extras such as ``eval_count`` / ``*_duration``)
+* Applies to all providers: add ``serialize_response`` (``llmexer/base/llm_provider.py``) which dumps an OpenAI SDK response (``extra="allow"``, so provider-specific extras survive); ``LLMRunResult`` gains a ``raw`` field and ``Experiment`` gains a ``raw_response`` field carried into ``build_response_payload``
+
 0.2.25 (2026-06-25)
 -------------------
 

@@ -215,3 +215,56 @@ def test_execute_reuses_existing_session():
     caller.execute("hello", _row())
     # session object must be the same instance — build_session was not called
     assert caller.session is mock_client
+
+
+# ---------------------------------------------------------------------------
+# raw response capture / serialization
+# ---------------------------------------------------------------------------
+
+
+def test_execute_keeps_full_raw_completion():
+    caller = OllamaProvider(provider="ollama")
+    client = _mock_client("world", total_tokens=10)
+    caller.session = client
+    resp = caller.execute("say hello", _row())
+    # The full backend completion object is retained, not just text/tokens.
+    assert resp.raw is client.chat.completions.create.return_value
+
+
+def test_serialize_response_preserves_all_backend_fields():
+    from openai.types.chat import ChatCompletion
+
+    from llmexer.base.llm_provider import serialize_response
+
+    completion = ChatCompletion(
+        id="chatcmpl-1",
+        object="chat.completion",
+        created=123,
+        model="gemma4:31b",
+        choices=[
+            {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": "hi"},
+            }
+        ],
+        usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        # ollama OpenAI-compatible endpoint extras (extra="allow" on the model)
+        eval_count=7,
+        prompt_eval_count=10,
+    )
+    dumped = serialize_response(completion)
+    # Standard fields beyond text + total_tokens survive.
+    assert dumped["choices"][0]["finish_reason"] == "stop"
+    assert dumped["usage"]["prompt_tokens"] == 10
+    assert dumped["usage"]["completion_tokens"] == 5
+    # Provider-specific extras survive too.
+    assert dumped["eval_count"] == 7
+    assert dumped["prompt_eval_count"] == 10
+
+
+def test_serialize_response_non_model_returns_none():
+    from llmexer.base.llm_provider import serialize_response
+
+    assert serialize_response("connection refused") is None
+    assert serialize_response(None) is None

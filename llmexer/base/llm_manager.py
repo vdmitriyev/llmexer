@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 
 import llmexer.base.llm_provider as llm_module
 from llmexer.base.dao import ExperimentDAO
-from llmexer.base.llm_provider import CallerState, ProviderAuth
+from llmexer.base.llm_provider import CallerState, ProviderAuth, serialize_response
 from llmexer.exceptions import LLMExerException
 from llmexer.logger import get_logger
 
@@ -52,6 +52,9 @@ class Experiment:
     elapsed_seconds: float = 0.0
     timestamp: Optional[str] = None
 
+    # The full serialized backend response (all provider fields), if available.
+    raw_response: Optional[Dict[str, Any]] = field(default=None, repr=False)
+    # The full original input row, so nothing from the source is lost on round-trips.
     raw: Dict[str, Any] = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -151,6 +154,7 @@ def build_response_payload(experiment: Experiment, provider: str) -> Dict[str, A
         "usage_tokens": experiment.usage_tokens,
         "status": experiment.status,
         "timestamp": experiment.timestamp,
+        "raw_response": experiment.raw_response,
     }
 
 
@@ -192,6 +196,7 @@ def run_experiment_row(row: Dict[str, Any]) -> Experiment:
         resp = caller.execute(experiment.prompt, row)
         experiment.response_text = resp.text
         experiment.usage_tokens = resp.usage_tokens
+        experiment.raw_response = serialize_response(resp.raw)
         experiment.status = (
             f"Error: {resp.raw}" if caller.state == CallerState.ERROR else "success"
         )
@@ -211,6 +216,7 @@ def run_experiment_row(row: Dict[str, Any]) -> Experiment:
         result = mapper.execute(experiment.prompt, row)
         experiment.response_text = result.response_text
         experiment.usage_tokens = result.usage_tokens
+        experiment.raw_response = result.raw
         experiment.status = result.status
         # LLMRequestsMapper has no CallerState/CallerStats; derive them.
         experiment.state = (

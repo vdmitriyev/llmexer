@@ -16,6 +16,7 @@ class LLMRunResult:
     usage_tokens: Optional[int] = None
     status: str = "success"
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    raw: Optional[Dict[str, Any]] = field(default=None, repr=False)
 
     def model_dump(self) -> dict:
         return asdict(self)
