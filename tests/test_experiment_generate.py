@@ -45,10 +45,10 @@ def mock_no_dotenv(monkeypatch):
 
 
 _LLM_PARAMS_HEADER = (
-    "profile_name;model_name;provider;temperature;top_p;max_tokens;"
+    "provider;model_name;profile_name;temperature;top_p;max_tokens;"
     "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level\n"
 )
-_LLM_PARAMS_ROW = "ollama-default;llama3.3:latest;ollama;0.7;1.0;512;4096;1.1;;;;\n"
+_LLM_PARAMS_ROW = "ollama;llama3.3:latest;ollama-default;0.7;1.0;512;4096;1.1;;;;\n"
 
 
 @pytest.fixture()
@@ -64,7 +64,7 @@ def initialised_experiment(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "models.csv").write_text(
+    (exp_subdir / "llm-models.csv").write_text(
         "name;provider;notes\nllama3.3:latest;ollama;local model\n",
         encoding="utf-8",
     )
@@ -195,7 +195,7 @@ def test_generate_tokens_estimate_value(initialised_experiment, projects_dir):
 
 
 def test_generate_model_name_and_provider(initialised_experiment, projects_dir):
-    """model_name and provider_name columns should match models.csv."""
+    """model_name and provider_name columns should match llm-models.csv."""
     pid, exp_subdir = initialised_experiment
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
@@ -247,7 +247,7 @@ def test_generate_multiple_models_multiple_rows(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "models.csv").write_text(
+    (exp_subdir / "llm-models.csv").write_text(
         "name;provider;notes\nmodel-a;provider-a;\nmodel-b;provider-b;\n",
         encoding="utf-8",
     )
@@ -262,8 +262,8 @@ def test_generate_multiple_models_multiple_rows(projects_dir):
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
         _LLM_PARAMS_HEADER
-        + "profile-a;model-a;provider-a;0.7;1.0;512;4096;1.1;;;;\n"
-        + "profile-b;model-b;provider-b;0.7;1.0;512;4096;1.1;;;;\n",
+        + "provider-a;model-a;profile-a;0.7;1.0;512;4096;1.1;;;;\n"
+        + "provider-b;model-b;profile-b;0.7;1.0;512;4096;1.1;;;;\n",
         encoding="utf-8",
     )
 
@@ -273,19 +273,19 @@ def test_generate_multiple_models_multiple_rows(projects_dir):
     df = read_experiment_df(find_db(exp_subdir))
     assert len(df) == 4  # 2 data rows × 2 models × 1 param profile
     assert list(df["ID"]) == [1, 2, 3, 4]
-    # rows are sorted by model order from models.csv, then by mapping order within each model
+    # rows are sorted by model order from llm-models.csv, then by mapping order within each model
     assert list(df["model_name"]) == ["model-a", "model-a", "model-b", "model-b"]
 
 
 def test_generate_sorted_by_model_order(projects_dir):
-    """Output rows should be grouped by model in models.csv order (model-first, then mapping order)."""
+    """Output rows should be grouped by model in llm-models.csv order (model-first, then mapping order)."""
     pid = "sort-exp"
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    # model-b is listed second in models.csv — its rows must appear after model-a's
-    (exp_subdir / "models.csv").write_text(
+    # model-b is listed second in llm-models.csv — its rows must appear after model-a's
+    (exp_subdir / "llm-models.csv").write_text(
         "name;provider;notes\nmodel-a;p;\nmodel-b;p;\n",
         encoding="utf-8",
     )
@@ -300,8 +300,8 @@ def test_generate_sorted_by_model_order(projects_dir):
     (prompts_dir / "prompt01.txt").write_text("{{title}}", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
         _LLM_PARAMS_HEADER
-        + "profile-a;model-a;p;0.7;1.0;512;4096;1.1;;;;\n"
-        + "profile-b;model-b;p;0.7;1.0;512;4096;1.1;;;;\n",
+        + "p;model-a;profile-a;0.7;1.0;512;4096;1.1;;;;\n"
+        + "p;model-b;profile-b;0.7;1.0;512;4096;1.1;;;;\n",
         encoding="utf-8",
     )
 
@@ -366,7 +366,7 @@ def test_generate_prompt_hash_deterministic(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "models.csv").write_text(
+    (exp_subdir / "llm-models.csv").write_text(
         "name;provider;notes\nmodel-a;p;\nmodel-b;p;\n",
         encoding="utf-8",
     )
@@ -381,8 +381,8 @@ def test_generate_prompt_hash_deterministic(projects_dir):
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
         _LLM_PARAMS_HEADER
-        + "profile-a;model-a;p;0.7;1.0;512;4096;1.1;;;;\n"
-        + "profile-b;model-b;p;0.7;1.0;512;4096;1.1;;;;\n",
+        + "p;model-a;profile-a;0.7;1.0;512;4096;1.1;;;;\n"
+        + "p;model-b;profile-b;0.7;1.0;512;4096;1.1;;;;\n",
         encoding="utf-8",
     )
 
@@ -446,7 +446,7 @@ def test_generate_uninitialised_experiment_raises(projects_dir):
 
 
 def test_generate_missing_models_csv_raises(projects_dir):
-    """Missing models.csv should raise LLMExerException."""
+    """Missing llm-models.csv should raise LLMExerException."""
     pid = "no-models-exp"
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
@@ -463,7 +463,7 @@ def test_generate_missing_models_csv_raises(projects_dir):
 
     assert result.exit_code != 0
     assert isinstance(result.exception, LLMExerException)
-    assert "models.csv" in str(result.exception)
+    assert "llm-models.csv" in str(result.exception)
 
 
 def test_generate_missing_data_csv_raises(projects_dir):
@@ -472,7 +472,7 @@ def test_generate_missing_data_csv_raises(projects_dir):
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
-    (exp_subdir / "models.csv").write_text(
+    (exp_subdir / "llm-models.csv").write_text(
         "name;provider;notes\nm;p;\n", encoding="utf-8"
     )
     (exp_subdir / "mapping.csv").write_text(
@@ -495,7 +495,7 @@ def test_generate_missing_mapping_csv_raises(projects_dir):
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
-    (exp_subdir / "models.csv").write_text(
+    (exp_subdir / "llm-models.csv").write_text(
         "name;provider;notes\nm;p;\n", encoding="utf-8"
     )
     (exp_subdir / "data.csv").write_text("ID;Title\nD01;T\n", encoding="utf-8")
@@ -517,7 +517,7 @@ def test_generate_missing_data_id_skips_row(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "models.csv").write_text(
+    (exp_subdir / "llm-models.csv").write_text(
         "name;provider;notes\nm;p;\n", encoding="utf-8"
     )
     (exp_subdir / "data.csv").write_text(
@@ -546,7 +546,7 @@ def test_generate_missing_prompt_file_skips_row(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "models.csv").write_text(
+    (exp_subdir / "llm-models.csv").write_text(
         "name;provider;notes\nm;p;\n", encoding="utf-8"
     )
     (exp_subdir / "data.csv").write_text(
@@ -575,7 +575,7 @@ def test_generate_uses_current_experiment_from_env(
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "models.csv").write_text(
+    (exp_subdir / "llm-models.csv").write_text(
         "name;provider;notes\nm;p;\n", encoding="utf-8"
     )
     (exp_subdir / "data.csv").write_text(
@@ -623,7 +623,7 @@ def test_generate_missing_llm_params_raises(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "models.csv").write_text(
+    (exp_subdir / "llm-models.csv").write_text(
         "name;provider;notes\nm;p;\n", encoding="utf-8"
     )
     (exp_subdir / "data.csv").write_text(
@@ -683,7 +683,7 @@ def test_generate_row_count_with_multiple_profiles(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "models.csv").write_text(
+    (exp_subdir / "llm-models.csv").write_text(
         "name;provider;notes\nmodel-a;p;\n", encoding="utf-8"
     )
     (exp_subdir / "data.csv").write_text(
@@ -695,8 +695,8 @@ def test_generate_row_count_with_multiple_profiles(projects_dir):
     (prompts_dir / "prompt01.txt").write_text("{{title}}", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
         _LLM_PARAMS_HEADER
-        + "profile-a;model-a;p;0.5;1.0;256;;;;;;\n"
-        + "profile-b;model-a;p;1.0;0.9;512;;;;;;\n",
+        + "p;model-a;profile-a;0.5;1.0;256;;;;;;\n"
+        + "p;model-a;profile-b;1.0;0.9;512;;;;;;\n",
         encoding="utf-8",
     )
 

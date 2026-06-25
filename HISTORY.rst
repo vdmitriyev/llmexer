@@ -2,6 +2,14 @@
 History
 =======
 
+0.2.24 (2026-06-25)
+-------------------
+
+* Reorder ``llm-params.csv`` identity columns so they lead with ``provider``, ``model_name``, ``profile_name`` (was ``profile_name``, ``model_name``, ``provider``)
+* Rename the ``models.csv`` input config file to ``llm-models.csv`` (``experiment init`` template and ``experiment generate`` input)
+* ``experiment init`` defaults: change the default model from ``llama3.3:latest`` to ``gemma4:31b`` and trim the ``llm-models.csv`` template to two models — ``gemma4:31b`` and ``phi4:14b``; the ``llm-params.csv`` example profiles now use ``gemma4:31b`` (``ollama-default``) and ``phi4:14b`` (``ollama-creative``)
+* ``README.md``: describe the ``experiment generate`` cartesian product as ``data row × prompt × LLM models × LLM parameters``
+
 0.2.23 (2026-06-25)
 -------------------
 

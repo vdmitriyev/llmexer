@@ -127,14 +127,12 @@ def init(
     ensure_directory_exists(experiment_subdir_path)
     ensure_directory_exists(prompts_subdir)
 
-    # models.csv
-    models_path = os.path.join(experiment_subdir_path, "models.csv")
+    # llm-models.csv
+    models_path = os.path.join(experiment_subdir_path, "llm-models.csv")
     with open(models_path, "w", encoding="utf-8") as f:
         f.write("name;provider;notes\n")
-        f.write("llama3.3:latest;ollama;local model\n")
+        f.write("gemma4:31b;ollama;local model\n")
         f.write("phi4:14b;ollama;local model\n")
-        f.write("gemma3:12b;ollama;local model\n")
-        f.write("gemma3:27b;ollama;local model\n")
 
     # data.csv
     data_path = os.path.join(experiment_subdir_path, "data.csv")
@@ -167,14 +165,14 @@ def init(
     llm_params_path = os.path.join(experiment_subdir_path, "llm-params.csv")
     with open(llm_params_path, "w", encoding="utf-8") as f:
         f.write(
-            "profile_name;model_name;provider;temperature;top_p;max_tokens;"
+            "provider;model_name;profile_name;temperature;top_p;max_tokens;"
             "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level\n"
         )
-        f.write("ollama-default;llama3.3:latest;ollama;0.7;1.0;512;4096;1.1;;;;\n")
-        f.write("ollama-creative;llama3.3:latest;ollama;1.2;0.95;512;4096;1.0;;;;\n")
-        f.write("openai-default;gpt-4o;openai;0.7;1.0;512;;;;42;\n")
-        f.write("vllm-default;meta-llama/Llama-3-8b;vllm;0.7;0.9;512;;;0.05;1;;\n")
-        f.write("gemini-default;gemini-2.0-flash;gemini;0.7;1.0;512;;;;;standard\n")
+        f.write("ollama;gemma4:31b;ollama-default;0.7;1.0;512;4096;1.1;;;;\n")
+        f.write("ollama;phi4:14b;ollama-creative;1.2;0.95;512;4096;1.0;;;;\n")
+        f.write("openai;gpt-4o;openai-default;0.7;1.0;512;;;;42;\n")
+        f.write("vllm;meta-llama/Llama-3-8b;vllm-default;0.7;0.9;512;;;0.05;1;;\n")
+        f.write("gemini;gemini-2.0-flash;gemini-default;0.7;1.0;512;;;;;standard\n")
 
     cprint(f"Init project [bold yellow]{pid}[/bold yellow] with standard structure.")
 
@@ -314,14 +312,14 @@ def generate(
     pid = get_proper_pid(pid)
     experiment_subdir_path = get_experiment_subdir_path(pid)
 
-    models_path = os.path.join(experiment_subdir_path, "models.csv")
+    models_path = os.path.join(experiment_subdir_path, "llm-models.csv")
     data_path = os.path.join(experiment_subdir_path, "data.csv")
     mapping_path = os.path.join(experiment_subdir_path, "mapping.csv")
     llm_params_path = os.path.join(experiment_subdir_path, "llm-params.csv")
     prompts_subdir = os.path.join(experiment_subdir_path, "prompts")
 
     for label, path in [
-        ("models.csv", models_path),
+        ("llm-models.csv", models_path),
         ("data.csv", data_path),
         ("mapping.csv", mapping_path),
         ("llm-params.csv", llm_params_path),

@@ -30,7 +30,7 @@ _OUTPUT_COLUMNS = [
 
 # Parameter columns copied from each ``llm-params.csv`` row into a generated
 # row (``model_name``/``provider`` from that file are the join key / captured by
-# models.csv, so they are not duplicated here).
+# llm-models.csv, so they are not duplicated here).
 _PARAM_COLUMNS = [
     "profile_name",
     "temperature",
@@ -120,7 +120,7 @@ def generate_project_id() -> str:
 def _is_experiment_initialized(experiment_path: str) -> bool:
     """Check if an experiment has been initialized with required CSV files."""
     experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
-    required_files = ["data.csv", "llm-params.csv", "mapping.csv", "models.csv"]
+    required_files = ["data.csv", "llm-params.csv", "mapping.csv", "llm-models.csv"]
     return all(
         os.path.exists(os.path.join(experiment_subdir_path, f)) for f in required_files
     )

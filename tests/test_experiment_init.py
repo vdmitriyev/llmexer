@@ -65,17 +65,17 @@ def test_init_creates_prompts_subfolder(experiment, projects_dir):
 
 
 def test_init_creates_models_csv(experiment, projects_dir):
-    """init should create models.csv with the correct header and example row."""
+    """init should create llm-models.csv with the correct header and example row."""
     pid, exp_path = experiment
 
     result = runner.invoke(app, ["experiment", "init", "--pid", pid])
 
     assert result.exit_code == 0
-    models_file = exp_path / "experiment" / "models.csv"
+    models_file = exp_path / "experiment" / "llm-models.csv"
     assert models_file.exists()
     lines = models_file.read_text(encoding="utf-8").splitlines()
     assert lines[0] == "name;provider;notes"
-    assert "llama3.3:latest" in lines[1]
+    assert "gemma4:31b" in lines[1]
     assert "ollama" in lines[1]
 
 
@@ -210,7 +210,7 @@ def test_init_creates_llm_params_csv(experiment, projects_dir):
     assert params_file.exists()
     lines = params_file.read_text(encoding="utf-8").splitlines()
     assert lines[0] == (
-        "profile_name;model_name;provider;temperature;top_p;max_tokens;"
+        "provider;model_name;profile_name;temperature;top_p;max_tokens;"
         "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level"
     )
     assert len(lines) >= 2
