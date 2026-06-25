@@ -6,6 +6,7 @@ import os
 import shutil
 from collections import defaultdict
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +19,8 @@ from llmexer.base.experiment import (
     _PARAM_COLUMNS,
     DIR_EXPERIMENT,
     DIR_RESPONSES,
+    _get_generated_experiment_files,
+    _is_experiment_initialized,
 )
 from llmexer.common import (
     ensure_directory_exists,
@@ -26,8 +29,14 @@ from llmexer.common import (
     get_proper_pid,
 )
 from llmexer.configs import console, cprint, settings
-from llmexer.constants import PAPERS_DIR, SEARCHES_DIR
+from llmexer.constants import PAPERS_DIR, PROJECTS_PATH, SEARCHES_DIR
 from llmexer.exceptions import LLMExerException
+
+
+class SortBy(str, Enum):
+    alpha = "alpha"
+    date = "date"
+
 
 app = typer.Typer(help="Manage LLM experiments.")
 
@@ -623,3 +632,74 @@ def stats(
         for name, count in breakdown.items():
             table.add_row(name, str(count))
         console.print(table)
+
+
+@app.command(name="list")
+def list_experiments(
+    sort_by: SortBy = typer.Option(
+        SortBy.alpha,
+        "--sort-by",
+        help="Sort projects by 'alpha' (alphabetical) or 'date' (creation date).",
+    ),
+    desc: bool = typer.Option(False, "--desc", help="Sort in descending order."),
+) -> None:
+    """List all projects with their initialization state and generated experiments"""
+    if not os.path.exists(PROJECTS_PATH):
+        cprint("No projects found.")
+        return
+
+    entries = [e for e in os.scandir(PROJECTS_PATH) if e.is_dir()]
+
+    if not entries:
+        cprint("No projects found.")
+        return
+
+    if sort_by == SortBy.date:
+        entries.sort(key=lambda e: e.stat().st_ctime, reverse=desc)
+    else:
+        entries.sort(key=lambda e: e.name, reverse=desc)
+
+    table = Table()
+    table.add_column("#", justify="right", style="cyan", no_wrap=True)
+    table.add_column("Name", style="cyan")
+    table.add_column("Created", style="cyan", no_wrap=True)
+    table.add_column("Initialized", justify="center", style="red", no_wrap=True)
+    table.add_column("Experiments", style="white")
+
+    current_pid = settings.project_id
+    experiment_file_to_run = ""
+    for i, entry in enumerate(entries, start=1):
+        ctime = datetime.fromtimestamp(entry.stat().st_ctime, tz=timezone.utc).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        is_initialized = _is_experiment_initialized(entry.path)
+        init_display = "[green]Yes[/green]" if is_initialized else "[dim]No[/dim]"
+
+        generated_files = _get_generated_experiment_files(entry.path)
+        files_display = (
+            "\n".join(generated_files) if generated_files else "[dim]-[/dim]"
+        )
+        files_display_plain = "\n".join(generated_files) if generated_files else "-"
+
+        # Check if this is the current project
+        is_current = current_pid and entry.name == current_pid
+
+        if is_current:
+            # Bold yellow for current project, underline only on counter
+            table.add_row(
+                f"[bold underline yellow]{i}[/bold underline yellow]",
+                f"[bold yellow]{entry.name}[/bold yellow]",
+                f"[bold yellow]{ctime}[/bold yellow]",
+                f"[bold yellow]{'Yes' if is_initialized else 'No'}[/bold yellow]",
+                f"[bold yellow]{files_display_plain}[/bold yellow]",
+            )
+            if len(generated_files) > 0:
+                experiment_file_to_run = generated_files[-1]
+        else:
+            table.add_row(str(i), entry.name, ctime, init_display, files_display)
+
+    console.print(table)
+    cprint("\nExample to run an experiment:")
+    cprint(
+        f"[bold yellow]llmexer experiment run --file {experiment_file_to_run}[/bold yellow]"
+    )

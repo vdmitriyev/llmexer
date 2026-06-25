@@ -273,7 +273,6 @@ The `project` (alias: `proj`) category provides commands for managing LLM projec
 | Command   | Description | Command Example |
 |-----------|-------------|-----------------|
 | `create` | Create a new project folder under `.projects/` using format `YYYYMMDD-GUID`. Accepts an optional custom ID. | `llmexer project create --id my-project` |
-| `list` | List all projects with optional sorting by name or date. | `llmexer project list --sort-by date --desc` |
 | `current` | Display the current project ID loaded from `.env`. | `llmexer project current` |
 | `rename` | Rename an existing project. Uses `PROJECT_ID` from `.env` if `--old-id` is omitted. | `llmexer project rename --old-id old-name --new-id new-name` |
 
@@ -289,6 +288,7 @@ The `experiment` (alias: `exp`) category provides commands for initialising, gen
 | `generate` | Render all (data row × prompt × LLM models × LLM parameters) combinations and write a self-contained SQLite database `experiment/experiment_<YYYYMMDD>_<NN>.db` (`<NN>` is a zero-padded counter starting at `01`). Each LLM provider gets its own table (e.g. `experiment_ollama`) with columns `ID`, `code` (`DATAID_PROMPTID_MODELNAME_PROFILENAME`), `prompt`, `tokens_estimate`, `original_data`, `model_name`, `provider_name`, that provider's param columns from `llm-params.csv` (`profile_name`, `temperature`, `top_p`, `max_tokens`, plus the provider-specific ones, e.g. `ollama_context_window`, `ollama_repeat_penalty`), the `prompt_hash` / `original_data_hash` columns, and the result columns filled in by `run`. Rows are sorted by model order from `llm-models.csv`. Supports `--dry-run`. | `llmexer experiment generate --pid my-project` |
 | `run` | Execute every row in the generated database `experiment_*.db` (no separate params file needed — all columns are embedded). Calls each LLM via the OpenAI SDK (supports ollama, vllm, openai, gemini) and writes results **back into the same database in place** (response, status, token usage, timestamps); re-runs skip rows that already finished successfully and update the rest. Individual JSON responses are saved under `experiment/responses/`. Supports `--dry-run`, `--file` (choose a specific `.db`, defaults to the newest), `--filter-provider` (only run rows for a specific provider), `--id` (run a single combination by its `ID` or `code`). API key read from `LLM_API_KEY` or `PROVIDER_<PROVIDER_UPPER>_KEY` env vars; URL from `PROVIDER_<PROVIDER_UPPER>_URL` or built-in defaults. Requires `openai` package (`pip install openai`). | `llmexer experiment run --pid my-project --filter-provider ollama` |
 | `stats` | Show aggregate statistics from a project's experiment database: totals (total, finished, running, errors), total tokens, and per-provider / per-model breakdowns rendered as Rich tables. With no `--file` it reads the project's single `experiment_*.db` (pass `--file` to choose one when several exist). | `llmexer experiment stats --pid my-project` |
+| `list` | List all projects with their initialization state and generated experiment databases, with optional sorting by name or date. | `llmexer experiment list --sort-by date --desc` |
 
 ## 📑 CLI category: **papers**
 
@@ -367,7 +367,7 @@ llmexer search stats --file <filename>
 
 List existing projects directly in CLI with the current project highlighted:
 ```
-llmexer project list
+llmexer experiment list
 ```
 ![alt text](docs/cli-ui-experiment-list.png)
 

@@ -2,6 +2,13 @@
 History
 =======
 
+0.2.25 (2026-06-25)
+-------------------
+
+* Move the ``list`` command from the ``project`` group to the ``experiment`` group (now ``llmexer experiment list``); it still lists all projects with their initialization state and generated experiment databases, with ``--sort-by`` / ``--desc``
+* ``experiment list`` now reports generated experiments as the SQLite databases (``experiment_*.db``) instead of the obsolete generated ``*.csv`` files; the listed databases are sorted, so the "example to run" hint points at the latest one
+* ``README.md``: sync the ``experiment`` CLI group docs with the SQLite-backed workflow — ``generate`` writes ``experiment_<YYYYMMDD>_<NN>.db`` (one table per provider), ``run`` writes results back into that database in place (no separate ``*_results.csv``), and ``stats`` reports ``total`` / ``finished`` / ``running`` / ``errors``
+
 0.2.24 (2026-06-25)
 -------------------
 

@@ -127,12 +127,9 @@ def _is_experiment_initialized(experiment_path: str) -> bool:
 
 
 def _get_generated_experiment_files(experiment_path: str) -> list[str]:
-    """Get list of generated experiment CSV files (excluding result files)."""
+    """Get the sorted list of generated experiment databases (``experiment_*.db``)."""
+    # Local import to avoid a circular import (``dao`` imports from this module).
+    from llmexer.base.dao import list_db_files
+
     experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
-    if not os.path.exists(experiment_subdir_path):
-        return []
-    return [
-        f
-        for f in os.listdir(experiment_subdir_path)
-        if f.startswith("experiment_") and f.endswith(".csv") and "_results" not in f
-    ]
+    return list_db_files(experiment_subdir_path)
