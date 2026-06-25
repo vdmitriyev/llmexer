@@ -27,6 +27,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    case,
     create_engine,
     func,
     insert,
@@ -329,7 +330,7 @@ class ExperimentDAO:
 
         total = finished = running = errors = total_tokens = 0
         providers: Dict[str, int] = {}
-        models: Dict[str, int] = {}
+        models: Dict[str, Dict[str, Any]] = {}
 
         with self.engine.connect() as conn:
             for prov, table in self._tables.items():
@@ -356,13 +357,59 @@ class ExperimentDAO:
                 ).scalar()
                 total_tokens += int(token_sum or 0)
 
-                for name, cnt in conn.execute(
-                    select(table.c.model_name, func.count()).group_by(
-                        table.c.model_name
-                    )
+                # Per-model aggregates: counts of finished (status "success") and
+                # open (pending/unrun, NULL status) rows, plus tokens and elapsed
+                # time accumulated over the model's *finished* rows only.
+                is_finished = table.c.status == "success"
+                finished_tokens = func.coalesce(
+                    table.c.total_tokens, table.c.usage_tokens, 0
+                )
+                for (
+                    name,
+                    cnt,
+                    fin,
+                    opn,
+                    toks,
+                    secs,
+                ) in conn.execute(
+                    select(
+                        table.c.model_name,
+                        func.count(),
+                        func.sum(case((is_finished, 1), else_=0)),
+                        func.sum(case((table.c.status.is_(None), 1), else_=0)),
+                        func.sum(case((is_finished, finished_tokens), else_=0)),
+                        func.sum(
+                            case(
+                                (
+                                    is_finished,
+                                    func.coalesce(table.c.elapsed_seconds, 0),
+                                ),
+                                else_=0,
+                            )
+                        ),
+                    ).group_by(table.c.model_name)
                 ):
-                    key = str(name)
-                    models[key] = models.get(key, 0) + int(cnt)
+                    agg = models.setdefault(
+                        str(name),
+                        {
+                            "requests": 0,
+                            "finished": 0,
+                            "open": 0,
+                            "tokens": 0,
+                            "elapsed_seconds": 0.0,
+                        },
+                    )
+                    agg["requests"] += int(cnt or 0)
+                    agg["finished"] += int(fin or 0)
+                    agg["open"] += int(opn or 0)
+                    agg["tokens"] += int(toks or 0)
+                    agg["elapsed_seconds"] += float(secs or 0.0)
+
+        # Mean elapsed time per finished request (over the cross-table totals).
+        for agg in models.values():
+            agg["avg_elapsed_seconds"] = (
+                agg["elapsed_seconds"] / agg["finished"] if agg["finished"] else 0.0
+            )
 
         return {
             "total": total,

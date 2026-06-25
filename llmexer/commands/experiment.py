@@ -47,6 +47,15 @@ def _find_db_files(experiment_subdir_path: str) -> list[str]:
     return list_db_files(experiment_subdir_path)
 
 
+def _format_hms(seconds: float) -> str:
+    """Format a duration in seconds as ``HH:MM:SS`` (hours not capped at 24)."""
+
+    total = int(seconds or 0)
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
 def _resolve_experiment_db(pid: str, file: str) -> tuple[str, str]:
     """Resolve and validate a generated experiment database path for a project.
 
@@ -622,15 +631,35 @@ def stats(
         summary.add_row(key, str(data[key]))
     console.print(summary)
 
-    for label, key in (("Providers", "providers"), ("Models", "models")):
-        breakdown = data[key]
-        if not breakdown:
-            continue
-        table = Table(title=label)
-        table.add_column(label.rstrip("s"), style="cyan")
-        table.add_column("Count", justify="right", style="green")
-        for name, count in breakdown.items():
+    providers = data["providers"]
+    if providers:
+        table = Table(title="Providers")
+        table.add_column("Provider", style="cyan")
+        table.add_column("requests", justify="right", style="green")
+        for name, count in providers.items():
             table.add_row(name, str(count))
+        console.print(table)
+
+    models = data["models"]
+    if models:
+        table = Table(title="Models")
+        table.add_column("Model", style="cyan")
+        table.add_column("requests", justify="right", style="green")
+        table.add_column("finished", justify="right", style="green")
+        table.add_column("open", justify="right", style="green")
+        table.add_column("time total", justify="right", style="green")
+        table.add_column("average time", justify="right", style="green")
+        table.add_column("tokens", justify="right", style="green")
+        for name, agg in models.items():
+            table.add_row(
+                name,
+                str(agg["requests"]),
+                str(agg["finished"]),
+                str(agg["open"]),
+                _format_hms(agg["elapsed_seconds"]),
+                _format_hms(agg["avg_elapsed_seconds"]),
+                str(agg["tokens"]),
+            )
         console.print(table)
 
 

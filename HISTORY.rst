@@ -2,6 +2,12 @@
 History
 =======
 
+0.2.27 (2026-06-25)
+-------------------
+
+* ``experiment stats``: extend the per-model breakdown table with new columns — ``finished`` (successfully finished requests), ``open`` (pending/unrun requests), ``time total`` (elapsed time over the model's finished requests, formatted ``HH:MM:SS``), ``average time`` (mean elapsed per finished request, ``HH:MM:SS``), and ``tokens`` (summed over the model's finished requests); the request-count column (in both the Providers and Models tables) is renamed from ``Count`` to ``requests``
+* ``ExperimentDAO.stats()`` now returns ``models`` as a per-model aggregate dict (``count`` / ``finished`` / ``open`` / ``tokens`` / ``elapsed_seconds``) instead of a flat name→count map; ``providers`` is unchanged
+
 0.2.26 (2026-06-25)
 -------------------
 

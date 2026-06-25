@@ -265,6 +265,14 @@ def test_stats_before_run(db_file):
     assert "pending" not in data
     assert data["providers"] == {"ollama": 1, "openai": 1}
     assert set(data["models"]) == {"llama3.3:latest", "gpt-4o"}
+    # Each model is an aggregate dict: nothing run yet -> all open, no finished.
+    for agg in data["models"].values():
+        assert agg["requests"] == 1
+        assert agg["finished"] == 0
+        assert agg["open"] == 1
+        assert agg["tokens"] == 0
+        assert agg["elapsed_seconds"] == 0.0
+        assert agg["avg_elapsed_seconds"] == 0.0
 
 
 def test_stats_after_run(db_file, mock_providers):
@@ -275,6 +283,13 @@ def test_stats_after_run(db_file, mock_providers):
     assert data["finished"] == 2
     assert data["errors"] == 0
     assert data["total_tokens"] == 84
+    # Per-model aggregates reflect the finished run (mock yields 42 tokens each).
+    ollama = data["models"]["llama3.3:latest"]
+    assert ollama["finished"] == 1
+    assert ollama["open"] == 0
+    assert ollama["tokens"] == 42
+    # One finished request → average elapsed equals the total elapsed.
+    assert ollama["avg_elapsed_seconds"] == ollama["elapsed_seconds"]
 
 
 def test_stats_counts_errors(db_file, monkeypatch):
@@ -318,6 +333,11 @@ def test_cli_stats_command(projects_dir):
     assert result.exit_code == 0, result.exception
     assert "total" in result.output
     assert "ollama" in result.output
+    # The Models table now carries per-model aggregate columns.
+    for header in ("Model", "finished", "open", "time total", "tokens"):
+        assert header in result.output
+    # The average-time column header is present (single token, robust to wrapping).
+    assert "average" in result.output
 
 
 def test_cli_stats_defaults_to_single_db(projects_dir, mock_providers):
@@ -336,6 +356,16 @@ def test_cli_stats_defaults_to_single_db(projects_dir, mock_providers):
     assert result.exit_code == 0, result.exception
     assert "finished" in result.output
     assert "ollama" in result.output
+
+
+def test_format_hms():
+    from llmexer.commands.experiment import _format_hms
+
+    assert _format_hms(0) == "00:00:00"
+    assert _format_hms(3661) == "01:01:01"
+    assert _format_hms(59) == "00:00:59"
+    assert _format_hms(90061) == "25:01:01"  # hours not capped at 24
+    assert _format_hms(None) == "00:00:00"
 
 
 def test_cli_stats_missing_db_raises(projects_dir):
