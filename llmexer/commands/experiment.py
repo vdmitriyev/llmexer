@@ -3,8 +3,10 @@
 import hashlib
 import json
 import os
+import shutil
 from collections import defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 import typer
@@ -24,6 +26,7 @@ from llmexer.common import (
     get_proper_pid,
 )
 from llmexer.configs import console, cprint, settings
+from llmexer.constants import PAPERS_DIR, SEARCHES_DIR
 from llmexer.exceptions import LLMExerException
 
 app = typer.Typer(help="Manage LLM experiments.")
@@ -62,6 +65,43 @@ def _resolve_experiment_db(pid: str, file: str) -> tuple[str, str]:
         raise LLMExerException(f"Experiment database not found: '{db_path}'.")
 
     return db_path, experiment_subdir_path
+
+
+def _next_data_backup_name(folder: str) -> str:
+    """Return the next ``data_backup_<YYYYMMDD>_<NN>.csv`` name for ``folder``.
+
+    ``<NN>`` is a zero-padded counter, one greater than the highest counter among
+    today's existing ``data_backup_<today>_*.csv`` files (starts at ``01``).
+    """
+
+    date = datetime.now(timezone.utc).strftime("%Y%m%d")
+    prefix = f"data_backup_{date}_"
+    counter = 0
+    if os.path.isdir(folder):
+        for fname in os.listdir(folder):
+            if fname.startswith(prefix) and fname.endswith(".csv"):
+                token = fname[len(prefix) : -len(".csv")]
+                try:
+                    counter = max(counter, int(token))
+                except ValueError:
+                    continue
+    return f"{prefix}{counter + 1:02d}.csv"
+
+
+def _write_data_csv(experiment_subdir_path: str, df: pd.DataFrame) -> tuple[str, str]:
+    """Write ``df`` to ``experiment/data.csv``, backing up any existing file first.
+
+    Returns ``(data_path, backup_name)`` where ``backup_name`` is ``""`` when no
+    prior ``data.csv`` existed.
+    """
+
+    data_path = os.path.join(experiment_subdir_path, "data.csv")
+    backup_name = ""
+    if os.path.exists(data_path):
+        backup_name = _next_data_backup_name(experiment_subdir_path)
+        shutil.copy2(data_path, os.path.join(experiment_subdir_path, backup_name))
+    df.to_csv(data_path, index=False, sep=";", encoding="utf-8")
+    return data_path, backup_name
 
 
 @app.command()
@@ -137,6 +177,128 @@ def init(
         f.write("gemini-default;gemini-2.0-flash;gemini;0.7;1.0;512;;;;;standard\n")
 
     cprint(f"Init project [bold yellow]{pid}[/bold yellow] with standard structure.")
+
+
+@app.command(name="copy-papers")
+def copy_papers(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+) -> None:
+    """Copy parsed papers (.md/.txt) from the project's papers/ folder into data.csv.
+
+    Each parsed paper becomes a row ``ID;filename;content`` with IDs ``P01``,
+    ``P02``, … ordered alphabetically by filename. When a paper has both a ``.md``
+    and a ``.txt`` the Markdown is preferred. An existing ``data.csv`` is backed
+    up first.
+    """
+
+    pid = get_proper_pid(pid)
+    experiment_subdir_path = get_experiment_subdir_path(pid)
+    papers_path = os.path.join(get_project_directory_path(pid), PAPERS_DIR)
+
+    if not os.path.isdir(papers_path):
+        raise LLMExerException(
+            f"No papers folder found for project '{pid}': '{papers_path}'."
+        )
+
+    # Group parsed files by stem, preferring .md over .txt.
+    chosen: dict[str, str] = {}
+    for fname in os.listdir(papers_path):
+        stem, ext = os.path.splitext(fname)
+        ext = ext.lower()
+        if ext not in (".md", ".txt"):
+            continue
+        if stem not in chosen or (ext == ".md" and chosen[stem].endswith(".txt")):
+            chosen[stem] = fname
+
+    filenames = sorted(chosen.values())
+    if not filenames:
+        cprint(
+            "[bold yellow]Warning:[/bold yellow] no parsed papers (.md/.txt) found in "
+            f"'{papers_path}' — nothing to copy. Run `papers extract` first."
+        )
+        return
+
+    rows = []
+    for index, fname in enumerate(filenames, start=1):
+        content = Path(papers_path, fname).read_text(encoding="utf-8")
+        rows.append({"ID": f"P{index:02d}", "filename": fname, "content": content})
+
+    df = pd.DataFrame(rows, columns=["ID", "filename", "content"])
+    _, backup_name = _write_data_csv(experiment_subdir_path, df)
+
+    backup_note = (
+        f" (backed up previous data.csv → {backup_name})" if backup_name else ""
+    )
+    cprint(
+        f"Copied [bold green]{len(rows)}[/bold green] paper(s) → "
+        f"[bold yellow]data.csv[/bold yellow]{backup_note}"
+    )
+
+
+@app.command(name="copy-search")
+def copy_search(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    file: str = typer.Option(
+        ...,
+        "--file",
+        help="Search results CSV to copy from (absolute, or relative to the "
+        "project's searches/ folder).",
+    ),
+) -> None:
+    """Copy a search results file into data.csv.
+
+    Writes rows ``ID;Title;Abstract;doi;authors`` with IDs ``S01``, ``S02``, …
+    preserving the source file's row order. An existing ``data.csv`` is backed
+    up first.
+    """
+
+    pid = get_proper_pid(pid)
+    experiment_subdir_path = get_experiment_subdir_path(pid)
+
+    search_path = (
+        file
+        if os.path.isabs(file)
+        else os.path.join(get_project_directory_path(pid), SEARCHES_DIR, file)
+    )
+    if not os.path.exists(search_path):
+        raise LLMExerException(f"Search file not found: '{search_path}'.")
+
+    search_df = pd.read_csv(search_path, sep=";", encoding="utf-8")
+    required = ["title", "abstract", "doi", "authors"]
+    missing = [c for c in required if c not in search_df.columns]
+    if missing:
+        raise LLMExerException(
+            f"Search file '{search_path}' is missing required column(s): "
+            f"{', '.join(missing)}."
+        )
+
+    source = search_df[required].fillna("")
+    df = pd.DataFrame(
+        {
+            "ID": [f"S{i:02d}" for i in range(1, len(source) + 1)],
+            "Title": source["title"].values,
+            "Abstract": source["abstract"].values,
+            "doi": source["doi"].values,
+            "authors": source["authors"].values,
+        }
+    )
+    _, backup_name = _write_data_csv(experiment_subdir_path, df)
+
+    backup_note = (
+        f" (backed up previous data.csv → {backup_name})" if backup_name else ""
+    )
+    cprint(
+        f"Copied [bold green]{len(df)}[/bold green] search result(s) → "
+        f"[bold yellow]data.csv[/bold yellow]{backup_note}"
+    )
 
 
 @app.command()

@@ -2,6 +2,13 @@
 History
 =======
 
+0.2.23 (2026-06-25)
+-------------------
+
+* Add ``experiment copy-papers``: copy parsed papers (``.md``/``.txt``) from the project's ``papers/`` folder into ``experiment/data.csv`` as rows ``ID;filename;content`` with IDs ``P01``, ``P02``, … ordered alphabetically by filename (``.md`` preferred over ``.txt`` when both exist)
+* Add ``experiment copy-search``: copy a search results CSV (``--file``, absolute or relative to ``searches/``) into ``experiment/data.csv`` as rows ``ID;Title;Abstract;doi;authors`` with IDs ``S01``, ``S02``, … preserving the source file's row order
+* Both commands back up an existing ``data.csv`` to ``data_backup_<YYYYMMDD>_<NN>.csv`` before overwriting
+
 0.2.22 (2026-06-25)
 -------------------
 
