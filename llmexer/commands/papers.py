@@ -209,8 +209,7 @@ def download(
                 (str(single_doi), pdf_filename, str(title) if title else None)
             )
 
-    succeeded = 0
-    failed = 0
+    succeeded, failed, exists, skipped = 0, 0, 0, 0
     cnt = len(download_items)
     failed_records: List[dict] = []
     succeeded_dois: set[str] = set()
@@ -223,7 +222,7 @@ def download(
             pdf_url = resolve_unpaywall_pdf_url(single_doi, resolved_email)
         except PaperDownloadException as exc:
             cprint(f"{label} [bold yellow]skipped[/bold yellow] '{single_doi}': {exc}")
-            failed += 1
+            skipped += 1
             failed_records.append(
                 {
                     "doi": single_doi,
@@ -243,15 +242,15 @@ def download(
         try:
             filename = download_pdf_from_url(pdf_url, papers_path, **download_kwargs)
         except PaperAlreadyExistsException as exc:
-            cprint(f"{label} [bold yellow]skipped[/bold yellow] '{single_doi}': {exc}")
-            failed += 1
+            cprint(f"{label} [bold green]exists[/bold green] '{single_doi}': {exc}")
+            exists += 1
             failed_records.append(
                 {
                     "doi": single_doi,
                     "url": pdf_url,
                     "title": item_title,
                     "pdf_filename": pdf_filename,
-                    "pdf_downloaded": False,
+                    "pdf_downloaded": True,
                 }
             )
             continue
@@ -290,7 +289,7 @@ def download(
             logger.debug("Updated 'downloaded' status in '%s'", csv_path)
 
     cprint(
-        f"Downloaded: [bold green]{succeeded}[/bold green]. Skipped/Failed: [bold red]{failed}[/bold red]"
+        f"Downloaded: [bold green]{succeeded}[/bold green]. Exists: [bold green]{exists}[/bold green]. Skipped: [bold yellow]{skipped}[/bold yellow]. Failed: [bold red]{failed}[/bold red]"
     )
 
 

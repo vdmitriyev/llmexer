@@ -142,6 +142,13 @@ def download_pdf_from_url(
     Raises PaperAlreadyExistsException if destination already exists.
     Respects settings.dry_run (skips write but still returns filename).
     """
+
+    dst = os.path.join(papers_path, forced_name)
+    if os.path.exists(dst):
+        raise PaperAlreadyExistsException(
+            f"A paper named '{forced_name}' already exists in the papers directory."
+        )
+
     try:
         session = make_http_session()
         response = session.get(url, stream=True, timeout=30)
@@ -174,11 +181,6 @@ def download_pdf_from_url(
                     f"(resolved name: '{filename}')."
                 )
 
-    dst = os.path.join(papers_path, filename)
-    if os.path.exists(dst):
-        raise PaperAlreadyExistsException(
-            f"A paper named '{filename}' already exists in the papers directory."
-        )
     if not settings.dry_run:
         try:
             with open(dst, "wb") as fh:
