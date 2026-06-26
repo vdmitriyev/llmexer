@@ -361,7 +361,7 @@ def test_download_duplicate_skips(projects_dir, mock_no_dotenv, experiment):
         )
 
     assert result.exit_code == 0
-    assert "skipped" in result.output
+    assert "exists" in result.output
     # Original file should be unchanged
     assert (papers_path / "paper.pdf").read_bytes() == b"existing"
 
@@ -469,4 +469,5 @@ def test_download_summary_output(projects_dir, mock_no_dotenv, experiment):
 
     assert result.exit_code == 0
     assert "Downloaded:" in result.output
-    assert "Skipped/Failed:" in result.output
+    assert "Skipped:" in result.output
+    assert "Failed:" in result.output
