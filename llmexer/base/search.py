@@ -66,10 +66,13 @@ def detect_publication_lang(title: str | None, abstract: str | None) -> str:
 
 
 def synf_df_runs_of_search_and_papers(
-    df: pd.DataFrame, papers_path: str
+    df: pd.DataFrame, papers_path: str, add_new_rows: bool = True
 ) -> tuple[pd.DataFrame, int, int]:
     """Sync pdf_downloaded, txt_filename, markdown_filename for existing rows and
     append new rows for PDFs found in papers_path that are not yet in the DataFrame.
+
+    When ``add_new_rows`` is ``False`` only the files listed in existing rows are checked;
+    PDFs present in ``papers_path`` but not already listed are ignored (``added_count`` is ``0``).
 
     Returns:
         (updated_df, updated_count, added_count)
@@ -118,7 +121,7 @@ def synf_df_runs_of_search_and_papers(
             updated_count += 1
 
     new_rows = []
-    if papers_dir.exists():
+    if add_new_rows and papers_dir.exists():
         for pdf_path in sorted(papers_dir.glob("*.pdf")):
             pdf_name = pdf_path.name
             if pdf_name in known_pdf_filenames:

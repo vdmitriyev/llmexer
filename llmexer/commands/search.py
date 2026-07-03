@@ -708,6 +708,58 @@ def filter_results(
         cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{filtered_path}'")
 
 
+def _search_id_from_file(name):
+    """Return the bare search id for a search filename (strips extension + role suffix)."""
+    stem = os.path.splitext(os.path.basename(name))[0]
+    for suffix in ("__results", "__filtered"):
+        if stem.endswith(suffix):
+            return stem[: -len(suffix)]
+    return stem
+
+
+def _sync_search(search_id, experiment_path, add_new_rows=True):
+    """Reconcile a search's ``__results.csv`` (and ``__filtered.csv``) against the papers/ folder.
+
+    When ``add_new_rows`` is ``False`` only files listed in existing rows are checked; PDFs present
+    in ``papers/`` but not already listed are not appended as new rows.
+    """
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+    papers_path = os.path.join(experiment_path, PAPERS_DIR)
+    results_csv = os.path.join(searches_path, f"{search_id}__results.csv")
+    filtered_csv = os.path.join(searches_path, f"{search_id}__filtered.csv")
+
+    if not os.path.exists(results_csv):
+        return
+
+    df = pd.read_csv(results_csv, sep=";")
+    updated_df, updated_count, added_count = synf_df_runs_of_search_and_papers(
+        df, papers_path, add_new_rows=add_new_rows
+    )
+
+    if not settings.dry_run:
+        updated_df.to_csv(results_csv, index=False, encoding="utf-8", sep=";")
+        logger.debug("Synced results CSV: '%s'", results_csv)
+    else:
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{results_csv}'")
+
+    if os.path.exists(filtered_csv):
+        filtered_df = pd.read_csv(filtered_csv, sep=";")
+        updated_filtered_df, f_updated, f_added = synf_df_runs_of_search_and_papers(
+            filtered_df, papers_path, add_new_rows=add_new_rows
+        )
+        if not settings.dry_run:
+            updated_filtered_df.to_csv(
+                filtered_csv, index=False, encoding="utf-8", sep=";"
+            )
+            logger.debug("Synced filtered CSV: '%s'", filtered_csv)
+        else:
+            cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{filtered_csv}'")
+
+    cprint(f"Rows updated: [bold cyan]{updated_count}[/bold cyan]")
+    cprint(f"New rows added: [bold green]{added_count}[/bold green]")
+    cprint("[bold]Sync complete.[/bold]")
+
+
 @app.command()
 def sync(
     file: str = typer.Option(
@@ -719,6 +771,11 @@ def sync(
         None,
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    existing_only: bool = typer.Option(
+        False,
+        "--existing-only",
+        help="Only check files listed in existing rows; do not add new rows for PDFs found in papers/.",
     ),
 ) -> None:
     """Sync CSV result files against the papers/ folder of the project"""
@@ -732,38 +789,4 @@ def sync(
     search_id, query, year, only_open_access = read_search_params(file, experiment_path)
     print_search_header(pid, search_id, query, year, only_open_access)
 
-    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
-    papers_path = os.path.join(experiment_path, PAPERS_DIR)
-    results_csv = os.path.join(searches_path, f"{search_id}__results.csv")
-    filtered_csv = os.path.join(searches_path, f"{search_id}__filtered.csv")
-
-    if not os.path.exists(results_csv):
-        return
-
-    df = pd.read_csv(results_csv, sep=";")
-    updated_df, updated_count, added_count = synf_df_runs_of_search_and_papers(
-        df, papers_path
-    )
-
-    if not settings.dry_run:
-        updated_df.to_csv(results_csv, index=False, encoding="utf-8", sep=";")
-        logger.debug("Synced results CSV: '%s'", results_csv)
-    else:
-        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{results_csv}'")
-
-    if os.path.exists(filtered_csv):
-        filtered_df = pd.read_csv(filtered_csv, sep=";")
-        updated_filtered_df, f_updated, f_added = synf_df_runs_of_search_and_papers(
-            filtered_df, papers_path
-        )
-        if not settings.dry_run:
-            updated_filtered_df.to_csv(
-                filtered_csv, index=False, encoding="utf-8", sep=";"
-            )
-            logger.debug("Synced filtered CSV: '%s'", filtered_csv)
-        else:
-            cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{filtered_csv}'")
-
-    cprint(f"Rows updated: [bold cyan]{updated_count}[/bold cyan]")
-    cprint(f"New rows added: [bold green]{added_count}[/bold green]")
-    cprint("[bold]Sync complete.[/bold]")
+    _sync_search(search_id, experiment_path, add_new_rows=not existing_only)

@@ -2,6 +2,18 @@
 History
 =======
 
+0.2.32 (2026-07-03)
+-------------------
+
+* ``search sync``: new ``--existing-only`` flag that checks only the files listed in existing rows and does not append new rows for PDFs found in ``papers/`` that are not already listed
+* ``papers download --search-file``: the automatic post-download sync now runs in existing-only mode, so it updates ``pdf_downloaded`` for the downloaded rows without inventing new rows for unrelated PDFs sitting in ``papers/``
+
+0.2.31 (2026-07-03)
+-------------------
+
+* ``papers download``: the ``Failed list saved to:`` message now shows the ``logs/`` subfolder location instead of just the bare filename
+* ``papers download --search-file``: after all downloads finish, the search is automatically reconciled against the ``papers/`` folder (same as ``search sync`` — updates ``pdf_downloaded`` and picks up text/markdown companions and newly present PDFs), replacing the previous DOI-only ``pdf_downloaded`` update
+
 0.2.30 (2026-07-03)
 -------------------
 

@@ -163,6 +163,34 @@ def test_sync_adds_new_pdf(projects_dir, mock_no_dotenv, experiment):
     assert "New rows added: 1" in result.output
 
 
+def test_sync_existing_only_skips_new_pdf(projects_dir, mock_no_dotenv, experiment):
+    """--existing-only updates listed rows but never appends new rows for unlisted PDFs."""
+    pid, exp_path = experiment
+    yaml_filename = _write_search_yaml(exp_path, SEARCH_ID)
+
+    pdf_name = "listed_paper.pdf"
+    _write_results_csv(
+        exp_path,
+        SEARCH_ID,
+        [_blank_row(pdf_filename=pdf_name, pdf_downloaded=False)],
+    )
+    (exp_path / "papers" / pdf_name).write_bytes(b"%PDF-1.4")
+
+    # An unrelated PDF that is not listed in the CSV.
+    (exp_path / "papers" / "2024_Jones_New_Paper_NO_doi.pdf").write_bytes(b"%PDF-1.4")
+
+    result = runner.invoke(
+        app, ["search", "sync", "--file", yaml_filename, "--existing-only"]
+    )
+
+    assert result.exit_code == 0, result.output
+    df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}__results.csv", sep=";")
+    # Listed row still gets updated, but no new row is appended.
+    assert len(df) == 1
+    assert df.iloc[0]["pdf_downloaded"] == True
+    assert "New rows added: 0" in result.output
+
+
 def test_sync_new_pdf_with_txt_and_md(projects_dir, mock_no_dotenv, experiment):
     """A newly discovered PDF whose .txt and .md companions exist should have those fields set."""
     pid, exp_path = experiment

@@ -376,6 +376,120 @@ def test_download_search_file_failed_csv_saved_to_logs(
     assert failed_csv.exists()
 
 
+def test_download_search_file_triggers_sync(projects_dir, mock_no_dotenv, experiment):
+    """After a successful --search-file download, the search is synced against papers/."""
+    import pandas as pd
+
+    from llmexer.base.search import _PAPER_CSV_COLUMNS
+
+    pid, exp_path = experiment
+    searches_path = exp_path / "searches"
+    os.makedirs(searches_path)
+    search_file = "20260101-aaaaaaaa__results.csv"
+
+    row = {col: "" for col in _PAPER_CSV_COLUMNS}
+    row.update(
+        {
+            "doi": "10.1000/xyz",
+            "title": "Paper",
+            "entry_source": "Semantic Scholar",
+            "pdf_filename": "mypaper.pdf",
+            "pdf_downloaded": False,
+        }
+    )
+    pd.DataFrame([row], columns=_PAPER_CSV_COLUMNS).to_csv(
+        searches_path / search_file, index=False, sep=";", encoding="utf-8"
+    )
+
+    unpaywall_mock = _make_unpaywall_response("http://example.com/paper.pdf")
+    pdf_mock = _make_pdf_response("http://example.com/paper.pdf")
+
+    with patch(
+        "llmexer.base.papers.make_http_session",
+        side_effect=[_mock_session(unpaywall_mock), _mock_session(pdf_mock)],
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "papers",
+                "download",
+                "--pid",
+                pid,
+                "--search-file",
+                search_file,
+                "--email",
+                "test@example.com",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert (exp_path / "papers" / "mypaper.pdf").exists()
+    assert "Sync complete." in result.output
+
+    df = pd.read_csv(searches_path / search_file, sep=";")
+    assert bool(df.iloc[0]["pdf_downloaded"]) is True
+
+
+def test_download_search_file_sync_does_not_add_new_rows(
+    projects_dir, mock_no_dotenv, experiment
+):
+    """The post-download sync runs in existing-only mode: unrelated PDFs are not appended."""
+    import pandas as pd
+
+    from llmexer.base.search import _PAPER_CSV_COLUMNS
+
+    pid, exp_path = experiment
+    searches_path = exp_path / "searches"
+    os.makedirs(searches_path)
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+    # An unrelated PDF already sitting in papers/ that is not part of the search.
+    (papers_path / "unrelated_paper.pdf").write_bytes(b"%PDF-1.4")
+
+    search_file = "20260101-aaaaaaaa__results.csv"
+    row = {col: "" for col in _PAPER_CSV_COLUMNS}
+    row.update(
+        {
+            "doi": "10.1000/xyz",
+            "title": "Paper",
+            "entry_source": "Semantic Scholar",
+            "pdf_filename": "mypaper.pdf",
+            "pdf_downloaded": False,
+        }
+    )
+    pd.DataFrame([row], columns=_PAPER_CSV_COLUMNS).to_csv(
+        searches_path / search_file, index=False, sep=";", encoding="utf-8"
+    )
+
+    unpaywall_mock = _make_unpaywall_response("http://example.com/paper.pdf")
+    pdf_mock = _make_pdf_response("http://example.com/paper.pdf")
+
+    with patch(
+        "llmexer.base.papers.make_http_session",
+        side_effect=[_mock_session(unpaywall_mock), _mock_session(pdf_mock)],
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "papers",
+                "download",
+                "--pid",
+                pid,
+                "--search-file",
+                search_file,
+                "--email",
+                "test@example.com",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    df = pd.read_csv(searches_path / search_file, sep=";")
+    # Only the original row remains — the unrelated PDF is not appended.
+    assert len(df) == 1
+    assert "unrelated_paper.pdf" not in set(df["pdf_filename"])
+    assert bool(df.iloc[0]["pdf_downloaded"]) is True
+
+
 def test_download_duplicate_skips(projects_dir, mock_no_dotenv, experiment):
     """When a PDF with the same filename already exists, the DOI is skipped."""
     pid, exp_path = experiment

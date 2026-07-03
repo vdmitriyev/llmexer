@@ -214,7 +214,6 @@ def download(
     succeeded, failed, exists, skipped = 0, 0, 0, 0
     cnt = len(download_items)
     failed_records: List[dict] = []
-    succeeded_dois: set[str] = set()
 
     for index, (single_doi, pdf_filename, item_title) in enumerate(download_items):
         label = f"[{index+1}/{cnt}]"
@@ -275,25 +274,30 @@ def download(
             f"{label} [bold green]downloaded[/bold green] '{single_doi}' as '{filename}'."
         )
         succeeded += 1
-        succeeded_dois.add(single_doi)
 
-    if failed_csv_path and not settings.dry_run:
-        if failed_records:
-            ensure_directory_exists(os.path.dirname(failed_csv_path))
-            pd.DataFrame(
-                failed_records,
-                columns=["doi", "title", "url", "pdf_filename", "pdf_downloaded"],
-            ).to_csv(failed_csv_path, index=False, encoding="utf-8", sep=";")
-            logger.debug("Saved failed records to '%s'", failed_csv_path)
-            cprint(f"Failed list saved to: [bold]{Path(failed_csv_path).name}[/bold]")
-        if succeeded_dois:
-            df.loc[df["doi"].isin(succeeded_dois), "pdf_downloaded"] = True
-            df.to_csv(csv_path, index=False, encoding="utf-8", sep=";")
-            logger.debug("Updated 'downloaded' status in '%s'", csv_path)
+    if failed_csv_path and failed_records and not settings.dry_run:
+        ensure_directory_exists(os.path.dirname(failed_csv_path))
+        pd.DataFrame(
+            failed_records,
+            columns=["doi", "title", "url", "pdf_filename", "pdf_downloaded"],
+        ).to_csv(failed_csv_path, index=False, encoding="utf-8", sep=";")
+        logger.debug("Saved failed records to '%s'", failed_csv_path)
+        cprint(
+            f"Failed list saved to: [bold]"
+            f"{os.path.join(SEARCHES_LOGS_DIR, Path(failed_csv_path).name)}[/bold]"
+        )
 
     cprint(
         f"Downloaded: [bold green]{succeeded}[/bold green]. Exists: [bold green]{exists}[/bold green]. Skipped: [bold yellow]{skipped}[/bold yellow]. Failed: [bold red]{failed}[/bold red]"
     )
+
+    # When downloading from a search file, reconcile the whole search against papers/.
+    if search_file and not settings.dry_run:
+        from llmexer.commands.search import _search_id_from_file, _sync_search
+
+        _sync_search(
+            _search_id_from_file(search_file), experiment_path, add_new_rows=False
+        )
 
 
 @app.command()
