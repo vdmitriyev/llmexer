@@ -245,3 +245,75 @@ def test_filter_dry_run(projects_dir, mock_no_dotenv, experiment_with_search):
     assert "Dry run" in result.output
     assert not (searches_path / f"{search_id}__filtered.csv").exists()
     assert not (searches_path / "logs" / "filters-applied.log").exists()
+
+
+def _write_search(searches_path, search_id, rows):
+    """Create a search YAML + __results.csv with the given rows."""
+    (searches_path / f"{search_id}.yaml").write_text(
+        yaml.dump({"query": "q", "year": "2020-2025", "onlyOpenAccess": False}),
+        encoding="utf-8",
+    )
+    pd.DataFrame(rows).to_csv(
+        searches_path / f"{search_id}__results.csv",
+        index=False,
+        sep=";",
+        encoding="utf-8",
+    )
+
+
+def test_filter_all_searches_when_no_file(projects_dir, mock_no_dotenv, monkeypatch):
+    """Without --file, the filter is applied to every search and each is logged."""
+    pid = "20260409-test-all"
+    searches_path = projects_dir / pid / "searches"
+    os.makedirs(searches_path)
+    monkeypatch.setenv("PROJECT_ID", pid)
+
+    _write_search(
+        searches_path,
+        "20260101-aaaaaaaa",
+        [
+            {"doi": "10.1/a-en", "language": "en"},
+            {"doi": "10.1/a-de", "language": "de"},
+        ],
+    )
+    _write_search(
+        searches_path,
+        "20260102-bbbbbbbb",
+        [
+            {"doi": "10.1/b-de", "language": "de"},
+            {"doi": "10.1/b-fr", "language": "fr"},
+        ],
+    )
+
+    result = runner.invoke(app, ["search", "filter", "--pid", pid, "--language", "de"])
+    assert result.exit_code == 0, result.output
+
+    # Both searches get a filtered CSV with German rows removed.
+    df_a = pd.read_csv(searches_path / "20260101-aaaaaaaa__filtered.csv", sep=";")
+    df_b = pd.read_csv(searches_path / "20260102-bbbbbbbb__filtered.csv", sep=";")
+    assert "de" not in set(df_a["language"])
+    assert "de" not in set(df_b["language"])
+    assert len(df_a) == 1 and len(df_b) == 1
+
+    # Each search has its own line in the shared log.
+    log = (searches_path / "logs" / "filters-applied.log").read_text(encoding="utf-8")
+    assert (
+        "search file: 20260101-aaaaaaaa__filtered.csv; filter applied: language=de"
+        in log
+    )
+    assert (
+        "search file: 20260102-bbbbbbbb__filtered.csv; filter applied: language=de"
+        in log
+    )
+
+
+def test_filter_no_searches_no_file(projects_dir, mock_no_dotenv, monkeypatch):
+    """Without --file and no searches present, exits 0 with a message and writes nothing."""
+    pid = "20260409-empty"
+    searches_path = projects_dir / pid / "searches"
+    os.makedirs(searches_path)
+    monkeypatch.setenv("PROJECT_ID", pid)
+
+    result = runner.invoke(app, ["search", "filter", "--pid", pid, "--language", "de"])
+    assert result.exit_code == 0, result.output
+    assert "No searches found." in result.output

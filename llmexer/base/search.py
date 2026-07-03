@@ -232,6 +232,8 @@ def merge_search_csvs(csv_paths, stem_suffix: str) -> tuple[pd.DataFrame, list[s
     each publication, i.e. one less than the number of searches it was found in (``0`` for a
     publication found in a single search).
 
+    Rows are sorted by ``year`` descending (newest first); rows with a missing/blank year go last.
+
     Returns:
         (merged_df, run_columns) where run_columns is the sorted list of per-search columns.
     """
@@ -270,6 +272,12 @@ def merge_search_csvs(csv_paths, stem_suffix: str) -> tuple[pd.DataFrame, list[s
 
     columns = _PAPER_CSV_COLUMNS + [_DUPLICATES_COUNTER_COLUMN] + run_columns
     merged_df = pd.DataFrame(records, columns=columns)
+    merged_df = merged_df.sort_values(
+        by="year",
+        key=lambda s: pd.to_numeric(s, errors="coerce"),
+        ascending=False,
+        na_position="last",
+    ).reset_index(drop=True)
     return merged_df, run_columns
 
 

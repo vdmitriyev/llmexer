@@ -598,12 +598,55 @@ def _log_filter_applied(logs_path, search_file, desc, input_n, output_n):
         f.write(line)
 
 
+def _filter_search(search_id, experiment_path, filters):
+    """Apply the given exclusion ``filters`` to one search, rewriting its ``__filtered.csv``.
+
+    Reads the existing ``__filtered.csv`` if present (so filters chain), otherwise the
+    ``__results.csv``. Each applied filter is recorded in ``searches/logs/filters-applied.log``.
+    """
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+    results_path = os.path.join(searches_path, f"{search_id}__results.csv")
+    filtered_path = os.path.join(searches_path, f"{search_id}__filtered.csv")
+
+    # Re-apply to the already-filtered file if it exists, else fall back to the results file.
+    source_path = filtered_path if os.path.exists(filtered_path) else results_path
+    if not os.path.exists(source_path):
+        print_info_not_search_file(search_id, results_path)
+        return
+
+    df = pd.read_csv(source_path, sep=";")
+
+    cprint(f"Source: [bold]{Path(source_path).name}[/bold]")
+    logs_path = os.path.join(searches_path, SEARCHES_LOGS_DIR)
+
+    current = df
+    for desc, keep_mask in filters:
+        input_n = len(current)
+        current = current[keep_mask(current)]
+        output_n = len(current)
+        cprint(
+            f"Excluded [bold cyan]{desc}[/bold cyan]: "
+            f"[bold white]{input_n}[/bold white] → [bold green]{output_n}[/bold green]"
+        )
+        if not settings.dry_run:
+            _log_filter_applied(
+                logs_path, Path(filtered_path).name, desc, input_n, output_n
+            )
+
+    if not settings.dry_run:
+        current.to_csv(filtered_path, index=False, encoding="utf-8", sep=";")
+        logger.debug("Wrote filtered results to '%s'", filtered_path)
+        cprint(f"Saved filtered results to: [bold]{Path(filtered_path).name}[/bold]\n")
+    else:
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{filtered_path}'")
+
+
 @app.command(name="filter")
 def filter_results(
     file: str = typer.Option(
         None,
         "--file",
-        help="YAML search config filename or bare search ID.",
+        help="YAML search config filename or bare search ID. If omitted, the filter is applied to every search in the project.",
     ),
     pid: str = typer.Option(
         None,
@@ -631,32 +674,12 @@ def filter_results(
         help="Exclude rows that are not downloaded (keep only downloaded papers).",
     ),
 ) -> None:
-    """Exclude papers from a search by one or more criteria, rewriting ``__filtered.csv``.
+    """Exclude papers from searches by one or more criteria, rewriting ``__filtered.csv``.
 
     Reads the existing ``__filtered.csv`` if present (so filters chain), otherwise the
-    ``__results.csv``. Each applied filter is recorded in ``searches/logs/filters-applied.log``.
+    ``__results.csv``. With ``--file`` a single search is filtered; without it, every search in the
+    project is filtered. Each applied filter is recorded in ``searches/logs/filters-applied.log``.
     """
-
-    if file is None:
-        raise UnexpectedCLIParamsException("--file is required.")
-
-    pid = get_proper_pid(pid)
-    experiment_path = get_project_directory_path(pid)
-
-    search_id, query, year, only_open_access = read_search_params(file, experiment_path)
-    print_search_header(pid, search_id, query, year, only_open_access)
-
-    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
-    results_path = os.path.join(searches_path, f"{search_id}__results.csv")
-    filtered_path = os.path.join(searches_path, f"{search_id}__filtered.csv")
-
-    # Re-apply to the already-filtered file if it exists, else fall back to the results file.
-    source_path = filtered_path if os.path.exists(filtered_path) else results_path
-    if not os.path.exists(source_path):
-        print_info_not_search_file(file, results_path)
-        return
-
-    df = pd.read_csv(source_path, sep=";")
 
     # Build the ordered list of active exclusion filters: (description, keep-mask builder).
     filters = []
@@ -683,29 +706,24 @@ def filter_results(
             "Provide at least one filter criterion: --language, --source, --doi, --downloaded."
         )
 
-    cprint(f"Source: [bold]{Path(source_path).name}[/bold]")
-    logs_path = os.path.join(searches_path, SEARCHES_LOGS_DIR)
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
 
-    current = df
-    for desc, keep_mask in filters:
-        input_n = len(current)
-        current = current[keep_mask(current)]
-        output_n = len(current)
-        cprint(
-            f"Excluded [bold cyan]{desc}[/bold cyan]: "
-            f"[bold white]{input_n}[/bold white] → [bold green]{output_n}[/bold green]"
-        )
-        if not settings.dry_run:
-            _log_filter_applied(
-                logs_path, Path(filtered_path).name, desc, input_n, output_n
-            )
-
-    if not settings.dry_run:
-        current.to_csv(filtered_path, index=False, encoding="utf-8", sep=";")
-        logger.debug("Wrote filtered results to '%s'", filtered_path)
-        cprint(f"Saved filtered results to: [bold]{Path(filtered_path).name}[/bold]")
+    if file is not None:
+        search_ids = [read_search_params(file, experiment_path)[0]]
     else:
-        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{filtered_path}'")
+        search_ids = [p.stem for p in sorted(Path(searches_path).glob("*.yaml"))]
+        if not search_ids:
+            cprint("No searches found.")
+            return
+
+    for search_id in search_ids:
+        _, query, year, only_open_access = read_search_params(
+            f"{search_id}.yaml", experiment_path
+        )
+        print_search_header(pid, search_id, query, year, only_open_access)
+        _filter_search(search_id, experiment_path, filters)
 
 
 def _search_id_from_file(name):

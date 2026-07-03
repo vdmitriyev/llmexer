@@ -2,6 +2,16 @@
 History
 =======
 
+0.2.34 (2026-07-03)
+-------------------
+
+* ``search filter``: ``--file`` is now optional. When omitted, the given exclusion filters are applied to every search in the project (each search's ``__filtered.csv`` rewritten), and each applied filter for each search is recorded in ``searches/logs/filters-applied.log``
+
+0.2.33 (2026-07-03)
+-------------------
+
+* ``search merge``: the merged CSVs (``<pid>__merged_results.csv`` / ``<pid>__merged_filtered.csv``) are now sorted by ``year`` descending (newest first) before being saved; rows with a missing/blank year are placed last
+
 0.2.32 (2026-07-03)
 -------------------
 

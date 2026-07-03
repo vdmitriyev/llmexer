@@ -125,6 +125,30 @@ def test_merge_results_dedups_by_doi(projects_dir, mock_no_dotenv, experiment):
     assert only_a[SEARCH_A] == 1 and only_a[SEARCH_B] == 0
 
 
+def test_merge_sorts_by_year_desc_blanks_last(projects_dir, mock_no_dotenv, experiment):
+    """Merged rows are sorted by year (newest first); blank-year rows go last."""
+    pid, exp_path = experiment
+    _write_csv(
+        exp_path,
+        f"{SEARCH_A}__results.csv",
+        [
+            _row(doi="10.1/a", title="Old", year=2019),
+            _row(doi="10.1/b", title="Blank", year=""),
+            _row(doi="10.1/c", title="New", year=2024),
+            _row(doi="10.1/d", title="Mid", year=2021),
+        ],
+    )
+
+    result = runner.invoke(app, ["search", "merge"])
+    assert result.exit_code == 0, result.output
+
+    df = _read_results(exp_path, pid)
+    years = list(df["year"])
+    assert years[:3] == [2024, 2021, 2019]
+    assert pd.isna(years[3])
+    assert df.iloc[3]["doi"] == "10.1/b"
+
+
 def test_merge_produces_two_files_with_yaml_columns(
     projects_dir, mock_no_dotenv, experiment
 ):
