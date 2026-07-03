@@ -12,7 +12,9 @@ from llmexer.base.search import (
     _PAPER_CSV_COLUMNS,
     DEFAULT_OPEN_ACCESS_PARAM,
     DEFAULT_SEARCH_YEAR_PARAM,
+    gather_search_csvs,
     generate_search_id,
+    merge_search_csvs,
     read_search_params,
     run_semantic_scholar_search,
     save_search_query,
@@ -38,6 +40,11 @@ app = typer.Typer(help="Search online digital libraries for papers and metadata.
 
 # Default values
 DEFAULT_QUERY_PARAM = "influence of machine learning on computer science"
+
+# Suffixes for the project-wide merged files: `<pid>__merged_results.csv` and
+# `<pid>__merged_filtered.csv`.
+MERGED_RESULTS_SUFFIX = "__merged_results.csv"
+MERGED_FILTERED_SUFFIX = "__merged_filtered.csv"
 
 _SEARCH_FILE_SUFFIXES = [
     ".yaml",
@@ -395,6 +402,86 @@ def run(
 
 
 @app.command()
+def merge(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID whose searches to merge. If not provided, uses PROJECT_ID from .env.",
+    ),
+    rewrite: bool = typer.Option(
+        False,
+        "--rewrite",
+        help="Overwrite the merged file if it already exists.",
+    ),
+) -> None:
+    """Merge a project's search results into two deduplicated CSVs.
+
+    Produces ``<pid>__merged_results.csv`` from every ``*_results.csv`` and
+    ``<pid>__merged_filtered.csv`` from every ``*_filtered.csv``. Publications are deduplicated
+    by DOI (falling back to title). Each source search becomes a binary column named after its
+    YAML file (the search id, without ``.yaml``), plus a ``duplicates_counter`` column counting
+    how many searches each publication was found in.
+    """
+
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+
+    results_csvs, filtered_csvs = gather_search_csvs(searches_path)
+    if not results_csvs and not filtered_csvs:
+        raise LLMExerException(
+            f"No search result files found in '{searches_path}'. Run `search run` first."
+        )
+
+    # (source csvs, stem suffix to strip, output path, label)
+    jobs = []
+    if results_csvs:
+        jobs.append(
+            (
+                results_csvs,
+                "_results",
+                os.path.join(searches_path, f"{pid}{MERGED_RESULTS_SUFFIX}"),
+                "results",
+            )
+        )
+    if filtered_csvs:
+        jobs.append(
+            (
+                filtered_csvs,
+                "_filtered",
+                os.path.join(searches_path, f"{pid}{MERGED_FILTERED_SUFFIX}"),
+                "filtered",
+            )
+        )
+
+    existing = [out for _, _, out, _ in jobs if os.path.exists(out)]
+    if existing and not rewrite:
+        raise SearchResultsAlreadyExistException(
+            f"Merged file(s) already exist: {existing}. Use --rewrite to overwrite."
+        )
+
+    ensure_directory_exists(searches_path)
+
+    for csvs, stem_suffix, output_path, label in jobs:
+        merged_df, run_columns = merge_search_csvs(csvs, stem_suffix)
+
+        if settings.dry_run:
+            cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{output_path}'")
+            cprint(
+                f"[bold yellow]Dry run:[/bold yellow] {label}: {len(run_columns)} "
+                f"search(es), {len(merged_df)} unique publication(s)"
+            )
+            continue
+
+        merged_df.to_csv(output_path, index=False, encoding="utf-8", sep=";")
+        cprint(
+            f"[bold green]Merged[/bold green] {len(run_columns)} {label} search(es) into "
+            f"{len(merged_df)} unique publication(s)."
+        )
+        cprint(f"File with merged {label} ([magenta]CSV[/magenta]):\n  {output_path}")
+
+
+@app.command()
 def stats(
     file: str = typer.Option(
         None,
@@ -409,16 +496,41 @@ def stats(
 ) -> None:
     """Display statistics for a completed search result"""
 
-    if file is None:
-        raise UnexpectedCLIParamsException("--file is required.")
-
     pid = get_proper_pid(pid)
     experiment_path = get_project_directory_path(pid)
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+
+    if file is None:
+        merged_results_path = os.path.join(
+            searches_path, f"{pid}{MERGED_RESULTS_SUFFIX}"
+        )
+        merged_filtered_path = os.path.join(
+            searches_path, f"{pid}{MERGED_FILTERED_SUFFIX}"
+        )
+        merged_paths = [
+            (merged_results_path, "Merged results"),
+            (merged_filtered_path, "Merged filtered"),
+        ]
+        if not any(os.path.exists(p) for p, _ in merged_paths):
+            raise UnexpectedCLIParamsException(
+                "--file is required (or run `search merge` first)."
+            )
+        cprint(f"[bold]Project:[/bold] [cyan]{pid}[/cyan]")
+        for merged_path, label in merged_paths:
+            if not os.path.exists(merged_path):
+                continue
+            cprint()
+            merged_df = pd.read_csv(merged_path, sep=";")
+            cprint(
+                f"[bold]{label}:[/bold] [yellow]{Path(merged_path).name}[/yellow] "
+                f"({len(merged_df)} papers)"
+            )
+            console.print(_build_stats_grid(merged_df))
+        return
 
     search_id, query, year, only_open_access = read_search_params(file, experiment_path)
     print_search_header(pid, search_id, query, year, only_open_access)
 
-    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
     csv_path = os.path.join(searches_path, f"{search_id}_results.csv")
 
     if not os.path.exists(csv_path):

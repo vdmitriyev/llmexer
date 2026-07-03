@@ -143,6 +143,132 @@ def synf_df_runs_of_search_and_papers(
     return df, updated_count, added_count
 
 
+# Marker present in every merged output filename, used to exclude those files from re-merging.
+_MERGED_MARKER = "__merged"
+_RESULTS_STEM_SUFFIX = "_results"
+_FILTERED_STEM_SUFFIX = "_filtered"
+_DUPLICATES_COUNTER_COLUMN = "duplicates_counter"
+
+
+def _normalize_text(value) -> str:
+    """Lowercase, collapse internal whitespace and strip. Empty string for missing/blank."""
+    if _is_missing(value):
+        return ""
+    return " ".join(str(value).split()).strip().lower()
+
+
+def _is_missing(value) -> bool:
+    """True for None, NaN or blank/whitespace-only values."""
+    if value is None:
+        return True
+    try:
+        if pd.isna(value):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip() == "" or str(value).strip().lower() == "nan"
+
+
+def _dedup_key(row) -> str | None:
+    """DOI-based dedup key when present, else a normalized-title key. None if neither exists."""
+    doi = _normalize_text(row.get("doi"))
+    if doi:
+        return f"doi:{doi}"
+    title = _normalize_text(row.get("title"))
+    if title:
+        return f"title:{title}"
+    return None
+
+
+def _source_column_name(filename: str, stem_suffix: str) -> str:
+    """Search id (the YAML stem) for a source CSV: file stem with ``stem_suffix`` stripped.
+
+    e.g. ``20260626-name_results.csv`` -> ``20260626-name`` (its ``20260626-name.yaml``).
+    """
+    stem = os.path.splitext(os.path.basename(filename))[0]
+    if stem_suffix and stem.endswith(stem_suffix):
+        stem = stem[: -len(stem_suffix)]
+    return stem
+
+
+def _merge_metadata(metadata: dict, row) -> None:
+    """Fill each metadata field with the first non-missing value seen across duplicates."""
+    for col in _PAPER_CSV_COLUMNS:
+        if not _is_missing(metadata.get(col)):
+            continue
+        value = row.get(col)
+        if not _is_missing(value):
+            metadata[col] = value
+
+
+def gather_search_csvs(searches_path: str) -> tuple[list, list]:
+    """Return ``(results_csvs, filtered_csvs)`` for a searches directory.
+
+    Excludes any previously produced merged outputs (files containing ``__merged``).
+    """
+    if not os.path.isdir(searches_path):
+        raise LLMExerException(f"No searches directory found: {searches_path}")
+
+    def _collect(suffix):
+        return sorted(
+            p
+            for p in Path(searches_path).glob(f"*{suffix}.csv")
+            if _MERGED_MARKER not in p.name
+        )
+
+    return _collect(_RESULTS_STEM_SUFFIX), _collect(_FILTERED_STEM_SUFFIX)
+
+
+def merge_search_csvs(csv_paths, stem_suffix: str) -> tuple[pd.DataFrame, list[str]]:
+    """Merge the given search CSVs into one deduplicated DataFrame.
+
+    Publications are deduplicated by DOI, falling back to a normalized title when the DOI is
+    missing. Each source file becomes a binary column named after its search (the YAML stem,
+    i.e. the filename with ``stem_suffix`` stripped): ``1`` if the publication appears in that
+    search, else ``0``. ``duplicates_counter`` holds the number of searches each publication
+    was found in.
+
+    Returns:
+        (merged_df, run_columns) where run_columns is the sorted list of per-search columns.
+    """
+    run_columns: list[str] = []
+    merged: dict[str, dict] = {}
+
+    for csv_path in csv_paths:
+        column = _source_column_name(Path(csv_path).name, stem_suffix)
+        if column not in run_columns:
+            run_columns.append(column)
+        df = pd.read_csv(csv_path, sep=";")
+        for _, row in df.iterrows():
+            key = _dedup_key(row)
+            if key is None:
+                # No DOI and no title: keep as a distinct entry.
+                key = f"row:{Path(csv_path).name}:{len(merged)}"
+            entry = merged.get(key)
+            if entry is None:
+                entry = {
+                    "metadata": {col: None for col in _PAPER_CSV_COLUMNS},
+                    "runs": set(),
+                }
+                merged[key] = entry
+            _merge_metadata(entry["metadata"], row)
+            entry["runs"].add(column)
+
+    run_columns = sorted(run_columns)
+    records = []
+    for entry in merged.values():
+        record = dict(entry["metadata"])
+        runs = entry["runs"]
+        record[_DUPLICATES_COUNTER_COLUMN] = len(runs)
+        for column in run_columns:
+            record[column] = 1 if column in runs else 0
+        records.append(record)
+
+    columns = _PAPER_CSV_COLUMNS + [_DUPLICATES_COUNTER_COLUMN] + run_columns
+    merged_df = pd.DataFrame(records, columns=columns)
+    return merged_df, run_columns
+
+
 def generate_search_id() -> str:
     """
     Generate a unique experiment ID formatted as 'YYYYMMDD-GUID'

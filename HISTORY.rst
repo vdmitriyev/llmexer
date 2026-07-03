@@ -2,6 +2,12 @@
 History
 =======
 
+0.2.28 (2026-07-03)
+-------------------
+
+* Add ``search merge``: combine a project's search CSVs into two deduplicated files — ``<pid>__merged_results.csv`` (from ``*_results.csv``) and ``<pid>__merged_filtered.csv`` (from ``*_filtered.csv``). Publications are deduplicated by DOI (falling back to title). Each source search adds a ``0/1`` column named after its YAML id, plus a ``duplicates_counter`` column counting how many searches contained the publication. Guarded by ``--rewrite``; respects ``--dry-run``
+* ``search stats``: when ``--file`` is omitted, fall back to the merged file(s) (``<pid>__merged_results.csv`` / ``<pid>__merged_filtered.csv``) if present
+
 0.2.27 (2026-06-25)
 -------------------
 
