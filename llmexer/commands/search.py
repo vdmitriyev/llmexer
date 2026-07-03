@@ -1,6 +1,7 @@
 """Search group commands of the CLI interface."""
 
 import os
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -26,7 +27,7 @@ from llmexer.common import (
     get_proper_pid,
 )
 from llmexer.configs import console, cprint, settings
-from llmexer.constants import PAPERS_DIR, SEARCHES_DIR
+from llmexer.constants import PAPERS_DIR, SEARCHES_DIR, SEARCHES_LOGS_DIR
 from llmexer.exceptions import (
     LLMExerException,
     SearchResultsAlreadyExistException,
@@ -49,13 +50,17 @@ MERGED_FILTERED_SUFFIX = "__merged_filtered.csv"
 # Subdirectory (within `searches/`) holding the raw JSON search responses.
 SEARCH_JSONS_DIR = "jsons"
 
-# Raw JSON responses live in the `jsons/` subdir; the rest sit directly in `searches/`.
+# Shared audit log (within `searches/logs/`) recording every applied filter.
+FILTERS_LOG_FILENAME = "filters-applied.log"
+
+# Raw JSON responses live in the `jsons/` subdir; the download-failed CSV lives in the
+# `logs/` subdir; the rest sit directly in `searches/`.
 _SEARCH_JSON_SUFFIX = "__results_raw.json"
+_SEARCH_DOWNLOAD_FAILED_SUFFIX = "__results_download_failed.csv"
 _SEARCH_FILE_SUFFIXES = [
     ".yaml",
     "__results.csv",
     "__filtered.csv",
-    "__results_download_failed.csv",
 ]
 
 
@@ -318,6 +323,13 @@ def rename_search(
     if os.path.exists(json_src):
         os.rename(json_src, json_dst)
 
+    # The download-failed CSV lives in the `logs/` subdirectory.
+    logs_path = os.path.join(searches_path, SEARCHES_LOGS_DIR)
+    failed_src = os.path.join(logs_path, f"{old_id}{_SEARCH_DOWNLOAD_FAILED_SUFFIX}")
+    failed_dst = os.path.join(logs_path, f"{new_id}{_SEARCH_DOWNLOAD_FAILED_SUFFIX}")
+    if os.path.exists(failed_src):
+        os.rename(failed_src, failed_dst)
+
     cprint(
         f"Renamed search: [bold yellow]{old_id}[/bold yellow] → [bold yellow]{new_id}[/bold yellow]"
     )
@@ -573,6 +585,19 @@ def stats(
         console.print(tbl_filtered)
 
 
+def _log_filter_applied(logs_path, search_file, desc, input_n, output_n):
+    """Append one line documenting an applied filter to ``filters-applied.log``."""
+    ensure_directory_exists(logs_path)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = (
+        f"{timestamp} search file: {search_file}; filter applied: {desc} ; "
+        f"input rows: {input_n}; output rows: {output_n}\n"
+    )
+    log_path = os.path.join(logs_path, FILTERS_LOG_FILENAME)
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(line)
+
+
 @app.command(name="filter")
 def filter_results(
     file: str = typer.Option(
@@ -586,12 +611,31 @@ def filter_results(
         help="Project ID to look up results for. If not provided, uses PROJECT_ID from .env.",
     ),
     language: str = typer.Option(
-        "en",
+        None,
         "--language",
-        help="Filter by language code (e.g. 'en', 'de'). Default: 'en'.",
+        help="Exclude rows whose language equals this code (e.g. 'de').",
+    ),
+    source: str = typer.Option(
+        None,
+        "--source",
+        help="Exclude rows whose entry_source equals this value (e.g. 'manually added').",
+    ),
+    doi: str = typer.Option(
+        None,
+        "--doi",
+        help="Exclude rows whose doi equals this value.",
+    ),
+    downloaded: bool = typer.Option(
+        False,
+        "--downloaded",
+        help="Exclude rows that are not downloaded (keep only downloaded papers).",
     ),
 ) -> None:
-    """Filter search results CSV by language, saving a new __filtered.csv"""
+    """Exclude papers from a search by one or more criteria, rewriting ``__filtered.csv``.
+
+    Reads the existing ``__filtered.csv`` if present (so filters chain), otherwise the
+    ``__results.csv``. Each applied filter is recorded in ``searches/logs/filters-applied.log``.
+    """
 
     if file is None:
         raise UnexpectedCLIParamsException("--file is required.")
@@ -603,27 +647,61 @@ def filter_results(
     print_search_header(pid, search_id, query, year, only_open_access)
 
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
-    csv_path = os.path.join(searches_path, f"{search_id}__results.csv")
-
-    if not os.path.exists(csv_path):
-        print_info_not_search_file(file, csv_path)
-        return
-
-    df = pd.read_csv(csv_path, sep=";")
-    filtered_df = df[df["language"] == language]
-
-    total = len(df)
-    remaining = len(filtered_df)
-    filtered_out = total - remaining
-    cprint(f"Language filter: [bold cyan]{language}[/bold cyan]")
-    cprint(f"Total: [bold white]{total}[/bold white]")
-    cprint(f"Filtered out: [bold red]{filtered_out}[/bold red]")
-    cprint(f"Remaining: [bold green]{remaining}[/bold green]")
-
+    results_path = os.path.join(searches_path, f"{search_id}__results.csv")
     filtered_path = os.path.join(searches_path, f"{search_id}__filtered.csv")
 
+    # Re-apply to the already-filtered file if it exists, else fall back to the results file.
+    source_path = filtered_path if os.path.exists(filtered_path) else results_path
+    if not os.path.exists(source_path):
+        print_info_not_search_file(file, results_path)
+        return
+
+    df = pd.read_csv(source_path, sep=";")
+
+    # Build the ordered list of active exclusion filters: (description, keep-mask builder).
+    filters = []
+    if language is not None:
+        filters.append((f"language={language}", lambda d: d["language"] != language))
+    if source is not None:
+        filters.append((f"source={source}", lambda d: d["entry_source"] != source))
+    if doi is not None:
+        filters.append((f"doi={doi}", lambda d: d["doi"] != doi))
+    if downloaded:
+        filters.append(
+            (
+                "downloaded",
+                lambda d: d["pdf_downloaded"]
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .isin({"true", "1"}),
+            )
+        )
+
+    if not filters:
+        raise UnexpectedCLIParamsException(
+            "Provide at least one filter criterion: --language, --source, --doi, --downloaded."
+        )
+
+    cprint(f"Source: [bold]{Path(source_path).name}[/bold]")
+    logs_path = os.path.join(searches_path, SEARCHES_LOGS_DIR)
+
+    current = df
+    for desc, keep_mask in filters:
+        input_n = len(current)
+        current = current[keep_mask(current)]
+        output_n = len(current)
+        cprint(
+            f"Excluded [bold cyan]{desc}[/bold cyan]: "
+            f"[bold white]{input_n}[/bold white] → [bold green]{output_n}[/bold green]"
+        )
+        if not settings.dry_run:
+            _log_filter_applied(
+                logs_path, Path(filtered_path).name, desc, input_n, output_n
+            )
+
     if not settings.dry_run:
-        filtered_df.to_csv(filtered_path, index=False, encoding="utf-8", sep=";")
+        current.to_csv(filtered_path, index=False, encoding="utf-8", sep=";")
         logger.debug("Wrote filtered results to '%s'", filtered_path)
         cprint(f"Saved filtered results to: [bold]{Path(filtered_path).name}[/bold]")
     else:

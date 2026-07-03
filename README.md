@@ -157,7 +157,7 @@ P.S.: CLI interfaces could become very complex with the time, thus refer to the 
 llmexer --help
 ```
 
-## 📢 Scenario: Gathering data for projects by adding papers
+## 📢 Scenario 1: Gathering data for projects by adding papers
 
 **1. Add papers to the project** - local file
 
@@ -178,7 +178,7 @@ From a URL:
 llmexer papers add --pid llm-survey-2026 --url https://arxiv.org/pdf/1706.03762
 ```
 
-## 📢 Scenario: Gathering data for projects by running search
+## 📢 Scenario 2: Gathering data for projects by running search
 
 **1. Run a literature search**
 
@@ -194,17 +194,18 @@ Or run directly from a query string:
 llmexer search run --pid llm-survey-2026 --query "large language models" --limit 500
 ```
 
-Results are saved as `<ID>__results.csv` in `searches/`; the raw JSON is saved as `<ID>__results_raw.json` in `searches/jsons/`.
+Results are saved as `<ID>__results.csv` in `searches/` (the raw JSON is saved as `<ID>__results_raw.json` in `searches/jsons/`).
 
-**2. Filter search results by language (optional)**
+**2. Filter search results by excluding rows (optional)**
 
-Filter to English-only papers before downloading (default language is `en`):
+`filter` **excludes** rows by one or more criteria and writes `<ID>__filtered.csv`. Filters chain: each run reads the existing `__filtered.csv` (or the `__results.csv` if none) and rewrites it. Combine `--language`, `--source`, `--doi`, `--downloaded` in one run:
 ```bash
-llmexer search filter --pid llm-survey-2026 --file 20260401-bfdd863d.yaml
+# drop German rows and rows still not downloaded
+llmexer search filter --pid llm-survey-2026 --file 20260401-bfdd863d.yaml --language de --downloaded
 ```
-This produces `20260401-bfdd863d__filtered.csv` with only the matching rows.
+Every applied filter is recorded in `searches/logs/filters-applied.log`.
 
-## 📢 Scenario: Gathering data by downloading papers and extracting text
+## 📢 Scenario 3: Gathering data by downloading papers and extracting text
 
 **1. Download open-access papers by DOI via Unpaywall**
 
@@ -220,7 +221,7 @@ Or from a filtered CSV to download only the papers that passed the language filt
 ```bash
 llmexer papers download --pid llm-survey-2026 --search-file 20260401-bfdd863d__filtered.csv
 ```
-Failed downloads are saved automatically as `20260401-bfdd863d__results_download_failed.csv` (columns: `doi`, `url`, `title`, `desired_filename`, `downloaded`) next to the source CSV.
+Failed downloads are saved automatically as `20260401-bfdd863d__results_download_failed.csv` (columns: `doi`, `url`, `title`, `desired_filename`, `downloaded`) in the `searches/logs/` folder.
 
 **2. Extract text from all added papers** - pypdf
 
@@ -300,7 +301,7 @@ The `papers` category provides commands for managing PDF papers within a project
 | `add --directory` | Recursively copy all PDFs from a directory. Already-existing papers are skipped. | `llmexer papers add --directory /path/to/folder` |
 | `add --url` | Download a PDF from a URL into the project's `papers/` folder. | `llmexer papers add --url https://example.com/paper.pdf` |
 | `download --doi` | Download one or more open-access PDFs by DOI using the Unpaywall API. Email required via `--email` or `UNPAYWALL_EMAIL` env var. | `llmexer papers download --doi 10.1038/nature12373 --email you@example.com` |
-| `download --search-file` | Download all papers from a search result CSV (inside `searches/`), including filtered CSVs (`__filtered.csv`). Files are named `YEAR_AUTHOR_TITLE_DOI.pdf`. On success, updates `downloaded=True` in the source CSV. Failures saved as `<stem>_download_failed.csv`. | `llmexer papers download --search-file 20260401-abc123__filtered.csv` |
+| `download --search-file` | Download all papers from a search result CSV (inside `searches/`), including filtered CSVs (`__filtered.csv`). Files are named `YEAR_AUTHOR_TITLE_DOI.pdf`. On success, updates `downloaded=True` in the source CSV. Failures saved as `<stem>_download_failed.csv` in `searches/logs/`. | `llmexer papers download --search-file 20260401-abc123__filtered.csv` |
 | `extract` | Extract text from all PDFs in `papers/`. Default `pypdf` backend saves `.txt`; `docling` backend sends PDFs to a remote docling-serve instance and saves `.md`. Connection details (`DOCLING_URL`, `DOCLING_USER`, `DOCLING_PASSWORD`) read from `.env`; overridable via `--docling-url`, `--docling-user`, `--docling-password`. Already-extracted files are skipped unless `--rewrite` is passed. | `llmexer papers extract --pid my-project --processor docling` |
 
 ## 🔍 CLI category: **search**
@@ -311,11 +312,11 @@ The `search` category provides commands for managing and running literature sear
 |-----------|-------------|-----------------|
 | `create` | Create a search configuration YAML file in the project's `searches/` folder. | `llmexer search create --query "machine learning"` |
 | `list` | List all search YAML configs in the project's `searches/` folder as a table (columns: `#`, `Name`, `Query`, `Year`, `Created`, `Results`). Prints a next-step hint referencing the latest search file. | `llmexer search list --pid my-project` |
-| `rename` | Rename a search ID and all its associated files (`<id>.yaml`, `<id>__results.csv`, `<id>__filtered.csv`, `<id>__results_download_failed.csv`, and `<id>__results_raw.json` under `searches/jsons/`). Accepts a full `.yaml` filename for `--old-id`. | `llmexer search rename --old-id 20260401-abc123 --new-id my-search` |
+| `rename` | Rename a search ID and all its associated files (`<id>.yaml`, `<id>__results.csv`, `<id>__filtered.csv`, `<id>__results_raw.json` under `searches/jsons/`, and `<id>__results_download_failed.csv` under `searches/logs/`). Accepts a full `.yaml` filename for `--old-id`. | `llmexer search rename --old-id 20260401-abc123 --new-id my-search` |
 | `run --query` | Run a search directly from a query string. Saves `<ID>__results.csv` to `searches/` and `<ID>__results_raw.json` to `searches/jsons/`. CSV columns include: `sem_scholar_paper_id`, `year`, `title`, `authors`, `abstract`, `isOpenAccess`, `doi`, `language`, `referenceCount`, `citationCount`, `entry_source`, `pdf_filename`, `txt_filename`, `markdown_filename`, `pdf_downloaded`. Raw JSON also contains `fieldsOfStudy`, `citationStyles`, `publicationTypes`. | `llmexer search run --query "neural networks" --limit 200` |
 | `run --file` | Run a search loading parameters from an existing YAML config. Use `--rewrite` to overwrite existing result files. | `llmexer search run --file 20260401-abc123.yaml` |
 | `stats` | Display statistics for a completed search: papers per year and a stats breakdown (open access, language, downloaded, entry source, txt/markdown presence), stacked for results and filtered CSVs. Without `--file`, falls back to the merged file(s) (`<pid>__merged_results.csv` / `<pid>__merged_filtered.csv`) if present. | `llmexer search stats --file 20260401-abc123.yaml` |
-| `filter` | Filter `<ID>__results.csv` by language (default: `en`) and save matching rows to `<ID>__filtered.csv`. Prints total entries, filtered-out count, and remaining count. | `llmexer search filter --file 20260401-abc123.yaml --language en` |
+| `filter` | **Exclude** rows from a search and rewrite `<ID>__filtered.csv`. Reads the existing `__filtered.csv` if present (filters chain), else `__results.csv`. Combinable criteria, each applied in order and logged: `--language <code>` / `--source <value>` / `--doi <value>` drop rows equal to the value; `--downloaded` drops rows not yet downloaded. Each applied filter appends a line to `searches/logs/filters-applied.log`. | `llmexer search filter --file 20260401-abc123.yaml --language de --downloaded` |
 | `merge` | Merge the project's search CSVs into two deduplicated files: `<pid>__merged_results.csv` (from `*__results.csv`) and `<pid>__merged_filtered.csv` (from `*__filtered.csv`). Deduplicates by DOI (falling back to title); adds a `0/1` column per search (named after its YAML id) and a `duplicates_counter` column (number of duplicate occurrences, i.e. searches found in minus one). Use `--rewrite` to overwrite; respects `--dry-run`. | `llmexer search merge --pid my-project` |
 | `sync` | Reconcile `<ID>__results.csv` (and `<ID>__filtered.csv` if present) against the project's `papers/` folder. Updates `pdf_downloaded`, `txt_filename`, and `markdown_filename` for existing rows; appends new rows for PDFs not yet listed (marked `entry_source="manually added"`). Respects `--dry-run`. | `llmexer search sync --file 20260401-abc123.yaml` |
 

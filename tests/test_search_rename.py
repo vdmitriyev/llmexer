@@ -68,7 +68,6 @@ def test_search_rename_renames_all_associated_files(searches_dir, mock_no_dotenv
         ".yaml",
         "__results.csv",
         "__filtered.csv",
-        "__results_download_failed.csv",
     ]
     for suffix in suffixes:
         (searches_dir / f"old-search{suffix}").write_text("data")
@@ -77,6 +76,11 @@ def test_search_rename_renames_all_associated_files(searches_dir, mock_no_dotenv
     jsons_dir = searches_dir / "jsons"
     jsons_dir.mkdir()
     (jsons_dir / "old-search__results_raw.json").write_text("data")
+
+    # The download-failed CSV lives in the `logs/` subdirectory.
+    logs_dir = searches_dir / "logs"
+    logs_dir.mkdir()
+    (logs_dir / "old-search__results_download_failed.csv").write_text("data")
 
     result = runner.invoke(
         app, ["search", "rename", "--old-id", "old-search", "--new-id", "new-search"]
@@ -87,6 +91,8 @@ def test_search_rename_renames_all_associated_files(searches_dir, mock_no_dotenv
         assert (searches_dir / f"new-search{suffix}").exists()
     assert not (jsons_dir / "old-search__results_raw.json").exists()
     assert (jsons_dir / "new-search__results_raw.json").exists()
+    assert not (logs_dir / "old-search__results_download_failed.csv").exists()
+    assert (logs_dir / "new-search__results_download_failed.csv").exists()
 
 
 def test_search_rename_skips_missing_optional_files(searches_dir, mock_no_dotenv):

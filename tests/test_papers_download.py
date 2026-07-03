@@ -332,6 +332,50 @@ def test_download_pdf_request_failure_skips(projects_dir, mock_no_dotenv, experi
     assert "failed" in result.output
 
 
+def test_download_search_file_failed_csv_saved_to_logs(
+    projects_dir, mock_no_dotenv, experiment
+):
+    """A --search-file run with a failing download writes the failed CSV into searches/logs/."""
+    import pandas as pd
+    import requests as req
+
+    pid, exp_path = experiment
+    searches_path = exp_path / "searches"
+    os.makedirs(searches_path)
+    search_file = "20260101-aaaaaaaa__results.csv"
+    pd.DataFrame(
+        [{"doi": "10.1000/xyz", "title": "T", "pdf_filename": "T.pdf"}]
+    ).to_csv(searches_path / search_file, index=False, sep=";", encoding="utf-8")
+
+    unpaywall_mock = _make_unpaywall_response("http://example.com/paper.pdf")
+    pdf_session = MagicMock()
+    pdf_session.get.side_effect = req.RequestException("connection refused")
+
+    with patch(
+        "llmexer.base.papers.make_http_session",
+        side_effect=[_mock_session(unpaywall_mock), pdf_session],
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "papers",
+                "download",
+                "--pid",
+                pid,
+                "--search-file",
+                search_file,
+                "--email",
+                "test@example.com",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    failed_csv = (
+        searches_path / "logs" / "20260101-aaaaaaaa__results_download_failed.csv"
+    )
+    assert failed_csv.exists()
+
+
 def test_download_duplicate_skips(projects_dir, mock_no_dotenv, experiment):
     """When a PDF with the same filename already exists, the DOI is skipped."""
     pid, exp_path = experiment

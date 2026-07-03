@@ -2,6 +2,13 @@
 History
 =======
 
+0.2.30 (2026-07-03)
+-------------------
+
+* ``search filter`` reworked into a chainable **exclusion** filter: it reads the existing ``<id>__filtered.csv`` if present (else ``<id>__results.csv``) and rewrites ``<id>__filtered.csv``. Combinable criteria applied in order — ``--language`` / ``--source`` / ``--doi`` drop rows equal to the given value, ``--downloaded`` drops rows not yet downloaded. Was: a single keep-matching language filter
+* Each applied filter is recorded to ``searches/logs/filters-applied.log`` (``<datetime> filter applied: <filter> ; input rows: <n>; output rows: <n>``)
+* ``papers download`` now saves the ``<stem>_download_failed.csv`` into the ``searches/logs/`` subdirectory (was: directly in ``searches/``); ``search rename`` moves it accordingly
+
 0.2.29 (2026-07-03)
 -------------------
 

@@ -13,6 +13,7 @@ PROJECTS_DIR = ".projects"
 TEMP_DIR = "temp"
 SEARCHES_DIR = "searches"
 PAPERS_DIR = "papers"
+SEARCHES_LOGS_DIR = "logs"
 
 LOG_FILE_PATH = os.path.join(BASEDIR, LOG_FILE_NAME)
 

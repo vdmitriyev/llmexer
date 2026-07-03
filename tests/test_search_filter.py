@@ -60,8 +60,9 @@ def experiment_with_search(projects_dir, monkeypatch):
                 "isOpenAccess": True,
                 "doi": "10.1/en1",
                 "language": "en",
+                "entry_source": "Semantic Scholar",
                 "pdf_filename": "2023_English_Paper_10.1_en1.pdf",
-                "pdf_downloaded": False,
+                "pdf_downloaded": True,
             },
             {
                 "sem_scholar_paper_id": "p2",
@@ -72,6 +73,7 @@ def experiment_with_search(projects_dir, monkeypatch):
                 "isOpenAccess": False,
                 "doi": "10.1/de1",
                 "language": "de",
+                "entry_source": "Semantic Scholar",
                 "pdf_filename": "2022_German_Paper_10.1_de1.pdf",
                 "pdf_downloaded": False,
             },
@@ -84,6 +86,7 @@ def experiment_with_search(projects_dir, monkeypatch):
                 "isOpenAccess": True,
                 "doi": "10.1/en2",
                 "language": "en",
+                "entry_source": "manually added",
                 "pdf_filename": "2021_Another_English_Paper_10.1_en2.pdf",
                 "pdf_downloaded": False,
             },
@@ -95,37 +98,138 @@ def experiment_with_search(projects_dir, monkeypatch):
     return pid, search_id, searches_path
 
 
-def test_search_filter_happy_path(projects_dir, mock_no_dotenv, experiment_with_search):
-    """Default --language en filters to only English papers."""
-    pid, search_id, searches_path = experiment_with_search
-
-    result = runner.invoke(
-        app, ["search", "filter", "--pid", pid, "--file", f"{search_id}.yaml"]
+def _invoke(pid, search_id, *extra):
+    return runner.invoke(
+        app,
+        ["search", "filter", "--pid", pid, "--file", f"{search_id}.yaml", *extra],
     )
 
-    assert result.exit_code == 0
-    assert "en" in result.output
-    assert "Total:" in result.output
-    assert "Filtered out:" in result.output
-    assert "Remaining:" in result.output
 
-    filtered_path = searches_path / f"{search_id}__filtered.csv"
-    assert filtered_path.exists()
+def test_filter_excludes_language(projects_dir, mock_no_dotenv, experiment_with_search):
+    """--language de drops German rows (exclusion, not keep-matching)."""
+    pid, search_id, searches_path = experiment_with_search
 
-    df = pd.read_csv(filtered_path, sep=";")
+    result = _invoke(pid, search_id, "--language", "de")
+
+    assert result.exit_code == 0, result.output
+    df = pd.read_csv(searches_path / f"{search_id}__filtered.csv", sep=";")
     assert len(df) == 2
-    assert all(df["language"] == "en")
+    assert "de" not in set(df["language"])
 
 
-def test_search_filter_custom_language(
+def test_filter_excludes_source(projects_dir, mock_no_dotenv, experiment_with_search):
+    """--source drops rows whose entry_source equals the value."""
+    pid, search_id, searches_path = experiment_with_search
+
+    result = _invoke(pid, search_id, "--source", "manually added")
+
+    assert result.exit_code == 0, result.output
+    df = pd.read_csv(searches_path / f"{search_id}__filtered.csv", sep=";")
+    assert len(df) == 2
+    assert "manually added" not in set(df["entry_source"])
+
+
+def test_filter_excludes_doi(projects_dir, mock_no_dotenv, experiment_with_search):
+    """--doi drops the row with the exact DOI value."""
+    pid, search_id, searches_path = experiment_with_search
+
+    result = _invoke(pid, search_id, "--doi", "10.1/en1")
+
+    assert result.exit_code == 0, result.output
+    df = pd.read_csv(searches_path / f"{search_id}__filtered.csv", sep=";")
+    assert len(df) == 2
+    assert "10.1/en1" not in set(df["doi"])
+
+
+def test_filter_excludes_not_downloaded(
     projects_dir, mock_no_dotenv, experiment_with_search
 ):
-    """--language de filters to only German papers."""
+    """--downloaded keeps only rows that are downloaded."""
+    pid, search_id, searches_path = experiment_with_search
+
+    result = _invoke(pid, search_id, "--downloaded")
+
+    assert result.exit_code == 0, result.output
+    df = pd.read_csv(searches_path / f"{search_id}__filtered.csv", sep=";")
+    assert len(df) == 1
+    assert df.iloc[0]["sem_scholar_paper_id"] == "p1"
+
+
+def test_filter_chains_on_existing_filtered(
+    projects_dir, mock_no_dotenv, experiment_with_search
+):
+    """A second run reads the existing __filtered.csv (not the results) and rewrites it."""
+    pid, search_id, searches_path = experiment_with_search
+
+    # First filter: drop German → filtered has p1, p3.
+    assert _invoke(pid, search_id, "--language", "de").exit_code == 0
+    # Second filter: drop manually-added → must read the filtered file, leaving only p1.
+    result = _invoke(pid, search_id, "--source", "manually added")
+
+    assert result.exit_code == 0, result.output
+    df = pd.read_csv(searches_path / f"{search_id}__filtered.csv", sep=";")
+    assert len(df) == 1
+    assert df.iloc[0]["sem_scholar_paper_id"] == "p1"
+
+
+def test_filter_logs_applied(projects_dir, mock_no_dotenv, experiment_with_search):
+    """Each applied filter appends a line to searches/logs/filters-applied.log."""
+    pid, search_id, searches_path = experiment_with_search
+
+    assert _invoke(pid, search_id, "--language", "de").exit_code == 0
+
+    log_path = searches_path / "logs" / "filters-applied.log"
+    assert log_path.exists()
+    content = log_path.read_text(encoding="utf-8").strip()
+    assert (
+        f"search file: {search_id}__filtered.csv; "
+        "filter applied: language=de ; input rows: 3; output rows: 2"
+    ) in content
+
+
+def test_filter_no_criteria_raises(
+    projects_dir, mock_no_dotenv, experiment_with_search
+):
+    """Supplying no filter criterion raises UnexpectedCLIParamsException."""
+    pid, search_id, _ = experiment_with_search
+
+    result = _invoke(pid, search_id)
+    assert result.exit_code != 0
+    assert isinstance(result.exception, UnexpectedCLIParamsException)
+
+
+def test_filter_no_file_raises(projects_dir, mock_no_dotenv, monkeypatch):
+    """Omitting --file raises UnexpectedCLIParamsException."""
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
+
+    result = runner.invoke(app, ["search", "filter"])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, UnexpectedCLIParamsException)
+
+
+def test_filter_missing_source_warns(
+    projects_dir, mock_no_dotenv, experiment_with_search
+):
+    """When neither filtered nor results CSV exists, exits 0 with a warning."""
+    pid, search_id, searches_path = experiment_with_search
+    (searches_path / f"{search_id}__results.csv").unlink()
+
+    result = _invoke(pid, search_id, "--language", "de")
+
+    assert result.exit_code == 0
+    assert "Warning" in result.output
+    assert not (searches_path / f"{search_id}__filtered.csv").exists()
+
+
+def test_filter_dry_run(projects_dir, mock_no_dotenv, experiment_with_search):
+    """With --dry-run, no __filtered.csv and no log are written."""
     pid, search_id, searches_path = experiment_with_search
 
     result = runner.invoke(
         app,
         [
+            "--dry-run",
             "search",
             "filter",
             "--pid",
@@ -138,75 +242,6 @@ def test_search_filter_custom_language(
     )
 
     assert result.exit_code == 0
-    filtered_path = searches_path / f"{search_id}__filtered.csv"
-    assert filtered_path.exists()
-
-    df = pd.read_csv(filtered_path, sep=";")
-    assert len(df) == 1
-    assert df.iloc[0]["language"] == "de"
-
-
-def test_search_filter_no_file_raises(projects_dir, mock_no_dotenv, monkeypatch):
-    """Omitting --file raises UnexpectedCLIParamsException."""
-    os.makedirs(projects_dir / "test-exp")
-    monkeypatch.setenv("PROJECT_ID", "test-exp")
-
-    result = runner.invoke(app, ["search", "filter"])
-    assert result.exit_code != 0
-    assert isinstance(result.exception, UnexpectedCLIParamsException)
-
-
-def test_search_filter_missing_csv_warns(
-    projects_dir, mock_no_dotenv, experiment_with_search
-):
-    """When __results.csv is missing, exits 0 with a warning."""
-    pid, search_id, searches_path = experiment_with_search
-    (searches_path / f"{search_id}__results.csv").unlink()
-
-    result = runner.invoke(
-        app, ["search", "filter", "--pid", pid, "--file", f"{search_id}.yaml"]
-    )
-
-    assert result.exit_code == 0
-    assert "Warning" in result.output
-    assert not (searches_path / f"{search_id}__filtered.csv").exists()
-
-
-def test_search_filter_dry_run(projects_dir, mock_no_dotenv, experiment_with_search):
-    """With --dry-run, no __filtered.csv is written."""
-    pid, search_id, searches_path = experiment_with_search
-
-    result = runner.invoke(
-        app,
-        ["--dry-run", "search", "filter", "--pid", pid, "--file", f"{search_id}.yaml"],
-    )
-
-    assert result.exit_code == 0
     assert "Dry run" in result.output
     assert not (searches_path / f"{search_id}__filtered.csv").exists()
-
-
-def test_search_filter_no_matches(projects_dir, mock_no_dotenv, experiment_with_search):
-    """When no rows match, __filtered.csv is written with header only (0 data rows)."""
-    pid, search_id, searches_path = experiment_with_search
-
-    result = runner.invoke(
-        app,
-        [
-            "search",
-            "filter",
-            "--pid",
-            pid,
-            "--file",
-            f"{search_id}.yaml",
-            "--language",
-            "zh",
-        ],
-    )
-
-    assert result.exit_code == 0
-    filtered_path = searches_path / f"{search_id}__filtered.csv"
-    assert filtered_path.exists()
-
-    df = pd.read_csv(filtered_path, sep=";")
-    assert len(df) == 0
+    assert not (searches_path / "logs" / "filters-applied.log").exists()

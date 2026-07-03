@@ -26,6 +26,7 @@ from llmexer.constants import (
     DEFAULT_DOCLING_URL,
     PAPERS_DIR,
     SEARCHES_DIR,
+    SEARCHES_LOGS_DIR,
 )
 from llmexer.exceptions import (
     PaperAddException,
@@ -197,7 +198,8 @@ def download(
                 f"Search file '{search_file}' not found in searches/ directory for project '{pid}'."
             )
         stem = Path(search_file).stem
-        failed_csv_path = os.path.join(searches_path, f"{stem}_download_failed.csv")
+        logs_path = os.path.join(searches_path, SEARCHES_LOGS_DIR)
+        failed_csv_path = os.path.join(logs_path, f"{stem}_download_failed.csv")
         df = pd.read_csv(csv_path, sep=";")
         for _, row in df.iterrows():
             single_doi = row.get("doi")
@@ -277,6 +279,7 @@ def download(
 
     if failed_csv_path and not settings.dry_run:
         if failed_records:
+            ensure_directory_exists(os.path.dirname(failed_csv_path))
             pd.DataFrame(
                 failed_records,
                 columns=["doi", "title", "url", "pdf_filename", "pdf_downloaded"],
