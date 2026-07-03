@@ -70,11 +70,11 @@ def _sample_rows():
     return [
         {
             **_row(doi="10.1/a", title="A", year=2023, isOpenAccess=True),
-            "duplicates_counter": 2,
+            "duplicates_counter": 1,
         },
         {
             **_row(doi="10.1/b", title="B", year=2024, isOpenAccess=False),
-            "duplicates_counter": 1,
+            "duplicates_counter": 0,
         },
     ]
 

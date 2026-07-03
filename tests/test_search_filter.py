@@ -33,7 +33,7 @@ def mock_no_dotenv(monkeypatch):
 
 @pytest.fixture()
 def experiment_with_search(projects_dir, monkeypatch):
-    """Create an experiment with a search YAML and a _results.csv."""
+    """Create an experiment with a search YAML and a __results.csv."""
     pid = "20260409-test-filter"
     exp_path = projects_dir / pid
     searches_path = exp_path / "searches"
@@ -89,7 +89,7 @@ def experiment_with_search(projects_dir, monkeypatch):
             },
         ]
     )
-    csv_path = searches_path / f"{search_id}_results.csv"
+    csv_path = searches_path / f"{search_id}__results.csv"
     df.to_csv(csv_path, index=False, encoding="utf-8", sep=";")
 
     return pid, search_id, searches_path
@@ -109,7 +109,7 @@ def test_search_filter_happy_path(projects_dir, mock_no_dotenv, experiment_with_
     assert "Filtered out:" in result.output
     assert "Remaining:" in result.output
 
-    filtered_path = searches_path / f"{search_id}_filtered.csv"
+    filtered_path = searches_path / f"{search_id}__filtered.csv"
     assert filtered_path.exists()
 
     df = pd.read_csv(filtered_path, sep=";")
@@ -138,7 +138,7 @@ def test_search_filter_custom_language(
     )
 
     assert result.exit_code == 0
-    filtered_path = searches_path / f"{search_id}_filtered.csv"
+    filtered_path = searches_path / f"{search_id}__filtered.csv"
     assert filtered_path.exists()
 
     df = pd.read_csv(filtered_path, sep=";")
@@ -159,9 +159,9 @@ def test_search_filter_no_file_raises(projects_dir, mock_no_dotenv, monkeypatch)
 def test_search_filter_missing_csv_warns(
     projects_dir, mock_no_dotenv, experiment_with_search
 ):
-    """When _results.csv is missing, exits 0 with a warning."""
+    """When __results.csv is missing, exits 0 with a warning."""
     pid, search_id, searches_path = experiment_with_search
-    (searches_path / f"{search_id}_results.csv").unlink()
+    (searches_path / f"{search_id}__results.csv").unlink()
 
     result = runner.invoke(
         app, ["search", "filter", "--pid", pid, "--file", f"{search_id}.yaml"]
@@ -169,11 +169,11 @@ def test_search_filter_missing_csv_warns(
 
     assert result.exit_code == 0
     assert "Warning" in result.output
-    assert not (searches_path / f"{search_id}_filtered.csv").exists()
+    assert not (searches_path / f"{search_id}__filtered.csv").exists()
 
 
 def test_search_filter_dry_run(projects_dir, mock_no_dotenv, experiment_with_search):
-    """With --dry-run, no _filtered.csv is written."""
+    """With --dry-run, no __filtered.csv is written."""
     pid, search_id, searches_path = experiment_with_search
 
     result = runner.invoke(
@@ -183,11 +183,11 @@ def test_search_filter_dry_run(projects_dir, mock_no_dotenv, experiment_with_sea
 
     assert result.exit_code == 0
     assert "Dry run" in result.output
-    assert not (searches_path / f"{search_id}_filtered.csv").exists()
+    assert not (searches_path / f"{search_id}__filtered.csv").exists()
 
 
 def test_search_filter_no_matches(projects_dir, mock_no_dotenv, experiment_with_search):
-    """When no rows match, _filtered.csv is written with header only (0 data rows)."""
+    """When no rows match, __filtered.csv is written with header only (0 data rows)."""
     pid, search_id, searches_path = experiment_with_search
 
     result = runner.invoke(
@@ -205,7 +205,7 @@ def test_search_filter_no_matches(projects_dir, mock_no_dotenv, experiment_with_
     )
 
     assert result.exit_code == 0
-    filtered_path = searches_path / f"{search_id}_filtered.csv"
+    filtered_path = searches_path / f"{search_id}__filtered.csv"
     assert filtered_path.exists()
 
     df = pd.read_csv(filtered_path, sep=";")

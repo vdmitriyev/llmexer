@@ -176,8 +176,8 @@ def test_search_run_creates_output_files(
     assert "File with results" in result.output
 
     searches_dir = projects_dir / "test-exp" / "searches"
-    json_files = list(searches_dir.glob("*_results_raw.json"))
-    csv_files = list(searches_dir.glob("*_results.csv"))
+    json_files = list((searches_dir / "jsons").glob("*__results_raw.json"))
+    csv_files = list(searches_dir.glob("*__results.csv"))
     assert len(json_files) == 1
     assert len(csv_files) == 1
 
@@ -265,7 +265,7 @@ def test_search_run_language_unknown_on_empty(
 
     assert result.exit_code == 0
     searches_dir = projects_dir / "test-exp" / "searches"
-    csv_files = list(searches_dir.glob("*_results.csv"))
+    csv_files = list(searches_dir.glob("*__results.csv"))
     assert len(csv_files) == 1
     df = pd.read_csv(csv_files[0], sep=";")
     assert df.iloc[0]["language"] == "unknown"
@@ -283,5 +283,5 @@ def test_search_run_dry_run_no_files(projects_dir, mock_no_dotenv, monkeypatch):
 
     searches_dir = projects_dir / "test-exp" / "searches"
     if searches_dir.exists():
-        assert not list(searches_dir.glob("*_results_raw.json"))
-        assert not list(searches_dir.glob("*_results.csv"))
+        assert not list((searches_dir / "jsons").glob("*__results_raw.json"))
+        assert not list(searches_dir.glob("*__results.csv"))

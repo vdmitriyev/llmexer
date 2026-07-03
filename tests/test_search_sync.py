@@ -59,7 +59,7 @@ def _write_search_yaml(exp_path, search_id):
 
 def _write_results_csv(exp_path, search_id, rows):
     """Write a results CSV with the given rows (list of dicts)."""
-    csv_path = exp_path / "searches" / f"{search_id}_results.csv"
+    csv_path = exp_path / "searches" / f"{search_id}__results.csv"
     df = pd.DataFrame(rows, columns=_PAPER_CSV_COLUMNS)
     df.to_csv(csv_path, index=False, encoding="utf-8", sep=";")
     return csv_path
@@ -97,7 +97,7 @@ def test_sync_updates_pdf_downloaded(projects_dir, mock_no_dotenv, experiment):
     result = runner.invoke(app, ["search", "sync", "--file", yaml_filename])
 
     assert result.exit_code == 0, result.output
-    df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}_results.csv", sep=";")
+    df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}__results.csv", sep=";")
     assert df.iloc[0]["pdf_downloaded"] == True
 
 
@@ -116,7 +116,7 @@ def test_sync_updates_txt_filename(projects_dir, mock_no_dotenv, experiment):
     result = runner.invoke(app, ["search", "sync", "--file", yaml_filename])
 
     assert result.exit_code == 0, result.output
-    df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}_results.csv", sep=";")
+    df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}__results.csv", sep=";")
     assert df.iloc[0]["txt_filename"] == f"{stem}.txt"
 
 
@@ -135,7 +135,7 @@ def test_sync_updates_markdown_filename(projects_dir, mock_no_dotenv, experiment
     result = runner.invoke(app, ["search", "sync", "--file", yaml_filename])
 
     assert result.exit_code == 0, result.output
-    df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}_results.csv", sep=";")
+    df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}__results.csv", sep=";")
     assert df.iloc[0]["markdown_filename"] == f"{stem}.md"
 
 
@@ -155,7 +155,7 @@ def test_sync_adds_new_pdf(projects_dir, mock_no_dotenv, experiment):
     result = runner.invoke(app, ["search", "sync", "--file", yaml_filename])
 
     assert result.exit_code == 0, result.output
-    df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}_results.csv", sep=";")
+    df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}__results.csv", sep=";")
     new_rows = df[df["pdf_filename"] == new_pdf]
     assert len(new_rows) == 1
     assert new_rows.iloc[0]["entry_source"] == "manually added"
@@ -179,7 +179,7 @@ def test_sync_new_pdf_with_txt_and_md(projects_dir, mock_no_dotenv, experiment):
     result = runner.invoke(app, ["search", "sync", "--file", yaml_filename])
 
     assert result.exit_code == 0, result.output
-    df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}_results.csv", sep=";")
+    df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}__results.csv", sep=";")
     row = df[df["pdf_filename"] == pdf_name].iloc[0]
     assert row["txt_filename"] == f"{stem}.txt"
     assert row["markdown_filename"] == f"{stem}.md"
@@ -195,7 +195,7 @@ def test_sync_updates_filtered_csv(projects_dir, mock_no_dotenv, experiment):
     _write_results_csv(exp_path, SEARCH_ID, [row])
 
     # Also write a filtered CSV with the same row
-    filtered_path = exp_path / "searches" / f"{SEARCH_ID}_filtered.csv"
+    filtered_path = exp_path / "searches" / f"{SEARCH_ID}__filtered.csv"
     df_filtered = pd.DataFrame([row], columns=_PAPER_CSV_COLUMNS)
     df_filtered.to_csv(filtered_path, index=False, encoding="utf-8", sep=";")
 
@@ -206,7 +206,7 @@ def test_sync_updates_filtered_csv(projects_dir, mock_no_dotenv, experiment):
     assert result.exit_code == 0, result.output
 
     df_results = pd.read_csv(
-        exp_path / "searches" / f"{SEARCH_ID}_results.csv", sep=";"
+        exp_path / "searches" / f"{SEARCH_ID}__results.csv", sep=";"
     )
     assert df_results.iloc[0]["pdf_downloaded"] == True
 
@@ -232,7 +232,7 @@ def test_sync_dry_run_no_writes(projects_dir, mock_no_dotenv, experiment):
     )
     (exp_path / "papers" / pdf_name).write_bytes(b"%PDF-1.4")
 
-    results_path = exp_path / "searches" / f"{SEARCH_ID}_results.csv"
+    results_path = exp_path / "searches" / f"{SEARCH_ID}__results.csv"
     mtime_before = results_path.stat().st_mtime
 
     result = runner.invoke(

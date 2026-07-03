@@ -46,12 +46,16 @@ DEFAULT_QUERY_PARAM = "influence of machine learning on computer science"
 MERGED_RESULTS_SUFFIX = "__merged_results.csv"
 MERGED_FILTERED_SUFFIX = "__merged_filtered.csv"
 
+# Subdirectory (within `searches/`) holding the raw JSON search responses.
+SEARCH_JSONS_DIR = "jsons"
+
+# Raw JSON responses live in the `jsons/` subdir; the rest sit directly in `searches/`.
+_SEARCH_JSON_SUFFIX = "__results_raw.json"
 _SEARCH_FILE_SUFFIXES = [
     ".yaml",
-    "_results.csv",
-    "_results_raw.json",
-    "_filtered.csv",
-    "_results_download_failed.csv",
+    "__results.csv",
+    "__filtered.csv",
+    "__results_download_failed.csv",
 ]
 
 
@@ -242,7 +246,7 @@ def list_searches(
         ctime = datetime.fromtimestamp(
             yaml_path.stat().st_ctime, tz=timezone.utc
         ).strftime("%Y-%m-%d %H:%M:%S")
-        results_csv = os.path.join(searches_path, f"{search_id}_results.csv")
+        results_csv = os.path.join(searches_path, f"{search_id}__results.csv")
         results_display = (
             "[bold green]Yes[/bold green]"
             if os.path.exists(results_csv)
@@ -306,6 +310,13 @@ def rename_search(
         dst = os.path.join(searches_path, f"{new_id}{suffix}")
         if os.path.exists(src):
             os.rename(src, dst)
+
+    # The raw JSON responses live in the `jsons/` subdirectory.
+    jsons_path = os.path.join(searches_path, SEARCH_JSONS_DIR)
+    json_src = os.path.join(jsons_path, f"{old_id}{_SEARCH_JSON_SUFFIX}")
+    json_dst = os.path.join(jsons_path, f"{new_id}{_SEARCH_JSON_SUFFIX}")
+    if os.path.exists(json_src):
+        os.rename(json_src, json_dst)
 
     cprint(
         f"Renamed search: [bold yellow]{old_id}[/bold yellow] → [bold yellow]{new_id}[/bold yellow]"
@@ -374,9 +385,11 @@ def run(
 
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
     ensure_directory_exists(searches_path)
+    jsons_path = os.path.join(searches_path, SEARCH_JSONS_DIR)
+    ensure_directory_exists(jsons_path)
 
-    json_path = os.path.join(searches_path, f"{search_id}_results_raw.json")
-    csv_path = os.path.join(searches_path, f"{search_id}_results.csv")
+    json_path = os.path.join(jsons_path, f"{search_id}{_SEARCH_JSON_SUFFIX}")
+    csv_path = os.path.join(searches_path, f"{search_id}__results.csv")
 
     if not rewrite:
         existing = [p for p in [json_path, csv_path] if os.path.exists(p)]
@@ -416,11 +429,12 @@ def merge(
 ) -> None:
     """Merge a project's search results into two deduplicated CSVs.
 
-    Produces ``<pid>__merged_results.csv`` from every ``*_results.csv`` and
-    ``<pid>__merged_filtered.csv`` from every ``*_filtered.csv``. Publications are deduplicated
+    Produces ``<pid>__merged_results.csv`` from every ``*__results.csv`` and
+    ``<pid>__merged_filtered.csv`` from every ``*__filtered.csv``. Publications are deduplicated
     by DOI (falling back to title). Each source search becomes a binary column named after its
-    YAML file (the search id, without ``.yaml``), plus a ``duplicates_counter`` column counting
-    how many searches each publication was found in.
+    YAML file (the search id, without ``.yaml``), plus a ``duplicates_counter`` column holding
+    the number of duplicate occurrences (one less than the number of searches each publication
+    was found in).
     """
 
     pid = get_proper_pid(pid)
@@ -439,7 +453,7 @@ def merge(
         jobs.append(
             (
                 results_csvs,
-                "_results",
+                "__results",
                 os.path.join(searches_path, f"{pid}{MERGED_RESULTS_SUFFIX}"),
                 "results",
             )
@@ -448,7 +462,7 @@ def merge(
         jobs.append(
             (
                 filtered_csvs,
-                "_filtered",
+                "__filtered",
                 os.path.join(searches_path, f"{pid}{MERGED_FILTERED_SUFFIX}"),
                 "filtered",
             )
@@ -531,7 +545,7 @@ def stats(
     search_id, query, year, only_open_access = read_search_params(file, experiment_path)
     print_search_header(pid, search_id, query, year, only_open_access)
 
-    csv_path = os.path.join(searches_path, f"{search_id}_results.csv")
+    csv_path = os.path.join(searches_path, f"{search_id}__results.csv")
 
     if not os.path.exists(csv_path):
         print_info_not_search_file(file, csv_path)
@@ -545,7 +559,7 @@ def stats(
     )
     console.print(tbl_original)
 
-    filtered_path = os.path.join(searches_path, f"{search_id}_filtered.csv")
+    filtered_path = os.path.join(searches_path, f"{search_id}__filtered.csv")
     tbl_filtered, filtered_df = None, []
     if os.path.exists(filtered_path):
         filtered_df = pd.read_csv(filtered_path, sep=";")
@@ -577,7 +591,7 @@ def filter_results(
         help="Filter by language code (e.g. 'en', 'de'). Default: 'en'.",
     ),
 ) -> None:
-    """Filter search results CSV by language, saving a new _filtered.csv"""
+    """Filter search results CSV by language, saving a new __filtered.csv"""
 
     if file is None:
         raise UnexpectedCLIParamsException("--file is required.")
@@ -589,7 +603,7 @@ def filter_results(
     print_search_header(pid, search_id, query, year, only_open_access)
 
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
-    csv_path = os.path.join(searches_path, f"{search_id}_results.csv")
+    csv_path = os.path.join(searches_path, f"{search_id}__results.csv")
 
     if not os.path.exists(csv_path):
         print_info_not_search_file(file, csv_path)
@@ -606,7 +620,7 @@ def filter_results(
     cprint(f"Filtered out: [bold red]{filtered_out}[/bold red]")
     cprint(f"Remaining: [bold green]{remaining}[/bold green]")
 
-    filtered_path = os.path.join(searches_path, f"{search_id}_filtered.csv")
+    filtered_path = os.path.join(searches_path, f"{search_id}__filtered.csv")
 
     if not settings.dry_run:
         filtered_df.to_csv(filtered_path, index=False, encoding="utf-8", sep=";")
@@ -642,8 +656,8 @@ def sync(
 
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
     papers_path = os.path.join(experiment_path, PAPERS_DIR)
-    results_csv = os.path.join(searches_path, f"{search_id}_results.csv")
-    filtered_csv = os.path.join(searches_path, f"{search_id}_filtered.csv")
+    results_csv = os.path.join(searches_path, f"{search_id}__results.csv")
+    filtered_csv = os.path.join(searches_path, f"{search_id}__filtered.csv")
 
     if not os.path.exists(results_csv):
         return

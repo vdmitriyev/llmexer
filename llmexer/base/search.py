@@ -145,8 +145,8 @@ def synf_df_runs_of_search_and_papers(
 
 # Marker present in every merged output filename, used to exclude those files from re-merging.
 _MERGED_MARKER = "__merged"
-_RESULTS_STEM_SUFFIX = "_results"
-_FILTERED_STEM_SUFFIX = "_filtered"
+_RESULTS_STEM_SUFFIX = "__results"
+_FILTERED_STEM_SUFFIX = "__filtered"
 _DUPLICATES_COUNTER_COLUMN = "duplicates_counter"
 
 
@@ -183,7 +183,7 @@ def _dedup_key(row) -> str | None:
 def _source_column_name(filename: str, stem_suffix: str) -> str:
     """Search id (the YAML stem) for a source CSV: file stem with ``stem_suffix`` stripped.
 
-    e.g. ``20260626-name_results.csv`` -> ``20260626-name`` (its ``20260626-name.yaml``).
+    e.g. ``20260626-name__results.csv`` -> ``20260626-name`` (its ``20260626-name.yaml``).
     """
     stem = os.path.splitext(os.path.basename(filename))[0]
     if stem_suffix and stem.endswith(stem_suffix):
@@ -225,8 +225,9 @@ def merge_search_csvs(csv_paths, stem_suffix: str) -> tuple[pd.DataFrame, list[s
     Publications are deduplicated by DOI, falling back to a normalized title when the DOI is
     missing. Each source file becomes a binary column named after its search (the YAML stem,
     i.e. the filename with ``stem_suffix`` stripped): ``1`` if the publication appears in that
-    search, else ``0``. ``duplicates_counter`` holds the number of searches each publication
-    was found in.
+    search, else ``0``. ``duplicates_counter`` holds the number of duplicate occurrences of
+    each publication, i.e. one less than the number of searches it was found in (``0`` for a
+    publication found in a single search).
 
     Returns:
         (merged_df, run_columns) where run_columns is the sorted list of per-search columns.
@@ -259,7 +260,7 @@ def merge_search_csvs(csv_paths, stem_suffix: str) -> tuple[pd.DataFrame, list[s
     for entry in merged.values():
         record = dict(entry["metadata"])
         runs = entry["runs"]
-        record[_DUPLICATES_COUNTER_COLUMN] = len(runs)
+        record[_DUPLICATES_COUNTER_COLUMN] = len(runs) - 1
         for column in run_columns:
             record[column] = 1 if column in runs else 0
         records.append(record)

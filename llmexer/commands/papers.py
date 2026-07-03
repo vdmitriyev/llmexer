@@ -148,7 +148,7 @@ def download(
     search_file: Optional[str] = typer.Option(
         None,
         "--search-file",
-        help="Search results CSV filename inside searches/ (e.g. '20260401-bfdd863d_results.csv' or '20260401-bfdd863d_filtered.csv'). "
+        help="Search results CSV filename inside searches/ (e.g. '20260401-bfdd863d__results.csv' or '20260401-bfdd863d__filtered.csv'). "
         "Iterates all rows and downloads each paper by DOI.",
     ),
     email: Optional[str] = typer.Option(

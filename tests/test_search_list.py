@@ -80,7 +80,7 @@ def test_search_list_shows_yaml_files(projects_dir, mock_no_dotenv, monkeypatch)
 
 
 def test_search_list_shows_results_column(projects_dir, mock_no_dotenv, monkeypatch):
-    """Row with a matching _results.csv shows Yes; row without shows No."""
+    """Row with a matching __results.csv shows Yes; row without shows No."""
     searches_dir = projects_dir / "test-exp" / "searches"
     searches_dir.mkdir(parents=True)
     monkeypatch.setenv("PROJECT_ID", "test-exp")
@@ -89,7 +89,7 @@ def test_search_list_shows_results_column(projects_dir, mock_no_dotenv, monkeypa
     _make_yaml(searches_dir, "20260102-bbbbbbbb")
 
     # Only the first search has a results CSV
-    (searches_dir / "20260101-aaaaaaaa_results.csv").write_text("col\nval\n")
+    (searches_dir / "20260101-aaaaaaaa__results.csv").write_text("col\nval\n")
 
     result = runner.invoke(app, ["search", "list"])
     assert result.exit_code == 0

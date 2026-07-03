@@ -2,6 +2,12 @@
 History
 =======
 
+0.2.29 (2026-07-03)
+-------------------
+
+* Search files now use ``__`` as the delimiter between search id and role: ``<id>__results.csv``, ``<id>__filtered.csv``, ``<id>__results_raw.json`` (was single ``_``). Raw JSON responses are written to a ``searches/jsons/`` subdirectory. Affects ``search run`` / ``filter`` / ``sync`` / ``merge`` / ``list`` / ``rename``
+* ``search merge``: ``duplicates_counter`` now holds the number of duplicate occurrences (one less than the number of searches a publication was found in; ``0`` for a single-search publication)
+
 0.2.28 (2026-07-03)
 -------------------
 

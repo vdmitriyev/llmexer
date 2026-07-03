@@ -135,7 +135,7 @@ def test_copy_search_writes_rows_in_order(projects_dir):
     pid = "search-exp"
     exp_subdir, _, searches_dir = _project(projects_dir, pid)
     _write_search_csv(
-        searches_dir / "s1_results.csv",
+        searches_dir / "s1__results.csv",
         [
             {
                 "year": 2023,
@@ -155,7 +155,7 @@ def test_copy_search_writes_rows_in_order(projects_dir):
     )
 
     result = runner.invoke(
-        app, ["experiment", "copy-search", "--pid", pid, "--file", "s1_results.csv"]
+        app, ["experiment", "copy-search", "--pid", pid, "--file", "s1__results.csv"]
     )
 
     assert result.exit_code == 0, result.exception
@@ -176,12 +176,12 @@ def test_copy_search_backs_up_existing_data_csv(projects_dir):
         "ID;Title;Abstract\nD01;old;old\n", encoding="utf-8"
     )
     _write_search_csv(
-        searches_dir / "s1_results.csv",
+        searches_dir / "s1__results.csv",
         [{"title": "T", "authors": "A", "abstract": "Ab", "doi": "10.1/x"}],
     )
 
     result = runner.invoke(
-        app, ["experiment", "copy-search", "--pid", pid, "--file", "s1_results.csv"]
+        app, ["experiment", "copy-search", "--pid", pid, "--file", "s1__results.csv"]
     )
 
     assert result.exit_code == 0, result.exception
@@ -207,12 +207,12 @@ def test_copy_search_missing_column_raises(projects_dir):
     _, _, searches_dir = _project(projects_dir, pid)
     # Missing 'authors' column.
     _write_search_csv(
-        searches_dir / "s1_results.csv",
+        searches_dir / "s1__results.csv",
         [{"title": "T", "abstract": "Ab", "doi": "10.1/x"}],
     )
 
     result = runner.invoke(
-        app, ["experiment", "copy-search", "--pid", pid, "--file", "s1_results.csv"]
+        app, ["experiment", "copy-search", "--pid", pid, "--file", "s1__results.csv"]
     )
 
     assert result.exit_code != 0

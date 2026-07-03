@@ -66,13 +66,17 @@ def test_search_rename_renames_all_associated_files(searches_dir, mock_no_dotenv
     """All associated files should be renamed when they exist."""
     suffixes = [
         ".yaml",
-        "_results.csv",
-        "_results_raw.json",
-        "_filtered.csv",
-        "_results_download_failed.csv",
+        "__results.csv",
+        "__filtered.csv",
+        "__results_download_failed.csv",
     ]
     for suffix in suffixes:
         (searches_dir / f"old-search{suffix}").write_text("data")
+
+    # The raw JSON responses live in the `jsons/` subdirectory.
+    jsons_dir = searches_dir / "jsons"
+    jsons_dir.mkdir()
+    (jsons_dir / "old-search__results_raw.json").write_text("data")
 
     result = runner.invoke(
         app, ["search", "rename", "--old-id", "old-search", "--new-id", "new-search"]
@@ -81,6 +85,8 @@ def test_search_rename_renames_all_associated_files(searches_dir, mock_no_dotenv
     for suffix in suffixes:
         assert not (searches_dir / f"old-search{suffix}").exists()
         assert (searches_dir / f"new-search{suffix}").exists()
+    assert not (jsons_dir / "old-search__results_raw.json").exists()
+    assert (jsons_dir / "new-search__results_raw.json").exists()
 
 
 def test_search_rename_skips_missing_optional_files(searches_dir, mock_no_dotenv):
