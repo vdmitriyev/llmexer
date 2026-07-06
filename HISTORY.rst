@@ -2,6 +2,11 @@
 History
 =======
 
+0.2.35 (2026-07-06)
+-------------------
+
+* ``papers extract``: report four separate outcome counters instead of two — ``Extracted`` (green), ``Skipped`` (yellow, parsed but no text), ``Existing`` (blue, already extracted), and ``Error`` (red, extraction failed); per-file messages are colored to match
+
 0.2.34 (2026-07-03)
 -------------------
 

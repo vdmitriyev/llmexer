@@ -372,6 +372,8 @@ def extract(
 
     processed = 0
     skipped = 0
+    exists = 0
+    errors = 0
     cnt_pdfs = len(pdfs)
     for index, pdf_path in enumerate(pdfs):
         stem = pdf_path.stem
@@ -383,9 +385,9 @@ def extract(
 
                 if not rewrite and txt_path.exists():
                     cprint(
-                        f"{label} [bold blue]skipped[/bold blue] '{pdf_path.name}' (already extracted)."
+                        f"{label} [bold blue]existing[/bold blue] '{pdf_path.name}' (already extracted)."
                     )
-                    skipped += 1
+                    exists += 1
                     continue
 
                 try:
@@ -393,15 +395,15 @@ def extract(
                     text = "\n".join(page.extract_text() or "" for page in reader.pages)
                 except Exception as exc:
                     cprint(
-                        f"{label} [bold yellow]skipped[/bold yellow] '{pdf_path.name}'. Extraction failed ({exc})."
+                        f"{label} [bold red]error[/bold red] '{pdf_path.name}'. Extraction failed ({exc})."
                     )
                     logger.debug("Extraction failed for '%s': %s", pdf_path, exc)
-                    skipped += 1
+                    errors += 1
                     continue
 
                 if not text.strip():
                     cprint(
-                        f"{label} [bold yellow]warning:[/bold yellow] '{pdf_path.name}' could not be parsed - no text content found. No .txt file written."
+                        f"{label} [bold yellow]skipped[/bold yellow] '{pdf_path.name}' could not be parsed - no text content found. No .txt file written."
                     )
                     logger.debug(
                         "Empty content after extraction for '%s', skipping write.",
@@ -419,9 +421,9 @@ def extract(
 
                 if not rewrite and md_path.exists():
                     cprint(
-                        f"{label} [bold blue]skipped[/bold blue] '{pdf_path.name}' (already extracted)."
+                        f"{label} [bold blue]existing[/bold blue] '{pdf_path.name}' (already extracted)."
                     )
-                    skipped += 1
+                    exists += 1
                     continue
 
                 try:
@@ -430,17 +432,17 @@ def extract(
                     )
                 except PaperExtractException as exc:
                     cprint(
-                        f"{label} [bold yellow]skipped[/bold yellow] '{pdf_path.name}'. Extraction failed ({exc})."
+                        f"{label} [bold red]error[/bold red] '{pdf_path.name}'. Extraction failed ({exc})."
                     )
                     logger.debug(
                         "Docling extraction failed for '%s': %s", pdf_path, exc
                     )
-                    skipped += 1
+                    errors += 1
                     continue
 
                 if not md_content.strip():
                     cprint(
-                        f"{label} [bold yellow]warning:[/bold yellow] '{pdf_path.name}' could not be parsed - no text content found. No .md file written."
+                        f"{label} [bold yellow]skipped[/bold yellow] '{pdf_path.name}' could not be parsed - no text content found. No .md file written."
                     )
                     logger.debug(
                         "Empty content after docling extraction for '%s', skipping write.",
@@ -457,5 +459,8 @@ def extract(
         processed += 1
 
     cprint(
-        f"Extracted: [bold green]{processed}[/bold green]. Skipped: [bold red]{skipped}[/bold red]"
+        f"Extracted: [bold green]{processed}[/bold green]. "
+        f"Skipped: [bold yellow]{skipped}[/bold yellow]. "
+        f"Existing: [bold blue]{exists}[/bold blue]. "
+        f"Error: [bold red]{errors}[/bold red]"
     )

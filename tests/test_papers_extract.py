@@ -131,7 +131,7 @@ def test_extract_dry_run(projects_dir, mock_no_dotenv, experiment):
 
 
 def test_extract_pdf_failure(projects_dir, mock_no_dotenv, experiment):
-    """When pypdf raises an exception, the PDF is skipped with a warning and exit code is 0."""
+    """When pypdf raises an exception, the PDF is reported as an error and exit code is 0."""
     pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
@@ -145,7 +145,7 @@ def test_extract_pdf_failure(projects_dir, mock_no_dotenv, experiment):
         result = runner.invoke(app, ["papers", "extract", "--pid", pid])
 
     assert result.exit_code == 0
-    assert "Skipped" in result.output
+    assert "error" in result.output
     assert not (papers_path / "bad.txt").exists()
 
 
@@ -167,7 +167,7 @@ def test_extract_empty_content(projects_dir, mock_no_dotenv, experiment):
         result = runner.invoke(app, ["papers", "extract", "--pid", pid])
 
     assert result.exit_code == 0
-    assert "warning:" in result.output
+    assert "skipped" in result.output
     assert "could not be parsed" in result.output
     assert not (papers_path / "empty.txt").exists()
 
@@ -196,7 +196,7 @@ def test_extract_skips_existing_txt(projects_dir, mock_no_dotenv, experiment):
         result = runner.invoke(app, ["papers", "extract", "--pid", pid])
 
     assert result.exit_code == 0
-    assert "skipped" in result.output
+    assert "existing" in result.output
     assert txt_file.read_text(encoding="utf-8") == "original content"
 
 
@@ -290,7 +290,7 @@ def test_extract_docling_dry_run(projects_dir, mock_no_dotenv, experiment, monke
 def test_extract_docling_server_error(
     projects_dir, mock_no_dotenv, experiment, monkeypatch
 ):
-    """When docling server returns HTTP 500, the paper is skipped with a warning."""
+    """When docling server returns HTTP 500, the paper is reported as an error."""
     pid, exp_path = experiment
     papers_path = exp_path / "papers"
     os.makedirs(papers_path)
@@ -310,7 +310,7 @@ def test_extract_docling_server_error(
         )
 
     assert result.exit_code == 0
-    assert "skipped" in result.output
+    assert "error" in result.output
     assert not (papers_path / "paper.md").exists()
 
 
@@ -394,7 +394,7 @@ def test_extract_docling_skips_existing_md(
         )
 
     assert result.exit_code == 0
-    assert "skipped" in result.output
+    assert "existing" in result.output
     assert md_file.read_text(encoding="utf-8") == "# Original"
 
 
