@@ -2,6 +2,11 @@
 History
 =======
 
+0.2.37 (2026-07-06)
+-------------------
+
+* ``papers extract``: add ``--skip-if-md`` flag (pypdf only) — skips PDFs that already have a ``.md`` (markdown) extraction, so TXT is produced only for PDFs without markdown; skipped PDFs are reported under the ``Existing`` count
+
 0.2.36 (2026-07-06)
 -------------------
 

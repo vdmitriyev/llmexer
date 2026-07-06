@@ -332,6 +332,12 @@ def extract(
         "--rewrite",
         help="Force rewrite of existing extracted files. By default, already-extracted files are skipped.",
     ),
+    skip_if_md: bool = typer.Option(
+        False,
+        "--skip-if-md",
+        help="pypdf only: skip PDFs that already have a .md (markdown) extraction, so TXT is "
+        "produced only for PDFs without markdown. Ignored for the docling processor.",
+    ),
 ) -> None:
     """Extracts text from all PDFs in the papers subdirectory and saves as .txt (pypdf) or .md (docling) files"""
 
@@ -380,8 +386,17 @@ def extract(
         label = f"[{index+1}/{cnt_pdfs}]"
 
         with console.status(f"{label} Processing '{pdf_path.name}'..."):
+
             if processor == PDFProcessor.pypdf:
                 txt_path = pdf_path.parent / f"{stem}.txt"
+                md_path = pdf_path.parent / f"{stem}.md"
+
+                if skip_if_md and md_path.exists():
+                    cprint(
+                        f"{label} [bold blue]existing[/bold blue] '{pdf_path.name}' (markdown already extracted)."
+                    )
+                    exists += 1
+                    continue
 
                 if not rewrite and txt_path.exists():
                     cprint(

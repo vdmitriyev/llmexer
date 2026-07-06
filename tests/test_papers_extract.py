@@ -223,6 +223,48 @@ def test_extract_rewrite_overwrites_txt(projects_dir, mock_no_dotenv, experiment
     assert txt_file.read_text(encoding="utf-8") == "new content"
 
 
+def test_extract_skip_if_md_skips_pdf_with_md(projects_dir, mock_no_dotenv, experiment):
+    """With --skip-if-md, a PDF that already has a .md file is skipped and no .txt is written."""
+    pid, exp_path = experiment
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+
+    pdf_file = papers_path / "paper.pdf"
+    pdf_file.write_bytes(_make_pdf("content"))
+    (papers_path / "paper.md").write_text("# already extracted", encoding="utf-8")
+
+    result = runner.invoke(app, ["papers", "extract", "--pid", pid, "--skip-if-md"])
+
+    assert result.exit_code == 0
+    assert "existing" in result.output
+    assert "markdown already extracted" in result.output
+    assert not (papers_path / "paper.txt").exists()
+
+
+def test_extract_no_skip_if_md_extracts_when_flag_absent(
+    projects_dir, mock_no_dotenv, experiment
+):
+    """Without --skip-if-md, a PDF that has a .md file is still extracted to .txt (default behavior)."""
+    pid, exp_path = experiment
+    papers_path = exp_path / "papers"
+    os.makedirs(papers_path)
+
+    pdf_file = papers_path / "paper.pdf"
+    pdf_file.write_bytes(_make_pdf("content"))
+    (papers_path / "paper.md").write_text("# already extracted", encoding="utf-8")
+
+    with patch("llmexer.commands.papers.pypdf.PdfReader") as mock_reader:
+        mock_page = Mock()
+        mock_page.extract_text.return_value = "plain text content"
+        mock_reader.return_value.pages = [mock_page]
+
+        result = runner.invoke(app, ["papers", "extract", "--pid", pid])
+
+    assert result.exit_code == 0
+    assert "extracted:" in result.output
+    assert (papers_path / "paper.txt").exists()
+
+
 # ---------------------------------------------------------------------------
 # Docling processor tests
 # ---------------------------------------------------------------------------
