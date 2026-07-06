@@ -433,7 +433,7 @@ def test_download_search_file_triggers_sync(projects_dir, mock_no_dotenv, experi
 def test_download_search_file_sync_does_not_add_new_rows(
     projects_dir, mock_no_dotenv, experiment
 ):
-    """The post-download sync runs in existing-only mode: unrelated PDFs are not appended."""
+    """The post-download sync does not append unlisted PDFs: unrelated PDFs are not appended."""
     import pandas as pd
 
     from llmexer.base.search import _PAPER_CSV_COLUMNS

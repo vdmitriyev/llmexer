@@ -2,6 +2,12 @@
 History
 =======
 
+0.2.36 (2026-07-06)
+-------------------
+
+* ``search sync``: rename the ``--existing-only`` flag to ``--add-local-extra-pdfs`` and flip its default — sync now only updates rows already listed and does **not** append rows for unrelated PDFs in ``papers/`` unless ``--add-local-extra-pdfs`` is passed
+* ``search sync``: ``--file`` is now optional. When omitted, every search in the project is synced (``--add-local-extra-pdfs`` is not applied in that mode, so no new rows are added)
+
 0.2.35 (2026-07-06)
 -------------------
 

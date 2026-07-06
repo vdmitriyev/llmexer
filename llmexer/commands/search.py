@@ -783,28 +783,44 @@ def sync(
     file: str = typer.Option(
         None,
         "--file",
-        help="YAML search config filename or bare search ID.",
+        help="YAML search config filename or bare search ID. If omitted, every search in the project is synced.",
     ),
     pid: str = typer.Option(
         None,
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
-    existing_only: bool = typer.Option(
+    add_local_extra_pdfs: bool = typer.Option(
         False,
-        "--existing-only",
-        help="Only check files listed in existing rows; do not add new rows for PDFs found in papers/.",
+        "--add-local-extra-pdfs",
+        help="Also append new rows for PDFs found in papers/ that are not already listed. "
+        "By default only files listed in existing rows are checked. Only applies with --file; "
+        "when syncing all searches it is not applied.",
     ),
 ) -> None:
-    """Sync CSV result files against the papers/ folder of the project"""
+    """Sync CSV result files against the papers/ folder of the project.
 
-    if file is None:
-        raise UnexpectedCLIParamsException("--file is required.")
+    With ``--file`` a single search is synced; without it, every search in the project is
+    synced (in that case ``--add-local-extra-pdfs`` is not applied, so no new rows are added).
+    """
 
     pid = get_proper_pid(pid)
     experiment_path = get_project_directory_path(pid)
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
 
-    search_id, query, year, only_open_access = read_search_params(file, experiment_path)
-    print_search_header(pid, search_id, query, year, only_open_access)
+    if file is not None:
+        search_ids = [read_search_params(file, experiment_path)[0]]
+        add_new_rows = add_local_extra_pdfs
+    else:
+        search_ids = [p.stem for p in sorted(Path(searches_path).glob("*.yaml"))]
+        if not search_ids:
+            cprint("No searches found.")
+            return
+        add_new_rows = False  # bulk sync never appends local extra PDFs
 
-    _sync_search(search_id, experiment_path, add_new_rows=not existing_only)
+    for search_id in search_ids:
+        _, query, year, only_open_access = read_search_params(
+            f"{search_id}.yaml", experiment_path
+        )
+        print_search_header(pid, search_id, query, year, only_open_access)
+        _sync_search(search_id, experiment_path, add_new_rows=add_new_rows)
