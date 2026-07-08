@@ -37,7 +37,10 @@ _SAMPLE_PAPER = {
 @pytest.fixture()
 def mock_detect_language():
     """Patch _detect_language to avoid shadowed builtin filter() inside the command module."""
-    with patch("llmexer.base.search.detect_publication_lang", return_value="en"):
+    with patch(
+        "llmexer.base.search_semantic_scholar.detect_publication_lang",
+        return_value="en",
+    ):
         yield
 
 
@@ -46,7 +49,10 @@ def mock_s2_session(mock_detect_language):
     """Patch requests.Session to return a single-page response with _SAMPLE_PAPER."""
     mock_session = Mock()
     mock_session.get.return_value = _make_mock_s2_response([_SAMPLE_PAPER])
-    with patch("llmexer.base.search.make_http_session", return_value=mock_session):
+    with patch(
+        "llmexer.base.search_semantic_scholar.make_http_session",
+        return_value=mock_session,
+    ):
         yield mock_session
 
 
@@ -188,7 +194,7 @@ def test_search_run_creates_output_files(
     df = pd.read_csv(csv_files[0], sep=";")
     assert len(df) == 1
     assert df.iloc[0]["year"] == 2023
-    assert df.iloc[0]["sem_scholar_paper_id"] == "abc123"
+    assert df.iloc[0]["search_engine_internal_id"] == "abc123"
     assert df.iloc[0]["doi"] == "10.1234/test"
     assert df.iloc[0]["authors"] == "Alice; Bob"
     assert "language" in df.columns
@@ -257,9 +263,13 @@ def test_search_run_language_unknown_on_empty(
     }
     mock_session = Mock()
     mock_session.get.return_value = _make_mock_s2_response([empty_paper])
-    with patch("llmexer.base.search.make_http_session", return_value=mock_session):
+    with patch(
+        "llmexer.base.search_semantic_scholar.make_http_session",
+        return_value=mock_session,
+    ):
         with patch(
-            "llmexer.base.search.detect_publication_lang", return_value="unknown"
+            "llmexer.base.search_semantic_scholar.detect_publication_lang",
+            return_value="unknown",
         ):
             result = runner.invoke(app, ["search", "run", "--query", "test"])
 

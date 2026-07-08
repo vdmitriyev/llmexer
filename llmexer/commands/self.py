@@ -18,6 +18,7 @@ LLMEXER_ENV_VARS = [
     ("DOCLING_URL", None, False),
     ("DOCLING_USER", None, False),
     ("DOCLING_PASSWORD", None, True),
+    ("OPENALEX_API_KEY", None, True),
 ]
 
 

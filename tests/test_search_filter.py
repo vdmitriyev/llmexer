@@ -52,7 +52,7 @@ def experiment_with_search(projects_dir, monkeypatch):
     df = pd.DataFrame(
         [
             {
-                "sem_scholar_paper_id": "p1",
+                "search_engine_internal_id": "p1",
                 "year": 2023,
                 "title": "English Paper",
                 "authors": "Alice",
@@ -65,7 +65,7 @@ def experiment_with_search(projects_dir, monkeypatch):
                 "pdf_downloaded": True,
             },
             {
-                "sem_scholar_paper_id": "p2",
+                "search_engine_internal_id": "p2",
                 "year": 2022,
                 "title": "German Paper",
                 "authors": "Bob",
@@ -78,7 +78,7 @@ def experiment_with_search(projects_dir, monkeypatch):
                 "pdf_downloaded": False,
             },
             {
-                "sem_scholar_paper_id": "p3",
+                "search_engine_internal_id": "p3",
                 "year": 2021,
                 "title": "Another English Paper",
                 "authors": "Carol",
@@ -152,7 +152,7 @@ def test_filter_excludes_not_downloaded(
     assert result.exit_code == 0, result.output
     df = pd.read_csv(searches_path / f"{search_id}__filtered.csv", sep=";")
     assert len(df) == 1
-    assert df.iloc[0]["sem_scholar_paper_id"] == "p1"
+    assert df.iloc[0]["search_engine_internal_id"] == "p1"
 
 
 def test_filter_chains_on_existing_filtered(
@@ -169,7 +169,7 @@ def test_filter_chains_on_existing_filtered(
     assert result.exit_code == 0, result.output
     df = pd.read_csv(searches_path / f"{search_id}__filtered.csv", sep=";")
     assert len(df) == 1
-    assert df.iloc[0]["sem_scholar_paper_id"] == "p1"
+    assert df.iloc[0]["search_engine_internal_id"] == "p1"
 
 
 def test_filter_logs_applied(projects_dir, mock_no_dotenv, experiment_with_search):

@@ -1,16 +1,17 @@
-"""Base methods and feature to be used in search CLI command."""
+"""Base methods and feature to be used in search CLI command.
 
-import json
+Engine-specific API callers live in sibling modules (``search_semantic_scholar`` and
+``search_openalex``); this module holds the shared plumbing: the CSV schema, dedup/merge,
+sync, YAML I/O, language detection and the helpers used to combine results across engines.
+"""
+
 import os
 import uuid
 from pathlib import Path
 
 import pandas as pd
 import yaml
-from requests.adapters import HTTPAdapter, Retry
 
-from llmexer.base.papers import get_first_author_last_name, make_structured_filename
-from llmexer.common import ensure_directory_exists, make_http_session
 from llmexer.exceptions import LLMExerException
 from llmexer.logger import get_logger
 
@@ -20,16 +21,11 @@ logger = get_logger()
 DEFAULT_SEARCH_YEAR_PARAM = "2020-2025"
 DEFAULT_OPEN_ACCESS_PARAM = False
 
-DEFAULT_VALUE_ENTRY_SOURCE = "Semantic Scholar"
+# Per-request HTTP timeout for search-engine calls (seconds); mirrors base/papers.py.
+SEARCH_HTTP_TIMEOUT = 30
 
-# Semantic Scholar API constants
-_SEM_SCHOLAR_BULK_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
-_SEM_SCHOLAR_FIELDS = (
-    "paperId,title,authors,abstract,isOpenAccess,externalIds,year,"
-    "referenceCount,citationCount,fieldsOfStudy,citationStyles,publicationTypes"
-)
 _PAPER_CSV_COLUMNS = [
-    "sem_scholar_paper_id",
+    "search_engine_internal_id",
     "year",
     "title",
     "authors",
@@ -322,112 +318,35 @@ def save_search_query(
     return search_id, yaml_filename
 
 
-def run_semantic_scholar_search(
-    query: str,
-    year: str,
-    only_open_access: bool,
-    batch_size: int,
-    limit_size: int,
-    json_path: str,
-    csv_path: str,
-) -> list[dict]:
-    """Call the Semantic Scholar bulk search API with pagination.
+def write_records_to_csv(records: list[dict], csv_path: str) -> None:
+    """Write flattened paper records to ``csv_path`` as a semicolon-separated UTF-8 CSV.
 
-    Returns:
-        records: a list of flattened paper dicts with PAPER_CSV_COLUMNS fields.
+    Rows are ordered by ``year`` descending then ``title`` ascending, matching the ordering
+    produced by the individual search engines.
     """
-    session = make_http_session()
-    retries = Retry(
-        total=5,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-    )
-    session.mount("https://", HTTPAdapter(max_retries=retries))
-
-    params: dict = {
-        "query": query,
-        "fields": _SEM_SCHOLAR_FIELDS,
-        "limit": min(batch_size, 1000),
-    }
-
-    if year:
-        params["year"] = year
-    if only_open_access:
-        params["openAccessPdf"] = ""
-
-    raw_json_results: list[dict] = []
-    records: list[dict] = []
-
-    while True:
-        response = session.get(_SEM_SCHOLAR_BULK_URL, params=params)
-        response.raise_for_status()
-        data = response.json()
-        raw_json_results.append(data)
-
-        papers = data.get("data", [])
-        for paper in papers:
-            if limit_size is not None and len(records) >= limit_size:
-                break
-            ext_ids = paper.get("externalIds") or {}
-            pdf_filename = make_structured_filename(
-                paper.get("year"),
-                get_first_author_last_name(paper),
-                paper.get("title"),
-                ext_ids.get("DOI"),
-            )
-            records.append(
-                {
-                    "sem_scholar_paper_id": paper.get("paperId"),
-                    "year": paper.get("year"),
-                    "title": paper.get("title"),
-                    "authors": "; ".join(
-                        a.get("name", "") for a in paper.get("authors", [])
-                    ),
-                    "abstract": paper.get("abstract"),
-                    "isOpenAccess": paper.get("isOpenAccess"),
-                    "doi": ext_ids.get("DOI"),
-                    "language": detect_publication_lang(
-                        paper.get("title"), paper.get("abstract")
-                    ),
-                    "referenceCount": paper.get("referenceCount"),
-                    "citationCount": paper.get("citationCount"),
-                    "entry_source": DEFAULT_VALUE_ENTRY_SOURCE,
-                    "pdf_filename": pdf_filename,
-                    "txt_filename": "",
-                    "markdown_filename": "",
-                    "pdf_downloaded": False,
-                }
-            )
-
-        logger.info("Retrieved %d paper(s) so far...", len(records))
-        logger.debug(
-            "Page retrieved: %d papers in page, %d total", len(papers), len(records)
-        )
-
-        token = data.get("token")
-        if not token:
-            break
-        params["token"] = token
-
-        with open(json_path, "w", encoding="utf-8") as fh:
-            json.dump(raw_json_results, fh, ensure_ascii=False, indent=4)
-
-        df = pd.DataFrame(records, columns=_PAPER_CSV_COLUMNS)
-        df.to_csv(csv_path, index=False, encoding="utf-8", sep=";")
-
-    with open(json_path, "w", encoding="utf-8") as fh:
-        json.dump(raw_json_results, fh, ensure_ascii=False, indent=4)
-    logger.debug("Wrote raw response to '%s'", json_path)
-
     df = pd.DataFrame(records, columns=_PAPER_CSV_COLUMNS)
     df.sort_values(by=["year", "title"], ascending=[False, True]).to_csv(
         csv_path, index=False, encoding="utf-8", sep=";"
     )
     logger.debug("Wrote CSV to '%s'", csv_path)
 
-    logger.info("Total retrieved: %d paper(s)", len(records))
 
-    return records
+def combine_new_records(existing: list[dict], new: list[dict]) -> list[dict]:
+    """Append only the records from ``new`` not already present in ``existing``.
+
+    Presence is determined by :func:`_dedup_key` (DOI when available, otherwise a normalized
+    title). Records without any key (no DOI and no title) are always kept.
+    """
+    seen = {key for key in (_dedup_key(row) for row in existing) if key is not None}
+    combined = list(existing)
+    for row in new:
+        key = _dedup_key(row)
+        if key is not None and key in seen:
+            continue
+        if key is not None:
+            seen.add(key)
+        combined.append(row)
+    return combined
 
 
 def read_search_params(

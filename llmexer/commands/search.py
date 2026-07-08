@@ -13,14 +13,17 @@ from llmexer.base.search import (
     _PAPER_CSV_COLUMNS,
     DEFAULT_OPEN_ACCESS_PARAM,
     DEFAULT_SEARCH_YEAR_PARAM,
+    combine_new_records,
     gather_search_csvs,
     generate_search_id,
     merge_search_csvs,
     read_search_params,
-    run_semantic_scholar_search,
     save_search_query,
     synf_df_runs_of_search_and_papers,
+    write_records_to_csv,
 )
+from llmexer.base.search_openalex import run_openalex_search
+from llmexer.base.search_semantic_scholar import run_semantic_scholar_search
 from llmexer.common import (
     ensure_directory_exists,
     get_project_directory_path,
@@ -418,8 +421,37 @@ def run(
     print_search_header(pid, search_id, query, year, only_open_access)
 
     records = run_semantic_scholar_search(
-        query, year, only_open_access, batch, limit, json_path, csv_path
+        query, year, only_open_access, batch, limit, json_path, csv_path, cprint
     )
+    cprint(f"[bold green]Semantic Scholar:[/bold green] {len(records)} paper(s)")
+
+    openalex_key = os.getenv("OPENALEX_API_KEY")
+    if openalex_key:
+        oa_json_path = os.path.join(
+            jsons_path, f"{search_id}__openalex_results_raw.json"
+        )
+        oa_records = run_openalex_search(
+            query,
+            year,
+            only_open_access,
+            batch,
+            limit,
+            oa_json_path,
+            openalex_key,
+            cprint,
+        )
+        before = len(records)
+        records = combine_new_records(records, oa_records)
+        write_records_to_csv(records, csv_path)
+        cprint(
+            f"[bold green]OpenAlex:[/bold green] {len(oa_records)} found, "
+            f"{len(records) - before} new added"
+        )
+        cprint(
+            f"File with OpenAlex raw responses ([magenta]JSON[/magenta]):\n  {oa_json_path}"
+        )
+    else:
+        cprint("[yellow]OpenAlex skipped[/yellow] (OPENALEX_API_KEY not set)")
 
     cprint(f"[bold green]Total retrieved:[/bold green] {len(records)} paper(s)")
     cprint(f"File with raw responses ([magenta]JSON[/magenta]):\n  {json_path}")

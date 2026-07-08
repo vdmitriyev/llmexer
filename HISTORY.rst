@@ -2,6 +2,12 @@
 History
 =======
 
+0.2.38 (2026-07-09)
+-------------------
+
+* Add support of the OpenAlex as search engine.
+* Impove CLI outputs during seach runs
+
 0.2.37 (2026-07-06)
 -------------------
 
