@@ -20,6 +20,10 @@ LOG_FILE_PATH = os.path.join(BASEDIR, LOG_FILE_NAME)
 TEMP_PATH = os.path.join(BASEDIR, TEMP_DIR)
 PROJECTS_PATH = os.path.join(BASEDIR, PROJECTS_DIR)
 
+# Hard ceiling on the number of works processed from a single OpenAlex query.
+# Overridable at runtime via the MAX_OPEN_ALEX_RESPONSES environment variable.
+DEFAULT_MAX_OPENALEX_RESPONSES = 5000
+
 DEFAULT_DOCLING_URL = "http://localhost:5001/"
 # DEFAULT_DOCLING_USER = "docling"
 # DEFAULT_DOCLING_PASSWORD = "docling"

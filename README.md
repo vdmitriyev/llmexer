@@ -60,6 +60,8 @@ This tool requires access to local or remote running LLMs. It uses a `.env` file
     OPENALEX_API_KEY=...
     # Optional: used as the OpenAlex polite-pool mailto (also used for DOI downloads via Unpaywall)
     UNPAYWALL_EMAIL=you@example.com
+    # Optional: cap on OpenAlex results processed per query (default 5000)
+    MAX_OPEN_ALEX_RESPONSES=5000
     ```
 6. If you would like to change the envs based on the project run (e.g., just test a LLM provider for a particular project), you could also pass a custom file as `.env` to the CLI:
     ```

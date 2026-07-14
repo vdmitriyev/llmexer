@@ -15,11 +15,34 @@ from requests.adapters import HTTPAdapter, Retry
 from llmexer.base.papers import make_structured_filename
 from llmexer.base.search import SEARCH_HTTP_TIMEOUT, detect_publication_lang
 from llmexer.common import make_http_session
+from llmexer.constants import DEFAULT_MAX_OPENALEX_RESPONSES
 from llmexer.logger import get_logger
 
 logger = get_logger()
 
 ENTRY_SOURCE_OPENALEX = "OpenAlex"
+
+
+def _max_openalex_responses() -> int:
+    """Resolve the OpenAlex result ceiling from ``MAX_OPEN_ALEX_RESPONSES`` (else the default).
+
+    Read at call time (not import time) so ``.env`` values loaded by the CLI are honored.
+    Falls back to the default on an unset, non-positive, or non-integer value.
+    """
+    raw = os.getenv("MAX_OPEN_ALEX_RESPONSES")
+    if raw:
+        try:
+            value = int(raw)
+            if value > 0:
+                return value
+        except ValueError:
+            logger.warning(
+                "Invalid MAX_OPEN_ALEX_RESPONSES=%r; using default %d",
+                raw,
+                DEFAULT_MAX_OPENALEX_RESPONSES,
+            )
+    return DEFAULT_MAX_OPENALEX_RESPONSES
+
 
 # OpenAlex API constants
 _OPENALEX_WORKS_URL = "https://api.openalex.org/works"
@@ -164,9 +187,16 @@ def run_openalex_search(
     if on_progress is not None:
         on_progress(f"OpenAlex query: {oa_query}")
 
+    # Hard ceiling on processed works: the configurable cap, tightened by an explicit --limit.
+    max_responses = _max_openalex_responses()
+    effective_limit = (
+        max_responses if limit_size is None else min(limit_size, max_responses)
+    )
+
     raw_json_results: list[dict] = []
     records: list[dict] = []
     page = 0
+    capped_notified = False
     while True:
         response = session.get(
             _OPENALEX_WORKS_URL, params=params, timeout=SEARCH_HTTP_TIMEOUT
@@ -179,7 +209,7 @@ def run_openalex_search(
 
         works = data.get("results", [])
         for work in works:
-            if limit_size is not None and len(records) >= limit_size:
+            if len(records) >= effective_limit:
                 break
             title = work.get("display_name")
             abstract = _reconstruct_abstract(work.get("abstract_inverted_index"))
@@ -230,7 +260,24 @@ def run_openalex_search(
             else:
                 on_progress(f"OpenAlex: page {page} — {len(records)} fetched")
 
-        if limit_size is not None and len(records) >= limit_size:
+        # Warn once when the configurable cap (not an explicit --limit) truncates the output.
+        if (
+            total is not None
+            and effective_limit == max_responses
+            and total > max_responses
+            and not capped_notified
+        ):
+            capped_notified = True
+            message = (
+                f"The max output processed is capped by configs to {max_responses}. "
+                "Change the search criteria or set a bigger upper limit via "
+                "environment variable MAX_OPEN_ALEX_RESPONSES."
+            )
+            logger.warning(message)
+            if on_progress is not None:
+                on_progress(message)
+
+        if len(records) >= effective_limit:
             break
         next_cursor = (data.get("meta") or {}).get("next_cursor")
         if not next_cursor or not works:

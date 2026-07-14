@@ -2,6 +2,11 @@
 History
 =======
 
+0.2.40 (2026-07-14)
+-------------------
+
+* ``search run``: cap the number of OpenAlex results processed per query (default ``5000``, overridable via the ``MAX_OPEN_ALEX_RESPONSES`` environment variable). When a query exceeds the cap, fetching stops at the cap and a message is printed explaining how to raise it.
+
 0.2.39 (2026-07-14)
 -------------------
 
