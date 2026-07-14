@@ -2,6 +2,11 @@
 History
 =======
 
+0.2.39 (2026-07-14)
+-------------------
+
+* Tests: mock the OpenAlex API in ``test_search_pid`` and ``test_search_run_file`` so the search test suite runs offline and no longer hangs when ``OPENALEX_API_KEY`` is set.
+
 0.2.38 (2026-07-09)
 -------------------
 

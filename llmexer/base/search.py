@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from llmexer.common import ensure_directory_exists
 from llmexer.exceptions import LLMExerException
 from llmexer.logger import get_logger
 

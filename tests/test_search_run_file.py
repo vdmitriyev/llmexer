@@ -45,7 +45,29 @@ def mock_detect_language():
 
 
 @pytest.fixture()
-def mock_s2_session(mock_detect_language):
+def mock_openalex_session():
+    """Mock the OpenAlex HTTP session so tests never hit the real API when the key is set.
+
+    Returns a single empty page (no results, no next cursor) so run_openalex_search
+    finishes in one iteration.
+    """
+    mock_resp = Mock()
+    mock_resp.raise_for_status = Mock()
+    mock_resp.json.return_value = {
+        "results": [],
+        "meta": {"count": 0, "next_cursor": None},
+    }
+    mock_session = Mock()
+    mock_session.get.return_value = mock_resp
+    with patch(
+        "llmexer.base.search_openalex.make_http_session",
+        return_value=mock_session,
+    ):
+        yield mock_session
+
+
+@pytest.fixture()
+def mock_s2_session(mock_detect_language, mock_openalex_session):
     """Patch requests.Session to return a single-page response with _SAMPLE_PAPER."""
     mock_session = Mock()
     mock_session.get.return_value = _make_mock_s2_response([_SAMPLE_PAPER])
@@ -246,7 +268,7 @@ def test_search_run_rewrite_overwrites(
 
 
 def test_search_run_language_unknown_on_empty(
-    projects_dir, mock_no_dotenv, monkeypatch
+    projects_dir, mock_no_dotenv, mock_openalex_session, monkeypatch
 ):
     """Paper with no title and no abstract gets language='unknown'."""
     os.makedirs(projects_dir / "test-exp")

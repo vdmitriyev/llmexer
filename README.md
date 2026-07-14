@@ -55,7 +55,13 @@ This tool requires access to local or remote running LLMs. It uses a `.env` file
     PROVIDER_OPENAI_KEY=sk-...
     ```
      The pattern is `PROVIDER_<PROVIDER_UPPER>_URL` and `PROVIDER_<PROVIDER_UPPER>_KEY` where `<PROVIDER_UPPER>` is the provider name in uppercase (e.g. `OLLAMA`, `VLLM`, `OPENAI`, `GEMINI`).
-5. If you would like to change the envs based on the project run (e.g., just test a LLM provider for a particular project), you could also pass a custom file as `.env` to the CLI:
+5.  Enable the OpenAlex search engine (optional, used by `search run` as a second source after Semantic Scholar; skipped if unset):
+    ```env
+    OPENALEX_API_KEY=...
+    # Optional: used as the OpenAlex polite-pool mailto (also used for DOI downloads via Unpaywall)
+    UNPAYWALL_EMAIL=you@example.com
+    ```
+6. If you would like to change the envs based on the project run (e.g., just test a LLM provider for a particular project), you could also pass a custom file as `.env` to the CLI:
     ```
     llmexer --env-file custom.env
     ```
@@ -306,7 +312,7 @@ The `papers` category provides commands for managing PDF papers within a project
 
 ## 🔍 CLI category: **search**
 
-The `search` category provides commands for managing and running literature searches using the Semantic Scholar bulk API:
+The `search` category provides commands for managing and running literature searches. `search run` queries the Semantic Scholar bulk API and, when `OPENALEX_API_KEY` is set, additionally queries the OpenAlex Works API as a second engine — keeping only publications not already found by Semantic Scholar (matched by DOI, falling back to title). OpenAlex is skipped if the key is unset. OpenAlex rows are marked `entry_source="OpenAlex"`.
 
 | Command   | Description | Command Example |
 |-----------|-------------|-----------------|
@@ -321,6 +327,8 @@ The `search` category provides commands for managing and running literature sear
 | `sync` | Reconcile `<ID>__results.csv` (and `<ID>__filtered.csv` if present) against the project's `papers/` folder. Updates `pdf_downloaded`, `txt_filename`, and `markdown_filename` for existing rows. By default only files listed in existing rows are updated; pass `--add-local-extra-pdfs` to also append new rows for PDFs in `papers/` not yet listed (marked `entry_source="manually added"`). `--file` is optional: with it a single search is synced, without it every search in the project is synced (in that case `--add-local-extra-pdfs` is not applied). Respects `--dry-run`. | `llmexer search sync --file 20260401-abc123.yaml` |
 
 Semantic Scholar API Documentation: [Paper bulk search](https://api.semanticscholar.org/api-docs/#tag/Paper-Data/operation/get_graph_paper_bulk_search) -> this can be used to formulate more sophisticated query string
+
+OpenAlex API Documentation: [Works](https://docs.openalex.org/api-entities/works) -> queried as a second engine when `OPENALEX_API_KEY` is set
 
 ## 🔎 CLI category: **self**
 

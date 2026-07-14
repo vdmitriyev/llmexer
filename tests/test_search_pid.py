@@ -22,11 +22,37 @@ def _make_mock_s2_response() -> Mock:
     return mock_resp
 
 
+def _make_mock_openalex_response() -> Mock:
+    """A single empty OpenAlex page: no results and no next cursor -> one call, then stop."""
+    mock_resp = Mock()
+    mock_resp.raise_for_status = Mock()
+    mock_resp.json.return_value = {
+        "results": [],
+        "meta": {"count": 0, "next_cursor": None},
+    }
+    return mock_resp
+
+
 @pytest.fixture()
-def mock_s2_session():
+def mock_openalex_session():
+    """Mock the OpenAlex HTTP session so tests never hit the real API when the key is set."""
+    mock_session = Mock()
+    mock_session.get.return_value = _make_mock_openalex_response()
+    with patch(
+        "llmexer.base.search_openalex.make_http_session",
+        return_value=mock_session,
+    ):
+        yield mock_session
+
+
+@pytest.fixture()
+def mock_s2_session(mock_openalex_session):
     mock_session = Mock()
     mock_session.get.return_value = _make_mock_s2_response()
-    with patch("llmexer.base.search.make_http_session", return_value=mock_session):
+    with patch(
+        "llmexer.base.search_semantic_scholar.make_http_session",
+        return_value=mock_session,
+    ):
         yield mock_session
 
 
