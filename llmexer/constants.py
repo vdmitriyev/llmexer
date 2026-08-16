@@ -3,8 +3,9 @@
 import os
 from pathlib import Path
 
-# BASEDIR = os.path.abspath(os.path.dirname(__file__))
-BASEDIR = os.path.join(Path(__file__).resolve().parent.parent)
+DEFAULT_DIR = Path.cwd()
+BASEDIR = Path(os.getenv("LLMEXER_BASEDIR", DEFAULT_DIR))
+
 CLI_NAME = "llmexer"
 LOGGER_NAME = "llmexer"
 LOG_FILE_NAME = "llmexer.log"
@@ -16,7 +17,6 @@ PAPERS_DIR = "papers"
 SEARCHES_LOGS_DIR = "logs"
 
 LOG_FILE_PATH = os.path.join(BASEDIR, LOG_FILE_NAME)
-
 TEMP_PATH = os.path.join(BASEDIR, TEMP_DIR)
 PROJECTS_PATH = os.path.join(BASEDIR, PROJECTS_DIR)
 

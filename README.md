@@ -53,6 +53,10 @@ This tool requires access to local or remote running LLMs. It uses a `.env` file
     ```
     llmexer --env-file custom.env
     ```
+7. By default CLI will work with current directory to save files, but it could be redefined
+    ```
+    LLMEXER_BASEDIR=my-projects
+    ```
 
 ## Documentation
 
