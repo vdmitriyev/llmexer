@@ -105,7 +105,8 @@ tasks:
     cmds:
       - task: clean-build
       - echo "builds source and wheel package"
-      - py -m build
+      # - py -m build
+      - uv build
       - echo "files in dist"
       - ls -lh dist
 
