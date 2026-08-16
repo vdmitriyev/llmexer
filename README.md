@@ -80,7 +80,7 @@ Scaffold a standard `experiment/` subfolder with template CSVs and a prompt file
 llmexer experiment init --pid llm-survey-2026
 ```
 
-<details>
+<details markdown="1">
 
 Initialization of the project creates following files (inside <PROJECT_NAME> folder):
 
@@ -102,7 +102,7 @@ After filling in `experiment/llm-models.csv`, `experiment/data.csv`, `experiment
 llmexer experiment generate --pid llm-survey-2026
 ```
 
-<details>
+<details markdown="1">
 
 This renders every (data row × prompt × LLM models × LLM parameters) combination and writes a self-contained SQLite database `experiment/experiment_<YYYYMMDD>_<NN>.db` (`<NN>` is a zero-padded counter starting at `01`). Each LLM provider gets its own table (e.g. `experiment_ollama`, `experiment_openai`) holding the rendered prompt, model identity, that provider's hyperparameter columns, and the SHA-256 hashes — plus the result columns that `experiment run` fills in later. The `code` field encodes each combination as `DATAID_PROMPTID_MODELNAME_PROFILENAME`. Use `--dry-run` to preview the row count without writing:
 ```bash
@@ -122,7 +122,7 @@ Once `experiment generate` has produced the database, run all combinations:
 llmexer experiment run --pid llm-survey-2026 --file experiment_<SAMPLE>.db
 ```
 
-<details>
+<details markdown="1">
 
 This reads every row from the generated database (`experiment_*.db`, which already contains all param columns) and calls the appropriate LLM. With no `--file` it uses the newest `experiment_*.db`. Results are written **back into the same database in place** — each row's response, status, token usage, and timestamps are updated on its provider table, so the database stays the single source of truth (no separate results file). Re-running skips rows that already finished successfully and updates the rest. Each individual call is also saved as a JSON file under `experiment/responses/`. Both the per-call JSON and the database `response_json` column include the **complete raw backend response** under `raw_response` (all provider fields — e.g. `finish_reason`, per-token `usage`, and ollama extras like `eval_count` / `*_duration`), not just the response text and total token count.
 
