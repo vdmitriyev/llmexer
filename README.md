@@ -4,6 +4,10 @@
 
 > 🪄 The philosophy of the tool is: `everything` is a `file`. Projects, experiments, searches, configs, and further items will be saved as files. The CLI helps you to modify most of the files, but the same files could be modified manually (e.g., adding a new LLM model, modification of search search or paper as PDFs could be manually added, further more, a SQLite database with generated experiments could be inspected and edited etc.).
 
+## ⚠️ Early `beta` warning
+
+The package is still in its early beta stage, so breaking changes may be introduced at short notice.
+
 ## 📦 Installation
 
 * Install using `pip`
