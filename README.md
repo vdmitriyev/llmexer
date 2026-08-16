@@ -81,16 +81,18 @@ llmexer experiment init --pid llm-survey-2026
 ```
 
 <details>
+
 Initialization of the project creates following files (inside <PROJECT_NAME> folder):
 
-- `experiment/llm-models.csv` - list of models to use (name, provider, notes); pre-filled with `gemma4:31b`, `phi4:14b`
-- `experiment/data.csv` - input data rows (ID, Title, Abstract)
-- `experiment/mapping.csv` - maps data IDs to prompt IDs; pre-filled with `D01;prompt01` and `D02;prompt01`
-- `experiment/prompts/prompt01.txt` - a starter Jinja2 prompt template using `{{title}}` and `{{abstract}}`
-- `experiment/llm-params.csv` - LLM hyperparameter profiles;
+* *`experiment/llm-models.csv` - list of models to use (name, provider, notes); pre-filled with `gemma4:31b`, `phi4:14b`
+* `experiment/data.csv` - input data rows (ID, Title, Abstract)
+* `experiment/mapping.csv` - maps data IDs to prompt IDs; pre-filled with `D01;prompt01` and `D02;prompt01`
+* `experiment/prompts/prompt01.txt` - a starter Jinja2 prompt template using `{{title}}` and `{{abstract}}`
+* `experiment/llm-params.csv` - LLM hyperparameter profiles;
     - identity columns: `provider`, `model_name`, `profile_name`;
     - universal columns: `temperature`, `top_p`, `max_tokens`;
     - provider-grouped columns: `ollama_context_window`, `ollama_repeat_penalty` (ollama), `vllm_min_p`, `vllm_best_of` (vllm), `openai_seed` (openai), `gemini_thinking_level` (gemini); pre-filled with example profiles for `ollama`, `openai`, `vllm`, and `gemini`
+
 </details>
 
 **4. Generate the full experiment database**
@@ -101,10 +103,12 @@ llmexer experiment generate --pid llm-survey-2026
 ```
 
 <details>
+
 This renders every (data row × prompt × LLM models × LLM parameters) combination and writes a self-contained SQLite database `experiment/experiment_<YYYYMMDD>_<NN>.db` (`<NN>` is a zero-padded counter starting at `01`). Each LLM provider gets its own table (e.g. `experiment_ollama`, `experiment_openai`) holding the rendered prompt, model identity, that provider's hyperparameter columns, and the SHA-256 hashes — plus the result columns that `experiment run` fills in later. The `code` field encodes each combination as `DATAID_PROMPTID_MODELNAME_PROFILENAME`. Use `--dry-run` to preview the row count without writing:
 ```bash
 llmexer --dry-run experiment generate --pid llm-survey-2026
 ```
+
 </details>
 
 > 💡 **Hint — external tools:** the generated experiment store is a SQLite database
