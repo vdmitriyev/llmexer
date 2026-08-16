@@ -2,6 +2,11 @@
 History
 =======
 
+0.3.0 (2026-08-16)
+-------------------
+
+* First publishing of the CLI as Package on PyPI
+
 0.2.40 (2026-07-14)
 -------------------
 

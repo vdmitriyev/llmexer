@@ -2,33 +2,19 @@
 
 `llmexer` is a framework and CLI utility to create and curate datasets (e.g., publications, metadata, LLM prompts, etc.) and orchestrate (design, run, evaluate) various LLM experiments on them
 
-> 🪄 The philosophy of the tool is: `everything` is a `file`. Projects, experiments, searches, configs, and further items will be saved as files. The CLI helps you to modify most of the files, but the same files could be modified manually (e.g., adding new LLM model, modification of search search, paper PDFs could be manually added, the SQLite database with generated experiments could be inspected and edited etc.).
+> 🪄 The philosophy of the tool is: `everything` is a `file`. Projects, experiments, searches, configs, and further items will be saved as files. The CLI helps you to modify most of the files, but the same files could be modified manually (e.g., adding a new LLM model, modification of search search or paper as PDFs could be manually added, further more, a SQLite database with generated experiments could be inspected and edited etc.).
 
 ## 📦 Installation
 
-* Clone this repo and follow steps from `Development Setup`
-
-## 🧩 Development Setup
-
-This guide walks through setting up the project for local development using `uv`.
-
-1. Create a new virtual environment in a `.venv` directory and activates it.
-    ```bash
-    uv venv
+* Install using `pip`
     ```
-1. Activate the environment (macOS/Linux):
-   ```
-   source .venv/bin/activate
-   ```
-1. Activate the environment (Windows):
+    pip install --upgrade llmexer
     ```
-    call .venv/Scripts/activate.bat
+* Install using `uv`
     ```
-1.  Install package in **editable mode** with **dev** dependencies
-    Installing the package in **editable mode** (`-e`) is the key to development. It links the `llmexer` command in your environment directly to your source code.
-    ```bash
-    uv pip install -e . --group dev
+    uv pip install --upgrade llmexer
     ```
+* Check `configuration` section afterward
 
 ## ⚙️ Configuration
 
@@ -58,15 +44,19 @@ This tool requires access to local or remote running LLMs. It uses a `.env` file
 5.  Enable the OpenAlex search engine (optional, used by `search run` as a second source after Semantic Scholar; skipped if unset):
     ```env
     OPENALEX_API_KEY=...
-    # Optional: used as the OpenAlex polite-pool mailto (also used for DOI downloads via Unpaywall)
-    UNPAYWALL_EMAIL=you@example.com
     # Optional: cap on OpenAlex results processed per query (default 5000)
     MAX_OPEN_ALEX_RESPONSES=5000
+    # Optional: used for DOI downloads via Unpaywall and also as the OpenAlex polite-pool mailto
+    UNPAYWALL_EMAIL=you@example.com
     ```
-6. If you would like to change the envs based on the project run (e.g., just test a LLM provider for a particular project), you could also pass a custom file as `.env` to the CLI:
+6. If you would like to change the envs based on the project run (e.g., just test a LLM provider for a particular project, via stats of a search, etc.), you could also pass a custom file as `.env` to the CLI:
     ```
     llmexer --env-file custom.env
     ```
+
+## Documentation
+
+[Documentation](https://vdmitriyev.github.io/llmexer/)
 
 ## 🚀 Getting Started
 
@@ -111,7 +101,6 @@ llmexer experiment generate --pid llm-survey-2026
 ```
 
 <details>
-
 This renders every (data row × prompt × LLM models × LLM parameters) combination and writes a self-contained SQLite database `experiment/experiment_<YYYYMMDD>_<NN>.db` (`<NN>` is a zero-padded counter starting at `01`). Each LLM provider gets its own table (e.g. `experiment_ollama`, `experiment_openai`) holding the rendered prompt, model identity, that provider's hyperparameter columns, and the SHA-256 hashes — plus the result columns that `experiment run` fills in later. The `code` field encodes each combination as `DATAID_PROMPTID_MODELNAME_PROFILENAME`. Use `--dry-run` to preview the row count without writing:
 ```bash
 llmexer --dry-run experiment generate --pid llm-survey-2026
@@ -352,7 +341,7 @@ Before adding papers to a project, you can automatically rename them by their bi
 
 No installation is needed — run it directly with `uvx`.
 
-Rename using custom format: year - authors (et al.) - title):
+Rename using custom format: year - authors (et al.) - title:
 ```bash
 uvx --from pdf-renamer pdfrenamer -f "{YYYY}_{A3etal}_{T}" /path/to/pdfs
 ```
@@ -373,24 +362,42 @@ CLI feature overview:
 llmexer --help
 ```
 
-![alt text](docs/cli-ui.png)
+![help CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui.png)
 
 Checking the statistics of a performed search query directly in CLI:
 ```
 llmexer search stats --file <filename>
 ```
-![alt text](docs/cli-ui-search-stats.png)
+![search CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui-search-stats.png)
 
 List existing projects directly in CLI with the current project highlighted:
 ```
 llmexer experiment list
 ```
-![alt text](docs/cli-ui-experiment-list.png)
+![experiment CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui-experiment-list.png)
 
 
-## Documentation
+## 🧩 Development Setup
 
-[Documentation](https://vdmitriyev.github.io/llmexer/)
+This guide walks through setting up the project for local development using `uv`.
+
+1. Create a new virtual environment in a `.venv` directory and activates it.
+    ```bash
+    uv venv
+    ```
+1. Activate the environment (macOS/Linux):
+   ```
+   source .venv/bin/activate
+   ```
+1. Activate the environment (Windows):
+    ```
+    call .venv/Scripts/activate.bat
+    ```
+1.  Install package in **editable mode** with **dev** dependencies
+    Installing the package in **editable mode** (`-e`) is the key to development. It links the `llmexer` command in your environment directly to your source code.
+    ```bash
+    uv pip install -e . --group dev
+    ```
 
 ## License
 
