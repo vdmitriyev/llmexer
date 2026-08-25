@@ -16,6 +16,13 @@ SEARCHES_DIR = "searches"
 PAPERS_DIR = "papers"
 SEARCHES_LOGS_DIR = "logs"
 
+# Package-relative paths. Unlike ``BASEDIR`` (which follows the current working
+# directory), these point inside the installed package, where bundled assets such as the
+# Jinja2 HTML export template live.
+PACKAGE_PATH = Path(__file__).resolve().parent
+PACKAGE_DATA_DIR = "data"
+PACKAGE_DATA_PATH = PACKAGE_PATH / PACKAGE_DATA_DIR
+
 LOG_FILE_PATH = os.path.join(BASEDIR, LOG_FILE_NAME)
 TEMP_PATH = os.path.join(BASEDIR, TEMP_DIR)
 PROJECTS_PATH = os.path.join(BASEDIR, PROJECTS_DIR)

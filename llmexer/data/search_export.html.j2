@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<script>
+  // Applied before first paint so a dark-mode reload never flashes light.
+  (function () {
+    try {
+      var stored = localStorage.getItem("llmexer-theme");
+      var dark = stored ? stored === "dark"
+        : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.setAttribute("data-bs-theme", dark ? "dark" : "light");
+    } catch (e) { /* localStorage unavailable - keep the default theme */ }
+  })();
+</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5/dist/css/bootstrap.min.css">
+<style>
+  body { padding: 1rem 1.25rem 3rem; }
+  /* The table never scrolls vertically - the page does. The wrapper only ever scrolls
+     horizontally, which keeps a wide table from widening the page itself. */
+  #export-table thead tr:first-child th { cursor: pointer; user-select: none; }
+  #export-table thead tr:first-child th:hover { background-color: var(--bs-secondary-bg); }
+  /* Explicit, so filtered-out rows stay hidden regardless of the UA stylesheet. */
+  #export-table tbody tr[hidden] { display: none; }
+  /* Striping is driven by JS, not :nth-of-type, so it stays alternating while filtered. */
+  #export-table tbody tr.row-odd > * { --bs-table-bg-type: var(--bs-tertiary-bg); }
+  .sort-indicator { opacity: .4; font-size: .75em; margin-left: .25rem; }
+  th.sorted .sort-indicator { opacity: 1; }
+  td.cell-long { min-width: 22rem; }
+  .toggle-more { text-decoration: none; white-space: nowrap; }
+  .copy-btn { opacity: .6; text-decoration: none; color: var(--bs-orange, #fd7e14); }
+  td:hover .copy-btn, .copy-btn:focus-visible, .copy-btn.text-success { opacity: 1; }
+  .copy-icon { vertical-align: -.15em; }
+  /* Matches the padding and font-size of .btn-sm, so the counters line up with the
+     Reset filters button instead of sitting as smaller pills. */
+  .count-badge { padding: .25rem .5rem; font-size: .875rem; font-weight: 400; }
+  .count-value { font-weight: 700; font-size: 1.05em; }
+</style>
+</head>
+<body>
+
+<svg xmlns="http://www.w3.org/2000/svg" class="d-none" aria-hidden="true">
+  <symbol id="icon-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+    <rect x="5.2" y="5.2" width="9" height="9.6" rx="1.6"></rect>
+    <path d="M11 3.4a1.6 1.6 0 0 0-1.6-1.6H3.4A1.6 1.6 0 0 0 1.8 3.4v6a1.6 1.6 0 0 0 1.6 1.6"></path>
+  </symbol>
+  <symbol id="icon-check" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 8.5l3.2 3.2L13 4.8"></path>
+  </symbol>
+</svg>
+
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+  <h1 class="h4 mb-0 me-auto">{{ title }}</h1>
+  <button type="button" class="btn btn-outline-secondary btn-sm" id="theme-toggle"
+          title="Toggle dark mode">&#127769;</button>
+</div>
+
+<p class="text-body-secondary small mb-3">
+  Project <strong>{{ project_id }}</strong> &middot;
+  Source <code>{{ source_csv }}</code> &middot;
+  {{ row_count }} rows &middot;
+  Generated {{ generated_at }}
+</p>
+
+<div class="row g-2 align-items-center mb-2">
+  <div class="col-sm-6 col-lg-4">
+    <input type="search" class="form-control form-control-sm" id="global-filter"
+           placeholder="Search all columns&hellip;" autocomplete="off">
+  </div>
+  <div class="col-auto">
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="reset-filters">Reset filters</button>
+  </div>
+  <div class="col-auto d-flex align-items-center gap-2">
+    <span class="badge count-badge text-bg-secondary">
+      Total: <span class="count-value">{{ row_count }}</span>
+    </span>
+    <span class="badge count-badge text-bg-primary">
+      Showing: <span class="count-value" id="shown-count">{{ row_count }}</span>
+      <span class="count-value" id="shown-percent">(100%)</span>
+    </span>
+  </div>
+</div>
+
+<div class="table-responsive border rounded">
+  <table class="table table-hover table-sm align-middle mb-0" id="export-table">
+    <thead>
+      <tr>
+        {% for column in columns %}
+        <th scope="col" data-col="{{ column.key }}" data-kind="{{ column.kind }}"
+            class="{% if column.kind == 'number' %}text-end{% endif %} text-nowrap">
+          {{ column.label }}<span class="sort-indicator">&#8597;</span>
+        </th>
+        {% endfor %}
+      </tr>
+      <tr>
+        {% for column in columns %}
+        <td>
+          <input type="search" class="form-control form-control-sm column-filter"
+                 data-filter-col="{{ column.key }}" placeholder="Filter&hellip;"
+                 aria-label="Filter by {{ column.label }}" autocomplete="off">
+        </td>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        {% for cell in row %}
+        {% set column = columns[loop.index0] %}
+        <td data-sort="{{ cell.sort }}" data-filter="{{ cell.filter }}"
+            class="{% if column.kind == 'number' %}text-end{% elif column.kind == 'long' %}cell-long{% endif %}">
+          {% if column.kind == 'bool' %}
+            {% if cell.bool is not none %}
+          <span class="badge {% if cell.bool %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+            {{ 'TRUE' if cell.bool else 'FALSE' }}</span>
+            {% endif %}
+          {% else %}
+            {% if cell.truncated %}
+          <span class="cell-short cell-value">{{ cell.short }}&hellip;</span><span
+                class="cell-full d-none">{{ cell.text }}</span>
+          <button type="button" class="btn btn-link btn-sm p-0 align-baseline toggle-more">more</button>
+            {% elif cell.href %}
+          <a class="cell-value" href="{{ cell.href }}" target="_blank"
+             rel="noopener noreferrer">{{ cell.text }}</a>
+            {% else %}
+          <span class="cell-value">{{ cell.text }}</span>
+            {% endif %}
+            {% if column.copyable and cell.text %}
+          <button type="button" class="btn btn-link btn-sm p-0 align-baseline copy-btn"
+                  title="Copy to clipboard" aria-label="Copy {{ column.label }}">
+            <svg class="copy-icon" width="16" height="16" aria-hidden="true"><use href="#icon-copy"></use></svg>
+          </button>
+            {% endif %}
+          {% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      {% if not rows %}
+      <tr>
+        <td colspan="{{ columns|length if columns else 1 }}" class="text-center text-body-secondary py-4">
+          No rows in this search result.
+        </td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var table = document.getElementById("export-table");
+  var tbody = table.tBodies[0];
+  var headers = Array.prototype.slice.call(table.tHead.rows[0].cells);
+  var columnFilters = Array.prototype.slice.call(document.querySelectorAll(".column-filter"));
+  var globalFilter = document.getElementById("global-filter");
+  var shownCount = document.getElementById("shown-count");
+  var shownPercent = document.getElementById("shown-percent");
+  var dataRows = Array.prototype.slice.call(tbody.rows).filter(function (row) {
+    return row.cells.length === headers.length;
+  });
+  var sortState = { index: -1, ascending: true };
+
+  function restripe() {
+    var visible = 0;
+    dataRows.forEach(function (row) {
+      if (row.hidden) { return; }
+      row.classList.toggle("row-odd", visible % 2 === 0);
+      visible += 1;
+    });
+    var total = dataRows.length;
+    shownCount.textContent = visible;
+    shownPercent.textContent =
+      "(" + (total ? Math.round((visible / total) * 100) : 0) + "%)";
+  }
+
+  function applyFilters() {
+    var global = globalFilter.value.trim().toLowerCase();
+    var active = columnFilters
+      .map(function (input, index) {
+        return { index: index, term: input.value.trim().toLowerCase() };
+      })
+      .filter(function (entry) { return entry.term !== ""; });
+
+    dataRows.forEach(function (row) {
+      var visible = active.every(function (entry) {
+        var cell = row.cells[entry.index];
+        return cell && (cell.dataset.filter || "").indexOf(entry.term) !== -1;
+      });
+      if (visible && global !== "") {
+        visible = Array.prototype.some.call(row.cells, function (cell) {
+          return (cell.dataset.filter || "").indexOf(global) !== -1;
+        });
+      }
+      row.hidden = !visible;
+    });
+
+    restripe();
+  }
+
+  function sortBy(index) {
+    var kind = headers[index].dataset.kind;
+    var numeric = kind === "number" || kind === "bool";
+    sortState.ascending = sortState.index === index ? !sortState.ascending : true;
+    sortState.index = index;
+
+    var direction = sortState.ascending ? 1 : -1;
+    dataRows.sort(function (a, b) {
+      var left = a.cells[index].dataset.sort || "";
+      var right = b.cells[index].dataset.sort || "";
+      if (numeric) {
+        var leftNum = parseFloat(left);
+        var rightNum = parseFloat(right);
+        // Empty cells carry a non-numeric sort key; keep them last either way.
+        if (isNaN(leftNum) && isNaN(rightNum)) { return 0; }
+        if (isNaN(leftNum)) { return 1; }
+        if (isNaN(rightNum)) { return -1; }
+        return (leftNum - rightNum) * direction;
+      }
+      return left.localeCompare(right) * direction;
+    });
+
+    var fragment = document.createDocumentFragment();
+    dataRows.forEach(function (row) { fragment.appendChild(row); });
+    tbody.appendChild(fragment);
+
+    headers.forEach(function (header, headerIndex) {
+      var indicator = header.querySelector(".sort-indicator");
+      header.classList.toggle("sorted", headerIndex === index);
+      if (!indicator) { return; }
+      if (headerIndex !== index) {
+        indicator.innerHTML = "&#8597;";
+      } else {
+        indicator.innerHTML = sortState.ascending ? "&#9650;" : "&#9660;";
+      }
+    });
+
+    restripe();
+  }
+
+  headers.forEach(function (header, index) {
+    header.addEventListener("click", function () { sortBy(index); });
+  });
+
+  columnFilters.forEach(function (input) {
+    input.addEventListener("input", applyFilters);
+  });
+  globalFilter.addEventListener("input", applyFilters);
+
+  document.getElementById("reset-filters").addEventListener("click", function () {
+    columnFilters.forEach(function (input) { input.value = ""; });
+    globalFilter.value = "";
+    applyFilters();
+  });
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    // These pages are usually opened over file://, where the async Clipboard API is
+    // often unavailable - fall back to a throwaway textarea.
+    return new Promise(function (resolve, reject) {
+      var area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      var copied = false;
+      try { copied = document.execCommand("copy"); } catch (e) { copied = false; }
+      document.body.removeChild(area);
+      copied ? resolve() : reject(new Error("copy failed"));
+    });
+  }
+
+  function flagCopyButton(button, className, icon) {
+    button.classList.add(className);
+    button.querySelector("use").setAttribute("href", icon);
+    clearTimeout(button.resetTimer);
+    button.resetTimer = setTimeout(function () {
+      button.classList.remove(className);
+      button.querySelector("use").setAttribute("href", "#icon-copy");
+    }, 1500);
+  }
+
+  function handleCopy(button) {
+    var cell = button.closest("td");
+    // Truncated cells keep the full text in `.cell-full`; everything else in `.cell-value`.
+    var source = cell.querySelector(".cell-full") || cell.querySelector(".cell-value");
+    copyText(source ? source.textContent : "").then(function () {
+      flagCopyButton(button, "text-success", "#icon-check");
+    }).catch(function () {
+      flagCopyButton(button, "text-danger", "#icon-copy");
+    });
+  }
+
+  function handleToggle(button) {
+    var cell = button.closest("td");
+    var short = cell.querySelector(".cell-short");
+    var full = cell.querySelector(".cell-full");
+    // toggle() returns true when the class is now present, i.e. the full text is hidden.
+    var collapsed = full.classList.toggle("d-none");
+    short.classList.toggle("d-none", !collapsed);
+    button.textContent = collapsed ? "more" : "less";
+  }
+
+  tbody.addEventListener("click", function (event) {
+    var copyButton = event.target.closest(".copy-btn");
+    if (copyButton) { handleCopy(copyButton); return; }
+
+    var toggleButton = event.target.closest(".toggle-more");
+    if (toggleButton) { handleToggle(toggleButton); }
+  });
+
+  document.getElementById("theme-toggle").addEventListener("click", function () {
+    var root = document.documentElement;
+    var dark = root.getAttribute("data-bs-theme") !== "dark";
+    root.setAttribute("data-bs-theme", dark ? "dark" : "light");
+    this.innerHTML = dark ? "&#9728;" : "&#127769;";
+    try { localStorage.setItem("llmexer-theme", dark ? "dark" : "light"); } catch (e) { /* ignore */ }
+  });
+
+  // Sync the toggle glyph with the theme the pre-paint script picked.
+  if (document.documentElement.getAttribute("data-bs-theme") === "dark") {
+    document.getElementById("theme-toggle").innerHTML = "&#9728;";
+  }
+
+  restripe();
+})();
+</script>
+
+</body>
+</html>

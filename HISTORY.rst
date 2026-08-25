@@ -2,6 +2,11 @@
 History
 =======
 
+0.3.2 (2026-08-25)
+-------------------
+
+* Add ``search export``: render sanitized search result CSVs as HTML pages next to the CSV. Sortable columns, per-column filters, row counters, dark mode, clickable DOIs, copy buttons and ``more``/``less`` toggles. ``--file`` takes a search ID/YAML name, ``--csv-file`` a CSV filename.
+
 0.3.1 (2026-08-16)
 -------------------
 

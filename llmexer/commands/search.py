@@ -22,6 +22,7 @@ from llmexer.base.search import (
     synf_df_runs_of_search_and_papers,
     write_records_to_csv,
 )
+from llmexer.base.search_export import export_csv_to_html
 from llmexer.base.search_openalex import run_openalex_search
 from llmexer.base.search_semantic_scholar import run_semantic_scholar_search
 from llmexer.common import (
@@ -185,6 +186,68 @@ def print_search_header(pid, search_id, query, year, only_open_access):
         "Only Open Access:", f"[bold magenta]{only_open_access}[/bold magenta]"
     )
     console.print(header)
+
+
+def _export_csv(csv_path, pid, rewrite):
+    """Render a single search CSV to an HTML file next to it. Returns True when written."""
+
+    html_path = f"{os.path.splitext(csv_path)[0]}.html"
+
+    if os.path.exists(html_path) and not rewrite:
+        cprint(
+            f"[bold yellow]Warning:[/bold yellow] '{Path(html_path).name}' already exists. "
+            "Use --rewrite to overwrite."
+        )
+        return False
+
+    if settings.dry_run:
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{html_path}'")
+        return False
+
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    rows = export_csv_to_html(csv_path, html_path, pid, generated_at)
+
+    cprint(f"File with export ([magenta]HTML[/magenta]) — {rows} rows:\n  {html_path}")
+    return True
+
+
+def _collect_export_csvs(file, csv_file, pid, experiment_path, searches_path):
+    """Resolve ``--file`` / ``--csv-file`` into the list of search CSVs to export."""
+
+    if csv_file is not None:
+        csv_path = (
+            csv_file
+            if os.path.isabs(csv_file)
+            else os.path.join(searches_path, csv_file)
+        )
+        if not os.path.exists(csv_path):
+            raise LLMExerException(f"Search results CSV does not exist: '{csv_file}'")
+        return [csv_path]
+
+    if file is not None:
+        search_id, query, year, only_open_access = read_search_params(
+            f"{os.path.splitext(os.path.basename(file))[0]}.yaml", experiment_path
+        )
+        print_search_header(pid, search_id, query, year, only_open_access)
+        csv_paths = [
+            os.path.join(searches_path, f"{search_id}{suffix}")
+            for suffix in ("__results.csv", "__filtered.csv")
+        ]
+        return [p for p in csv_paths if os.path.exists(p)]
+
+    csv_paths = []
+    for yaml_path in sorted(Path(searches_path).glob("*.yaml")):
+        for suffix in ("__results.csv", "__filtered.csv"):
+            candidate = os.path.join(searches_path, f"{yaml_path.stem}{suffix}")
+            if os.path.exists(candidate):
+                csv_paths.append(candidate)
+
+    for suffix in (MERGED_RESULTS_SUFFIX, MERGED_FILTERED_SUFFIX):
+        candidate = os.path.join(searches_path, f"{pid}{suffix}")
+        if os.path.exists(candidate):
+            csv_paths.append(candidate)
+
+    return csv_paths
 
 
 @app.command()
@@ -856,3 +919,61 @@ def sync(
         )
         print_search_header(pid, search_id, query, year, only_open_access)
         _sync_search(search_id, experiment_path, add_new_rows=add_new_rows)
+
+
+@app.command()
+def export(
+    file: str = typer.Option(
+        None,
+        "--file",
+        help="YAML search config filename or bare search ID. If omitted (and --csv-file is not "
+        "used), every search in the project is exported.",
+    ),
+    csv_file: str = typer.Option(
+        None,
+        "--csv-file",
+        help="Search results CSV filename inside searches/ (e.g. '20260401-bfdd863d__filtered.csv' "
+        "or a merged CSV). Exports exactly that file.",
+    ),
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID to look up results for. If not provided, uses PROJECT_ID from .env.",
+    ),
+    rewrite: bool = typer.Option(
+        False,
+        "--rewrite",
+        help="Overwrite existing HTML files if they already exist.",
+    ),
+) -> None:
+    """Export search result CSVs as sortable, filterable HTML pages
+
+    Each CSV is rendered next to itself with the same name and an ``.html`` extension. With
+    ``--file`` a single search is exported (both ``__results.csv`` and ``__filtered.csv``
+    when present); ``--csv-file`` exports one CSV directly, which is how merged files are
+    exported. Without either, every search in the project is exported, plus the merged CSVs
+    if they exist.
+    """
+
+    if file is not None and csv_file is not None:
+        raise UnexpectedCLIParamsException("Only one can be set: file or csv-file")
+
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+
+    csv_paths = _collect_export_csvs(
+        file, csv_file, pid, experiment_path, searches_path
+    )
+
+    if not csv_paths:
+        if file is not None:
+            print_info_not_search_file(
+                file, os.path.join(searches_path, f"{file}__results.csv")
+            )
+        else:
+            cprint("No searches found.")
+        return
+
+    for csv_path in csv_paths:
+        _export_csv(csv_path, pid, rewrite)

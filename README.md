@@ -4,7 +4,7 @@
 
 > 🪄 The philosophy of the tool is: `everything` is a `file`. Projects, experiments, searches, configs, and further items will be saved as files. The CLI helps you to modify most of the files, but the same files could be modified manually (e.g., adding a new LLM model, modification of search search or paper as PDFs could be manually added, further more, a SQLite database with generated experiments could be inspected and edited etc.).
 
-## ⚠️ Early `beta` warning
+## ✨ Early `beta` warning
 
 The package is still in its early beta stage, so breaking changes may be introduced at short notice.
 
@@ -218,6 +218,13 @@ llmexer search filter --pid llm-survey-2026 --file 20260401-bfdd863d.yaml --lang
 ```
 `--file` is optional — omit it to apply the same filters to **every** search in the project. Every applied filter (per search) is recorded in `searches/logs/filters-applied.log`.
 
+**3. Export search results as HTML (optional)**
+
+```bash
+llmexer search export --pid llm-survey-2026 --file 20260401-bfdd863d.yaml
+```
+Writes `<ID>__results.html` next to the CSV: sortable columns, per-column filters, row counters, dark mode, clickable DOIs, copy buttons, collapsible abstracts. `--csv-file <name>.csv` exports a single CSV; omit both to export every search.
+
 ## 📢 Scenario 3: Gathering data by downloading papers and extracting text
 
 **1. Download open-access papers by DOI via Unpaywall**
@@ -332,6 +339,7 @@ The `search` category provides commands for managing and running literature sear
 | `filter` | **Exclude** rows from a search and rewrite `<ID>__filtered.csv`. Reads the existing `__filtered.csv` if present (filters chain), else `__results.csv`. `--file` is optional — omit it to filter every search in the project. Combinable criteria, each applied in order and logged: `--language <code>` / `--source <value>` / `--doi <value>` drop rows equal to the value; `--downloaded` drops rows not yet downloaded. Each applied filter appends a line to `searches/logs/filters-applied.log`. | `llmexer search filter --file 20260401-abc123.yaml --language de --downloaded` |
 | `merge` | Merge the project's search CSVs into two deduplicated files: `<pid>__merged_results.csv` (from `*__results.csv`) and `<pid>__merged_filtered.csv` (from `*__filtered.csv`). Deduplicates by DOI (falling back to title); adds a `0/1` column per search (named after its YAML id) and a `duplicates_counter` column (number of duplicate occurrences, i.e. searches found in minus one). Rows are sorted by year (newest first; blank years last). Use `--rewrite` to overwrite; respects `--dry-run`. | `llmexer search merge --pid my-project` |
 | `sync` | Reconcile `<ID>__results.csv` (and `<ID>__filtered.csv` if present) against the project's `papers/` folder. Updates `pdf_downloaded`, `txt_filename`, and `markdown_filename` for existing rows. By default only files listed in existing rows are updated; pass `--add-local-extra-pdfs` to also append new rows for PDFs in `papers/` not yet listed (marked `entry_source="manually added"`). `--file` is optional: with it a single search is synced, without it every search in the project is synced (in that case `--add-local-extra-pdfs` is not applied). Respects `--dry-run`. | `llmexer search sync --file 20260401-abc123.yaml` |
+| `export` | Render sanitized search result CSVs as HTML pages next to the CSV (same name, `.html`). Sortable columns, per-column filters, row counters, dark mode, clickable DOIs, copy buttons, `more`/`less` toggles. `--file` takes a search ID/YAML name, `--csv-file` a CSV filename inside `searches/`; omit both to export the whole project. `--rewrite` overwrites; respects `--dry-run`. | `llmexer search export --file 20260401-abc123.yaml` |
 
 Semantic Scholar API Documentation: [Paper bulk search](https://api.semanticscholar.org/api-docs/#tag/Paper-Data/operation/get_graph_paper_bulk_search) -> this can be used to formulate more sophisticated query string
 
@@ -347,7 +355,7 @@ The `self` category provides introspection commands for the llmexer CLI itself:
 | `envs` | Display all llmexer-relevant environment variables as a table. `PROJECT_ID` is highlighted in bold cyan; `DOCLING_PASSWORD` is masked as `********` when set. | `llmexer self envs` |
 
 
-## 📄 Additional: Renaming PDFs with `pdf-renamer` tool
+## 💡 Additional: Renaming PDFs with `pdf-renamer` tool
 
 Before adding papers to a project, you can automatically rename them by their bibliographic metadata (year, journal, authors, title) using the external [`pdf-renamer`](https://github.com/MicheleCotrufo/pdf-renamer) tool.
 
@@ -362,12 +370,14 @@ Rename recursively (include subdirectories)
 uvx --from pdf-renamer pdfrenamer /path/to/pdfs -sf
 ```
 
+## 💡 Additional: Extract BiBTeX
+
 There is also a possibility to extract BiBTeX of a publication as follows
 ```bash
 uvx --from pdf2bib pdf2bib -s bibtex.bib /path/to/pdfs
 ```
 
-## CLI UI
+## ✏️ CLI UI
 
 CLI feature overview:
 ```
@@ -387,6 +397,13 @@ List existing projects directly in CLI with the current project highlighted:
 llmexer experiment list
 ```
 ![experiment CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui-experiment-list.png)
+
+Export the search results as a static HTML file to make it easier to screen the initial results:
+```
+llmexer search export
+```
+![experiment CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/search-export.png)
+
 
 
 ## 🧩 Development Setup
