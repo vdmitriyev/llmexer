@@ -6,6 +6,10 @@ import uuid
 DIR_EXPERIMENT = "experiment"
 DIR_RESPONSES = "responses"
 
+# The experiment's model roster. Its identity columns (``provider``,
+# ``model_name``) deliberately match ``llm-params.csv`` and the generated tables.
+FILE_LLM_MODELS = "llms-for-experiment.csv"
+
 _OUTPUT_COLUMNS = [
     "ID",
     "code",
@@ -26,11 +30,13 @@ _OUTPUT_COLUMNS = [
     "vllm_best_of",
     "openai_seed",
     "gemini_thinking_level",
+    "litellm_min_p",
+    "litellm_best_of",
 ]
 
 # Parameter columns copied from each ``llm-params.csv`` row into a generated
 # row (``model_name``/``provider`` from that file are the join key / captured by
-# llm-models.csv, so they are not duplicated here).
+# llms-for-experiment.csv, so they are not duplicated here).
 _PARAM_COLUMNS = [
     "profile_name",
     "temperature",
@@ -42,6 +48,8 @@ _PARAM_COLUMNS = [
     "vllm_best_of",
     "openai_seed",
     "gemini_thinking_level",
+    "litellm_min_p",
+    "litellm_best_of",
 ]
 
 # --------------------------------------------------------------------- SQLite
@@ -79,6 +87,7 @@ PROVIDER_PARAM_COLUMNS = {
     "vllm": ["vllm_min_p", "vllm_best_of"],
     "openai": ["openai_seed"],
     "gemini": ["gemini_thinking_level"],
+    "litellm": ["litellm_min_p", "litellm_best_of"],
 }
 
 # Result columns written back once a row has been run. ``response_json`` stores
@@ -120,10 +129,8 @@ def generate_project_id() -> str:
 def _is_experiment_initialized(experiment_path: str) -> bool:
     """Check if an experiment has been initialized with required CSV files."""
     experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
-    required_files = ["data.csv", "llm-params.csv", "mapping.csv", "llm-models.csv"]
-    return all(
-        os.path.exists(os.path.join(experiment_subdir_path, f)) for f in required_files
-    )
+    required_files = ["data.csv", "llm-params.csv", "mapping.csv", FILE_LLM_MODELS]
+    return all(os.path.exists(os.path.join(experiment_subdir_path, f)) for f in required_files)
 
 
 def _get_generated_experiment_files(experiment_path: str) -> list[str]:

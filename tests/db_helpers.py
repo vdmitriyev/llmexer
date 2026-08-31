@@ -41,6 +41,25 @@ OPENAI_ROW = {
 }
 
 
+LITELLM_ROW = {
+    "ID": 3,
+    "code": "D01_prompt01_gpt-oss:120b_litellm-default",
+    "prompt": "Hello world",
+    "tokens_estimate": 2,
+    "original_data": '{"ID":"D01"}',
+    "model_name": "gpt-oss:120b",
+    "provider_name": "litellm",
+    "prompt_hash": "abc123",
+    "original_data_hash": "def456",
+    "profile_name": "litellm-default",
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "max_tokens": 512,
+    "litellm_min_p": 0.05,
+    "litellm_best_of": 1,
+}
+
+
 def seed_db(db_path, rows_by_provider):
     """Create a database at ``db_path`` and insert rows per provider.
 

@@ -175,55 +175,76 @@ def result_values(experiment: Experiment, provider: str) -> Dict[str, Any]:
     }
 
 
+# Providers implemented as :class:`LLMProviderBase` subclasses, keyed by the
+# lower-cased provider name. Class *names* are stored (not the classes
+# themselves) so that the lookup goes through the module object and stays
+# monkeypatchable in tests. Providers absent from this map fall back to the
+# legacy ``LLMRequestsMapper``.
+PROVIDER_CLASS_NAMES: Dict[str, str] = {
+    "ollama": "OllamaProvider",
+    "litellm": "LiteLLMProvider",
+}
+
+
+def _apply_provider_result(experiment: Experiment, caller: Any, resp: Any) -> None:
+    """Copy a provider caller's response, state and stats onto ``experiment``."""
+
+    experiment.response_text = resp.text
+    experiment.usage_tokens = resp.usage_tokens
+    experiment.raw_response = serialize_response(resp.raw)
+    experiment.status = f"Error: {resp.raw}" if caller.state == CallerState.ERROR else "success"
+    state = getattr(caller, "state", CallerState.FINISHED)
+    experiment.state = getattr(state, "value", str(state))
+    stats = getattr(caller, "stats", None)
+    experiment.call_count = getattr(stats, "call_count", 1)
+    experiment.total_tokens = getattr(stats, "total_tokens", experiment.usage_tokens or 0)
+    experiment.elapsed_seconds = getattr(stats, "elapsed_seconds", 0.0)
+    experiment.timestamp = datetime.now(timezone.utc).isoformat()
+
+
 def run_experiment_row(row: Dict[str, Any]) -> Experiment:
     """Execute a single generated row against its provider and return results.
 
     Resolves the provider from ``provider_name``, runs the LLM call, and copies
     the provider's :class:`CallerState`/:class:`CallerStats` into the returned
     :class:`Experiment`. Pure: it does not persist anything.
+
+    Raises:
+        ProviderConfigException: if the provider name is unknown, or if the
+            provider is missing required configuration (e.g. the API token of a
+            proxied provider). Both are raised before any call is made, so a
+            misconfigured run aborts immediately instead of writing one error
+            row per combination.
     """
 
     experiment = Experiment.from_row(row)
-    provider = (experiment.provider_name or "").lower()
+    provider = llm_module.validate_provider(experiment.provider_name)
     base_url, api_key = llm_module.resolve_provider_config(provider)
 
-    if provider == "ollama":
-        caller = llm_module.OllamaProvider(
+    class_name = PROVIDER_CLASS_NAMES.get(provider)
+    if class_name is not None:
+        caller_class = getattr(llm_module, class_name)
+        caller = caller_class(
             provider=provider,
             auth=ProviderAuth(api_key=api_key),
-            base_url=base_url or llm_module.URL_MAP["ollama"],
+            base_url=base_url or llm_module.URL_MAP.get(provider),
         )
+        # Fail fast on missing credentials/URL, outside the caller's own
+        # exception handling, so the error is not swallowed into a row status.
+        validate = getattr(caller, "validate_config", None)
+        if callable(validate):
+            validate()
         resp = caller.execute(experiment.prompt, row)
-        experiment.response_text = resp.text
-        experiment.usage_tokens = resp.usage_tokens
-        experiment.raw_response = serialize_response(resp.raw)
-        experiment.status = (
-            f"Error: {resp.raw}" if caller.state == CallerState.ERROR else "success"
-        )
-        state = getattr(caller, "state", CallerState.FINISHED)
-        experiment.state = getattr(state, "value", str(state))
-        stats = getattr(caller, "stats", None)
-        experiment.call_count = getattr(stats, "call_count", 1)
-        experiment.total_tokens = getattr(
-            stats, "total_tokens", experiment.usage_tokens or 0
-        )
-        experiment.elapsed_seconds = getattr(stats, "elapsed_seconds", 0.0)
-        experiment.timestamp = datetime.now(timezone.utc).isoformat()
+        _apply_provider_result(experiment, caller, resp)
     else:
-        mapper = llm_module.LLMRequestsMapper(
-            provider=provider, base_url=base_url, api_key=api_key
-        )
+        mapper = llm_module.LLMRequestsMapper(provider=provider, base_url=base_url, api_key=api_key)
         result = mapper.execute(experiment.prompt, row)
         experiment.response_text = result.response_text
         experiment.usage_tokens = result.usage_tokens
         experiment.raw_response = result.raw
         experiment.status = result.status
         # LLMRequestsMapper has no CallerState/CallerStats; derive them.
-        experiment.state = (
-            CallerState.FINISHED.value
-            if result.status == "success"
-            else CallerState.ERROR.value
-        )
+        experiment.state = CallerState.FINISHED.value if result.status == "success" else CallerState.ERROR.value
         experiment.call_count = 1
         experiment.total_tokens = result.usage_tokens or 0
         experiment.timestamp = result.timestamp
@@ -257,9 +278,7 @@ class ExperimentsManager:
 
     def _require_open(self) -> None:
         if self.dao is None:
-            raise LLMExerException(
-                "No experiment database opened. Pass db_path or call open() first."
-            )
+            raise LLMExerException("No experiment database opened. Pass db_path or call open() first.")
 
     def run(self, id_experiment: Any) -> Experiment:
         """Run a single experiment combination by id, persisting the result."""
@@ -267,9 +286,7 @@ class ExperimentsManager:
         self._require_open()
         rows = self.dao.fetch_rows(id_experiment=id_experiment)
         if not rows:
-            raise LLMExerException(
-                f"No experiment row found with id '{id_experiment}'."
-            )
+            raise LLMExerException(f"No experiment row found with id '{id_experiment}'.")
 
         row = rows[0]
         experiment = run_experiment_row(row)

@@ -3,6 +3,7 @@
 import os
 from unittest.mock import Mock
 
+import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
@@ -65,18 +66,25 @@ def test_init_creates_prompts_subfolder(experiment, projects_dir):
 
 
 def test_init_creates_models_csv(experiment, projects_dir):
-    """init should create llm-models.csv with the correct header and example row."""
+    """init should create llms-for-experiment.csv with the correct header and example row."""
     pid, exp_path = experiment
 
     result = runner.invoke(app, ["experiment", "init", "--pid", pid])
 
     assert result.exit_code == 0
-    models_file = exp_path / "experiment" / "llm-models.csv"
+    models_file = exp_path / "experiment" / "llms-for-experiment.csv"
     assert models_file.exists()
     lines = models_file.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == "name;provider;notes"
+    assert lines[0] == "provider;model_name;notes"
     assert "gemma4:31b" in lines[1]
     assert "ollama" in lines[1]
+    # Every example row must have exactly as many fields as the header,
+    # otherwise values silently land in the wrong column.
+    expected_fields = len(lines[0].split(";"))
+    for line in lines[1:]:
+        assert len(line.split(";")) == expected_fields, line
+    # The provider column comes first and holds a provider, not a model name.
+    assert all(line.split(";")[0] == "ollama" for line in lines[1:])
 
 
 def test_init_creates_data_csv(experiment, projects_dir):
@@ -170,9 +178,7 @@ def test_init_already_initialised_error_message(experiment, projects_dir):
     assert "already been initialised" in str(result.exception)
 
 
-def test_init_uses_current_experiment_from_env(
-    projects_dir, mock_no_dotenv, monkeypatch
-):
+def test_init_uses_current_experiment_from_env(projects_dir, mock_no_dotenv, monkeypatch):
     """When --pid is omitted, init should use PROJECT_ID from the environment."""
     pid = "env-exp"
     exp_path = projects_dir / pid
@@ -211,10 +217,38 @@ def test_init_creates_llm_params_csv(experiment, projects_dir):
     lines = params_file.read_text(encoding="utf-8").splitlines()
     assert lines[0] == (
         "provider;model_name;profile_name;temperature;top_p;max_tokens;"
-        "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level"
+        "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level;"
+        "litellm_min_p;litellm_best_of"
     )
     assert len(lines) >= 2
     assert any("ollama" in line for line in lines[1:])
+    assert any(line.startswith("litellm;") for line in lines[1:])
+    # Every example row must have exactly as many fields as the header,
+    # otherwise values silently land in the wrong (provider's) column.
+    expected_fields = len(lines[0].split(";"))
+    for line in lines[1:]:
+        assert len(line.split(";")) == expected_fields, line
+
+
+def test_init_llm_params_values_land_in_their_own_columns(experiment, projects_dir):
+    """Each example profile's parameters must parse into that provider's columns."""
+    pid, exp_path = experiment
+
+    result = runner.invoke(app, ["experiment", "init", "--pid", pid])
+    assert result.exit_code == 0
+
+    params_file = exp_path / "experiment" / "llm-params.csv"
+    df = pd.read_csv(params_file, sep=";").set_index("profile_name")
+
+    assert df.loc["ollama-default", "ollama_context_window"] == 4096
+    assert df.loc["openai-default", "openai_seed"] == 42
+    assert df.loc["vllm-default", "vllm_min_p"] == 0.05
+    assert df.loc["gemini-default", "gemini_thinking_level"] == "standard"
+    assert df.loc["litellm-default", "litellm_min_p"] == 0.05
+    assert df.loc["litellm-default", "litellm_best_of"] == 1
+    # A provider's values must not bleed into another provider's columns.
+    assert pd.isna(df.loc["litellm-default", "vllm_min_p"])
+    assert pd.isna(df.loc["gemini-default", "openai_seed"])
 
 
 def test_init_eid_overrides_env(projects_dir, mock_no_dotenv, monkeypatch):

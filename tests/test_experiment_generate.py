@@ -64,8 +64,8 @@ def initialised_experiment(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llm-models.csv").write_text(
-        "name;provider;notes\nllama3.3:latest;ollama;local model\n",
+    (exp_subdir / "llms-for-experiment.csv").write_text(
+        "provider;model_name;notes\nollama;llama3.3:latest;local model\n",
         encoding="utf-8",
     )
     (exp_subdir / "data.csv").write_text(
@@ -105,9 +105,7 @@ def test_generate_creates_output_db(initialised_experiment, projects_dir):
     assert len(db_files) == 1
 
 
-def test_generate_ollama_table_has_correct_columns(
-    initialised_experiment, projects_dir
-):
+def test_generate_ollama_table_has_correct_columns(initialised_experiment, projects_dir):
     """The ollama table holds the common+ollama+result columns in order."""
     pid, exp_subdir = initialised_experiment
 
@@ -195,7 +193,7 @@ def test_generate_tokens_estimate_value(initialised_experiment, projects_dir):
 
 
 def test_generate_model_name_and_provider(initialised_experiment, projects_dir):
-    """model_name and provider_name columns should match llm-models.csv."""
+    """model_name and provider_name columns should match llms-for-experiment.csv."""
     pid, exp_subdir = initialised_experiment
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
@@ -247,8 +245,8 @@ def test_generate_multiple_models_multiple_rows(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llm-models.csv").write_text(
-        "name;provider;notes\nmodel-a;provider-a;\nmodel-b;provider-b;\n",
+    (exp_subdir / "llms-for-experiment.csv").write_text(
+        "provider;model_name;notes\nprovider-a;model-a;\nprovider-b;model-b;\n",
         encoding="utf-8",
     )
     (exp_subdir / "data.csv").write_text(
@@ -273,20 +271,20 @@ def test_generate_multiple_models_multiple_rows(projects_dir):
     df = read_experiment_df(find_db(exp_subdir))
     assert len(df) == 4  # 2 data rows × 2 models × 1 param profile
     assert list(df["ID"]) == [1, 2, 3, 4]
-    # rows are sorted by model order from llm-models.csv, then by mapping order within each model
+    # rows are sorted by model order from llms-for-experiment.csv, then by mapping order within each model
     assert list(df["model_name"]) == ["model-a", "model-a", "model-b", "model-b"]
 
 
 def test_generate_sorted_by_model_order(projects_dir):
-    """Output rows should be grouped by model in llm-models.csv order (model-first, then mapping order)."""
+    """Output rows should be grouped by model in llms-for-experiment.csv order (model-first, then mapping order)."""
     pid = "sort-exp"
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    # model-b is listed second in llm-models.csv — its rows must appear after model-a's
-    (exp_subdir / "llm-models.csv").write_text(
-        "name;provider;notes\nmodel-a;p;\nmodel-b;p;\n",
+    # model-b is listed second in llms-for-experiment.csv — its rows must appear after model-a's
+    (exp_subdir / "llms-for-experiment.csv").write_text(
+        "provider;model_name;notes\np;model-a;\np;model-b;\n",
         encoding="utf-8",
     )
     (exp_subdir / "data.csv").write_text(
@@ -366,8 +364,8 @@ def test_generate_prompt_hash_deterministic(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llm-models.csv").write_text(
-        "name;provider;notes\nmodel-a;p;\nmodel-b;p;\n",
+    (exp_subdir / "llms-for-experiment.csv").write_text(
+        "provider;model_name;notes\np;model-a;\np;model-b;\n",
         encoding="utf-8",
     )
     (exp_subdir / "data.csv").write_text(
@@ -446,24 +444,20 @@ def test_generate_uninitialised_experiment_raises(projects_dir):
 
 
 def test_generate_missing_models_csv_raises(projects_dir):
-    """Missing llm-models.csv should raise LLMExerException."""
+    """Missing llms-for-experiment.csv should raise LLMExerException."""
     pid = "no-models-exp"
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
     (exp_subdir / "data.csv").write_text("ID;Title\nD01;T\n", encoding="utf-8")
-    (exp_subdir / "mapping.csv").write_text(
-        "data_id;prompt_id\nD01;p\n", encoding="utf-8"
-    )
-    (exp_subdir / "llm-params.csv").write_text(
-        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8"
-    )
+    (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;p\n", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(_LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8")
 
     result = runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
     assert result.exit_code != 0
     assert isinstance(result.exception, LLMExerException)
-    assert "llm-models.csv" in str(result.exception)
+    assert "llms-for-experiment.csv" in str(result.exception)
 
 
 def test_generate_missing_data_csv_raises(projects_dir):
@@ -472,15 +466,9 @@ def test_generate_missing_data_csv_raises(projects_dir):
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
-    (exp_subdir / "llm-models.csv").write_text(
-        "name;provider;notes\nm;p;\n", encoding="utf-8"
-    )
-    (exp_subdir / "mapping.csv").write_text(
-        "data_id;prompt_id\nD01;p\n", encoding="utf-8"
-    )
-    (exp_subdir / "llm-params.csv").write_text(
-        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8"
-    )
+    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;m;\n", encoding="utf-8")
+    (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;p\n", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(_LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8")
 
     result = runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
@@ -495,13 +483,9 @@ def test_generate_missing_mapping_csv_raises(projects_dir):
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
-    (exp_subdir / "llm-models.csv").write_text(
-        "name;provider;notes\nm;p;\n", encoding="utf-8"
-    )
+    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;m;\n", encoding="utf-8")
     (exp_subdir / "data.csv").write_text("ID;Title\nD01;T\n", encoding="utf-8")
-    (exp_subdir / "llm-params.csv").write_text(
-        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8"
-    )
+    (exp_subdir / "llm-params.csv").write_text(_LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8")
 
     result = runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
@@ -517,15 +501,9 @@ def test_generate_missing_data_id_skips_row(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llm-models.csv").write_text(
-        "name;provider;notes\nm;p;\n", encoding="utf-8"
-    )
-    (exp_subdir / "data.csv").write_text(
-        "ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8"
-    )
-    (exp_subdir / "mapping.csv").write_text(
-        "data_id;prompt_id\nD01;prompt01\nBAD-ID;prompt01\n", encoding="utf-8"
-    )
+    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;m;\n", encoding="utf-8")
+    (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8")
+    (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;prompt01\nBAD-ID;prompt01\n", encoding="utf-8")
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
         _LLM_PARAMS_HEADER + "default;m;p;0.7;1.0;512;4096;1.1;;;;\n", encoding="utf-8"
@@ -546,18 +524,10 @@ def test_generate_missing_prompt_file_skips_row(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llm-models.csv").write_text(
-        "name;provider;notes\nm;p;\n", encoding="utf-8"
-    )
-    (exp_subdir / "data.csv").write_text(
-        "ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8"
-    )
-    (exp_subdir / "mapping.csv").write_text(
-        "data_id;prompt_id\nD01;nonexistent-prompt\n", encoding="utf-8"
-    )
-    (exp_subdir / "llm-params.csv").write_text(
-        _LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8"
-    )
+    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;m;\n", encoding="utf-8")
+    (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8")
+    (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;nonexistent-prompt\n", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(_LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8")
 
     result = runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
@@ -566,24 +536,16 @@ def test_generate_missing_prompt_file_skips_row(projects_dir):
     assert not list(exp_subdir.glob("experiment_*.db"))
 
 
-def test_generate_uses_current_experiment_from_env(
-    projects_dir, mock_no_dotenv, monkeypatch
-):
+def test_generate_uses_current_experiment_from_env(projects_dir, mock_no_dotenv, monkeypatch):
     """When --pid is omitted, generate should use PROJECT_ID from the environment."""
     pid = "env-exp"
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llm-models.csv").write_text(
-        "name;provider;notes\nm;p;\n", encoding="utf-8"
-    )
-    (exp_subdir / "data.csv").write_text(
-        "ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8"
-    )
-    (exp_subdir / "mapping.csv").write_text(
-        "data_id;prompt_id\nD01;prompt01\n", encoding="utf-8"
-    )
+    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;m;\n", encoding="utf-8")
+    (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8")
+    (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;prompt01\n", encoding="utf-8")
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
         _LLM_PARAMS_HEADER + "default;m;p;0.7;1.0;512;4096;1.1;;;;\n", encoding="utf-8"
@@ -596,9 +558,7 @@ def test_generate_uses_current_experiment_from_env(
     assert list(exp_subdir.glob("experiment_*.db"))
 
 
-def test_generate_without_eid_and_no_env_raises(
-    projects_dir, mock_no_dotenv, monkeypatch
-):
+def test_generate_without_eid_and_no_env_raises(projects_dir, mock_no_dotenv, monkeypatch):
     """When --pid is omitted and PROJECT_ID is not set, should raise an error."""
     from llmexer.configs import settings
 
@@ -623,15 +583,9 @@ def test_generate_missing_llm_params_raises(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llm-models.csv").write_text(
-        "name;provider;notes\nm;p;\n", encoding="utf-8"
-    )
-    (exp_subdir / "data.csv").write_text(
-        "ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8"
-    )
-    (exp_subdir / "mapping.csv").write_text(
-        "data_id;prompt_id\nD01;prompt01\n", encoding="utf-8"
-    )
+    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;m;\n", encoding="utf-8")
+    (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8")
+    (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;prompt01\n", encoding="utf-8")
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
     # llm-params.csv intentionally absent
 
@@ -683,20 +637,12 @@ def test_generate_row_count_with_multiple_profiles(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llm-models.csv").write_text(
-        "name;provider;notes\nmodel-a;p;\n", encoding="utf-8"
-    )
-    (exp_subdir / "data.csv").write_text(
-        "ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8"
-    )
-    (exp_subdir / "mapping.csv").write_text(
-        "data_id;prompt_id\nD01;prompt01\n", encoding="utf-8"
-    )
+    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;model-a;\n", encoding="utf-8")
+    (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8")
+    (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;prompt01\n", encoding="utf-8")
     (prompts_dir / "prompt01.txt").write_text("{{title}}", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
-        _LLM_PARAMS_HEADER
-        + "p;model-a;profile-a;0.5;1.0;256;;;;;;\n"
-        + "p;model-a;profile-b;1.0;0.9;512;;;;;;\n",
+        _LLM_PARAMS_HEADER + "p;model-a;profile-a;0.5;1.0;256;;;;;;\n" + "p;model-a;profile-b;1.0;0.9;512;;;;;;\n",
         encoding="utf-8",
     )
 

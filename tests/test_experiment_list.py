@@ -157,7 +157,7 @@ def test_list_initialized(projects_dir):
     """Experiment with all required CSV files should show Yes in Initialized column."""
     exp_path = projects_dir / "init-exp" / "experiment"
     os.makedirs(exp_path)
-    for f in ["data.csv", "llm-params.csv", "mapping.csv", "llm-models.csv"]:
+    for f in ["data.csv", "llm-params.csv", "mapping.csv", "llms-for-experiment.csv"]:
         (exp_path / f).write_text("header\n")
 
     result = runner.invoke(app, ["experiment", "list"])
@@ -170,7 +170,7 @@ def test_list_partially_initialized(projects_dir):
     exp_path = projects_dir / "partial-exp" / "experiment"
     os.makedirs(exp_path)
     # Only create some of the required files
-    for f in ["data.csv", "llm-models.csv"]:
+    for f in ["data.csv", "llms-for-experiment.csv"]:
         (exp_path / f).write_text("header\n")
 
     result = runner.invoke(app, ["experiment", "list"])

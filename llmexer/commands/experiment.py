@@ -19,6 +19,7 @@ from llmexer.base.experiment import (
     _PARAM_COLUMNS,
     DIR_EXPERIMENT,
     DIR_RESPONSES,
+    FILE_LLM_MODELS,
     _get_generated_experiment_files,
     _is_experiment_initialized,
 )
@@ -70,14 +71,11 @@ def _resolve_experiment_db(pid: str, file: str) -> tuple[str, str]:
         db_path = latest_db(experiment_subdir_path)
         if db_path is None:
             raise LLMExerException(
-                f"No experiment database found for project '{pid}'. "
-                f"Run `experiment generate --pid {pid}` first."
+                f"No experiment database found for project '{pid}'. " f"Run `experiment generate --pid {pid}` first."
             )
         return db_path, experiment_subdir_path
 
-    db_path = (
-        file if os.path.isabs(file) else os.path.join(experiment_subdir_path, file)
-    )
+    db_path = file if os.path.isabs(file) else os.path.join(experiment_subdir_path, file)
 
     if not os.path.exists(db_path):
         raise LLMExerException(f"Experiment database not found: '{db_path}'.")
@@ -145,23 +143,19 @@ def init(
     ensure_directory_exists(experiment_subdir_path)
     ensure_directory_exists(prompts_subdir)
 
-    # llm-models.csv
-    models_path = os.path.join(experiment_subdir_path, "llm-models.csv")
+    # llms-for-experiment.csv
+    models_path = os.path.join(experiment_subdir_path, FILE_LLM_MODELS)
     with open(models_path, "w", encoding="utf-8") as f:
-        f.write("name;provider;notes\n")
-        f.write("gemma4:31b;ollama;local model\n")
-        f.write("phi4:14b;ollama;local model\n")
+        f.write("provider;model_name;notes\n")
+        f.write("ollama;gemma4:31b;local model\n")
+        f.write("ollama;phi4:14b;local model\n")
 
     # data.csv
     data_path = os.path.join(experiment_subdir_path, "data.csv")
     with open(data_path, "w", encoding="utf-8") as f:
         f.write("ID;Title;Abstract\n")
-        f.write(
-            "D01;Sample Paper Title One;This is the abstract of the first sample paper.\n"
-        )
-        f.write(
-            "D02;Sample Paper Title Two;This is the abstract of the second sample paper.\n"
-        )
+        f.write("D01;Sample Paper Title One;This is the abstract of the first sample paper.\n")
+        f.write("D02;Sample Paper Title Two;This is the abstract of the second sample paper.\n")
 
     # mapping.csv
     mapping_path = os.path.join(experiment_subdir_path, "mapping.csv")
@@ -184,13 +178,15 @@ def init(
     with open(llm_params_path, "w", encoding="utf-8") as f:
         f.write(
             "provider;model_name;profile_name;temperature;top_p;max_tokens;"
-            "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level\n"
+            "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level;"
+            "litellm_min_p;litellm_best_of\n"
         )
-        f.write("ollama;gemma4:31b;ollama-default;0.7;1.0;512;4096;1.1;;;;\n")
-        f.write("ollama;phi4:14b;ollama-creative;1.2;0.95;512;4096;1.0;;;;\n")
-        f.write("openai;gpt-4o;openai-default;0.7;1.0;512;;;;42;\n")
-        f.write("vllm;meta-llama/Llama-3-8b;vllm-default;0.7;0.9;512;;;0.05;1;;\n")
-        f.write("gemini;gemini-2.0-flash;gemini-default;0.7;1.0;512;;;;;standard\n")
+        f.write("ollama;gemma4:31b;ollama-default;0.7;1.0;512;4096;1.1;;;;;;\n")
+        f.write("ollama;phi4:14b;ollama-creative;1.2;0.95;512;4096;1.0;;;;;;\n")
+        f.write("openai;gpt-4o;openai-default;0.7;1.0;512;;;;;42;;;\n")
+        f.write("vllm;meta-llama/Llama-3-8b;vllm-default;0.7;0.9;512;;;0.05;1;;;;\n")
+        f.write("gemini;gemini-2.0-flash;gemini-default;0.7;1.0;512;;;;;;standard;;\n")
+        f.write("litellm;gpt-oss:120b;litellm-default;0.7;0.9;512;;;;;;;0.05;1\n")
 
     cprint(f"Init project [bold yellow]{pid}[/bold yellow] with standard structure.")
 
@@ -216,9 +212,7 @@ def copy_papers(
     papers_path = os.path.join(get_project_directory_path(pid), PAPERS_DIR)
 
     if not os.path.isdir(papers_path):
-        raise LLMExerException(
-            f"No papers folder found for project '{pid}': '{papers_path}'."
-        )
+        raise LLMExerException(f"No papers folder found for project '{pid}': '{papers_path}'.")
 
     # Group parsed files by stem, preferring .md over .txt.
     chosen: dict[str, str] = {}
@@ -246,12 +240,9 @@ def copy_papers(
     df = pd.DataFrame(rows, columns=["ID", "filename", "content"])
     _, backup_name = _write_data_csv(experiment_subdir_path, df)
 
-    backup_note = (
-        f" (backed up previous data.csv → {backup_name})" if backup_name else ""
-    )
+    backup_note = f" (backed up previous data.csv → {backup_name})" if backup_name else ""
     cprint(
-        f"Copied [bold green]{len(rows)}[/bold green] paper(s) → "
-        f"[bold yellow]data.csv[/bold yellow]{backup_note}"
+        f"Copied [bold green]{len(rows)}[/bold green] paper(s) → " f"[bold yellow]data.csv[/bold yellow]{backup_note}"
     )
 
 
@@ -265,8 +256,7 @@ def copy_search(
     file: str = typer.Option(
         ...,
         "--file",
-        help="Search results CSV to copy from (absolute, or relative to the "
-        "project's searches/ folder).",
+        help="Search results CSV to copy from (absolute, or relative to the " "project's searches/ folder).",
     ),
 ) -> None:
     """Copy a search results file into data.csv.
@@ -279,11 +269,7 @@ def copy_search(
     pid = get_proper_pid(pid)
     experiment_subdir_path = get_experiment_subdir_path(pid)
 
-    search_path = (
-        file
-        if os.path.isabs(file)
-        else os.path.join(get_project_directory_path(pid), SEARCHES_DIR, file)
-    )
+    search_path = file if os.path.isabs(file) else os.path.join(get_project_directory_path(pid), SEARCHES_DIR, file)
     if not os.path.exists(search_path):
         raise LLMExerException(f"Search file not found: '{search_path}'.")
 
@@ -291,10 +277,7 @@ def copy_search(
     required = ["title", "abstract", "doi", "authors"]
     missing = [c for c in required if c not in search_df.columns]
     if missing:
-        raise LLMExerException(
-            f"Search file '{search_path}' is missing required column(s): "
-            f"{', '.join(missing)}."
-        )
+        raise LLMExerException(f"Search file '{search_path}' is missing required column(s): " f"{', '.join(missing)}.")
 
     source = search_df[required].fillna("")
     df = pd.DataFrame(
@@ -308,9 +291,7 @@ def copy_search(
     )
     _, backup_name = _write_data_csv(experiment_subdir_path, df)
 
-    backup_note = (
-        f" (backed up previous data.csv → {backup_name})" if backup_name else ""
-    )
+    backup_note = f" (backed up previous data.csv → {backup_name})" if backup_name else ""
     cprint(
         f"Copied [bold green]{len(df)}[/bold green] search result(s) → "
         f"[bold yellow]data.csv[/bold yellow]{backup_note}"
@@ -330,23 +311,21 @@ def generate(
     pid = get_proper_pid(pid)
     experiment_subdir_path = get_experiment_subdir_path(pid)
 
-    models_path = os.path.join(experiment_subdir_path, "llm-models.csv")
+    models_path = os.path.join(experiment_subdir_path, FILE_LLM_MODELS)
     data_path = os.path.join(experiment_subdir_path, "data.csv")
     mapping_path = os.path.join(experiment_subdir_path, "mapping.csv")
     llm_params_path = os.path.join(experiment_subdir_path, "llm-params.csv")
     prompts_subdir = os.path.join(experiment_subdir_path, "prompts")
 
     for label, path in [
-        ("llm-models.csv", models_path),
+        (FILE_LLM_MODELS, models_path),
         ("data.csv", data_path),
         ("mapping.csv", mapping_path),
         ("llm-params.csv", llm_params_path),
         ("prompts/", prompts_subdir),
     ]:
         if not os.path.exists(path):
-            raise LLMExerException(
-                f"Required file or directory not found for project '{pid}': {label}"
-            )
+            raise LLMExerException(f"Required file or directory not found for project '{pid}': {label}")
 
     models_df = pd.read_csv(models_path, sep=";", encoding="utf-8")
     data_df = pd.read_csv(data_path, sep=";", encoding="utf-8")
@@ -354,10 +333,26 @@ def generate(
     params_df = pd.read_csv(llm_params_path, sep=";", encoding="utf-8")
 
     if params_df.empty:
-        cprint(
-            "[bold yellow]Warning:[/bold yellow] llm-params.csv is empty — no rows will be generated."
-        )
+        cprint("[bold yellow]Warning:[/bold yellow] llm-params.csv is empty — no rows will be generated.")
         return
+
+    # Surface unknown provider names now rather than at run time, where they
+    # would otherwise create a table named after the typo. This is a warning,
+    # not an error: a custom endpoint only needs PROVIDER_<UPPER>_URL to be set
+    # by the time `run` executes. Local import keeps `generate` LLM-dep free.
+    from llmexer.base.llm_provider import is_known_provider
+
+    for _, model_row in models_df.iterrows():
+        if not is_known_provider(model_row["provider"]):
+            cprint(
+                f"[bold yellow]Warning:[/bold yellow] unknown provider "
+                f"'{model_row['provider']}' for model '{model_row['model_name']}'. The "
+                "'provider' column of llms-for-experiment.csv takes a provider "
+                "name (e.g. "
+                "'litellm'), not a profile name (e.g. 'litellm-default'). "
+                "'experiment run' will fail unless PROVIDER_"
+                f"{str(model_row['provider']).strip().upper()}_URL is set."
+            )
 
     data_lookup = data_df.set_index("ID").to_dict(orient="index")
     env = Environment(loader=BaseLoader(), undefined=DebugUndefined)
@@ -370,9 +365,7 @@ def generate(
         prompt_id = str(mapping_row["prompt_id"]).strip()
 
         if data_id not in data_lookup:
-            cprint(
-                f"[bold yellow]Warning:[/bold yellow] data_id '{data_id}' not found in data.csv — skipping."
-            )
+            cprint(f"[bold yellow]Warning:[/bold yellow] data_id '{data_id}' not found in data.csv — skipping.")
             continue
 
         data_row = data_lookup[data_id]
@@ -381,15 +374,11 @@ def generate(
 
         original_data_dict = {"ID": data_id, **data_row}
         original_data_str = json.dumps(original_data_dict, ensure_ascii=False)
-        original_data_hash = hashlib.sha256(
-            original_data_str.encode("utf-8")
-        ).hexdigest()
+        original_data_hash = hashlib.sha256(original_data_str.encode("utf-8")).hexdigest()
 
         prompt_file_path = os.path.join(prompts_subdir, f"{prompt_id}.txt")
         if not os.path.exists(prompt_file_path):
-            cprint(
-                f"[bold yellow]Warning:[/bold yellow] prompt file '{prompt_id}.txt' not found — skipping."
-            )
+            cprint(f"[bold yellow]Warning:[/bold yellow] prompt file '{prompt_id}.txt' not found — skipping.")
             continue
 
         with open(prompt_file_path, "r", encoding="utf-8") as f:
@@ -399,16 +388,28 @@ def generate(
         prompt_hash = hashlib.sha256(rendered_prompt.encode("utf-8")).hexdigest()
 
         for _, model_row in models_df.iterrows():
+            model_name = str(model_row["model_name"])
             for _, param_row in params_df.iterrows():
-                if model_row["name"] == param_row["model_name"]:
+                if model_row["model_name"] == param_row["model_name"]:
+                    # Profiles are joined on model name alone, so a profile
+                    # written for another provider would silently contribute
+                    # parameters that this provider's table cannot hold.
+                    if str(param_row["provider"]).strip().lower() != str(model_row["provider"]).strip().lower():
+                        cprint(
+                            f"[bold yellow]Warning:[/bold yellow] profile "
+                            f"'{param_row['profile_name']}' is defined for provider "
+                            f"'{param_row['provider']}' but model '{model_name}' "
+                            f"uses provider '{model_row['provider']}' — its "
+                            f"'{param_row['provider']}_*' parameters will be dropped."
+                        )
                     rows.append(
                         {
                             "ID": row_counter,
-                            "code": f"{data_id}_{prompt_id}_{str(model_row['name'])}_{param_row['profile_name']}",
+                            "code": f"{data_id}_{prompt_id}_{model_name}" f"_{param_row['profile_name']}",
                             "prompt": rendered_prompt,
                             "tokens_estimate": len(rendered_prompt) // 4,
                             "original_data": original_data_str,
-                            "model_name": str(model_row["name"]),
+                            "model_name": model_name,
                             "provider_name": str(model_row["provider"]),
                             "prompt_hash": prompt_hash,
                             "original_data_hash": original_data_hash,
@@ -418,14 +419,12 @@ def generate(
                     row_counter += 1
 
     if not rows:
-        cprint(
-            "[bold yellow]Warning:[/bold yellow] No rows were generated. Check your mapping.csv and data.csv."
-        )
+        cprint("[bold yellow]Warning:[/bold yellow] No rows were generated. Check your mapping.csv and data.csv.")
         return
 
     # Sort by model order (stable -> preserves mapping order within a model),
     # then renumber IDs 1..N across the whole generation.
-    model_order = list(models_df["name"].astype(str))
+    model_order = list(models_df["model_name"].astype(str))
 
     def _model_rank(row: dict) -> int:
         name = str(row["model_name"])
@@ -439,9 +438,7 @@ def generate(
     output_path = os.path.join(experiment_subdir_path, output_filename)
 
     if settings.dry_run:
-        cprint(
-            f"[bold yellow]Dry run:[/bold yellow] would write {len(rows)} row(s) to '{output_path}'"
-        )
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write {len(rows)} row(s) to '{output_path}'")
         return
 
     # Each provider gets its own table holding only its parameters.
@@ -476,8 +473,7 @@ def run(
     filter_provider: str = typer.Option(
         None,
         "--filter-provider",
-        help="Only run rows whose provider matches this value (case-insensitive). "
-        "E.g. --filter-provider ollama",
+        help="Only run rows whose provider matches this value (case-insensitive). " "E.g. --filter-provider ollama",
     ),
     id: str = typer.Option(
         None,
@@ -500,13 +496,10 @@ def run(
         )
     except ImportError as exc:
         raise LLMExerException(
-            "Missing required packages for LLM calls. "
-            "Install them with: pip install openai pydantic"
+            "Missing required packages for LLM calls. " "Install them with: pip install openai pydantic"
         ) from exc
 
-    cprint(
-        f"Using experiment database: [bold yellow]{os.path.basename(db_path)}[/bold yellow]"
-    )
+    cprint(f"Using experiment database: [bold yellow]{os.path.basename(db_path)}[/bold yellow]")
 
     with ExperimentDAO(db_path) as dao:
         rows = dao.fetch_rows(provider=filter_provider, id_experiment=id)
@@ -520,18 +513,13 @@ def run(
                 return
             if id is not None:
                 raise LLMExerException(f"No experiment row found with id '{id}'.")
-            cprint(
-                "[bold yellow]Warning:[/bold yellow] Experiment database is empty — "
-                "nothing to run."
-            )
+            cprint("[bold yellow]Warning:[/bold yellow] Experiment database is empty — " "nothing to run.")
             return
 
         responses_dir = os.path.join(experiment_subdir_path, DIR_RESPONSES)
         if not settings.dry_run:
             ensure_directory_exists(responses_dir)
-            cprint(
-                f"JSON responses will be saved into: [bold yellow]{responses_dir}[/bold yellow]"
-            )
+            cprint(f"JSON responses will be saved into: [bold yellow]{responses_dir}[/bold yellow]")
 
         total_runs = len(rows)
         cprint(f"Total experiments to run: [bold green]{total_runs}[/bold green]")
@@ -544,9 +532,7 @@ def run(
 
             # Skip rows that already completed successfully on an earlier run.
             if row.get("status") == "success":
-                cprint(
-                    f"{run_info_prefix} [bold yellow]skipped[/bold yellow] (already success)"
-                )
+                cprint(f"{run_info_prefix} [bold yellow]skipped[/bold yellow] (already success)")
                 continue
 
             cprint(f"{run_info_prefix} running")
@@ -563,9 +549,7 @@ def run(
             # Save individual JSON response (kept alongside the DB row).
             file_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
             safe_model = str(row["model_name"]).replace("/", "-").replace(":", "-")
-            json_path = os.path.join(
-                responses_dir, f"{file_ts}_{safe_model}_{provider}.json"
-            )
+            json_path = os.path.join(responses_dir, f"{file_ts}_{safe_model}_{provider}.json")
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(json_payload, f, indent=2, ensure_ascii=False)
 
@@ -610,14 +594,12 @@ def stats(
         db_files = _find_db_files(experiment_subdir_path)
         if not db_files:
             raise LLMExerException(
-                f"No experiment database found for project '{pid}'. "
-                f"Run `experiment generate --pid {pid}` first."
+                f"No experiment database found for project '{pid}'. " f"Run `experiment generate --pid {pid}` first."
             )
         if len(db_files) > 1:
             joined = ", ".join(db_files)
             raise LLMExerException(
-                f"Multiple experiment databases found for project '{pid}': {joined}. "
-                f"Pass --file to choose one."
+                f"Multiple experiment databases found for project '{pid}': {joined}. " f"Pass --file to choose one."
             )
         db_path = os.path.join(experiment_subdir_path, db_files[0])
 
@@ -698,16 +680,12 @@ def list_experiments(
     current_pid = settings.project_id
     experiment_file_to_run = ""
     for i, entry in enumerate(entries, start=1):
-        ctime = datetime.fromtimestamp(entry.stat().st_ctime, tz=timezone.utc).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        ctime = datetime.fromtimestamp(entry.stat().st_ctime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         is_initialized = _is_experiment_initialized(entry.path)
         init_display = "[green]Yes[/green]" if is_initialized else "[dim]No[/dim]"
 
         generated_files = _get_generated_experiment_files(entry.path)
-        files_display = (
-            "\n".join(generated_files) if generated_files else "[dim]-[/dim]"
-        )
+        files_display = "\n".join(generated_files) if generated_files else "[dim]-[/dim]"
         files_display_plain = "\n".join(generated_files) if generated_files else "-"
 
         # Check if this is the current project
@@ -729,6 +707,4 @@ def list_experiments(
 
     console.print(table)
     cprint("\nExample to run an experiment:")
-    cprint(
-        f"[bold yellow]llmexer experiment run --file {experiment_file_to_run}[/bold yellow]"
-    )
+    cprint(f"[bold yellow]llmexer experiment run --file {experiment_file_to_run}[/bold yellow]")

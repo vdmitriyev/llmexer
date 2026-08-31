@@ -40,3 +40,7 @@ class PaperExtractException(LLMExerException):
 
 class SearchResultsAlreadyExistException(LLMExerException):
     """Raised when search result files already exist and --force-rewrite is not set."""
+
+
+class ProviderConfigException(LLMExerException):
+    """Raised when a provider is missing required configuration (e.g. API token or base URL)."""

@@ -73,5 +73,9 @@ dev = [
     "pytest>=9.0.3"
 ]
 
+[tool.black]
+line-length = 120
+target-version = ['py312']
+
 [tool.uv]
 exclude-newer = "8 days"

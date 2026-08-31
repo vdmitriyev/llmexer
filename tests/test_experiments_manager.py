@@ -12,8 +12,14 @@ from llmexer.base.dao import ExperimentDAO
 from llmexer.base.llm_manager import Experiment, ExperimentsManager
 from llmexer.base.llm_provider import CallerState, ProviderResponse
 from llmexer.cli import app
-from llmexer.exceptions import LLMExerException
-from tests.db_helpers import OLLAMA_ROW, OPENAI_ROW, read_experiment_df, seed_db
+from llmexer.exceptions import LLMExerException, ProviderConfigException
+from tests.db_helpers import (
+    LITELLM_ROW,
+    OLLAMA_ROW,
+    OPENAI_ROW,
+    read_experiment_df,
+    seed_db,
+)
 
 runner = CliRunner()
 
@@ -22,9 +28,16 @@ _DB_NAME = "experiment_20240101_01.db"
 
 @pytest.fixture()
 def db_file(tmp_path):
-    """A two-provider experiment database (ollama ID 1, openai ID 2)."""
+    """A three-provider database (ollama ID 1, openai ID 2, litellm ID 3)."""
     path = tmp_path / "experiment_test.db"
-    seed_db(path, {"ollama": [dict(OLLAMA_ROW)], "openai": [dict(OPENAI_ROW)]})
+    seed_db(
+        path,
+        {
+            "ollama": [dict(OLLAMA_ROW)],
+            "openai": [dict(OPENAI_ROW)],
+            "litellm": [dict(LITELLM_ROW)],
+        },
+    )
     return str(path)
 
 
@@ -67,8 +80,27 @@ def mock_providers(monkeypatch):
             self.state = CallerState.FINISHED
             return ProviderResponse(text="mocked response", usage_tokens=42)
 
+    class FakeLiteLLMProvider(FakeOllamaProvider):
+        """Same canned behaviour, but records that config was validated."""
+
+        validated = False
+
+        def __init__(self, provider, auth=None, base_url=None, **kwargs):
+            super().__init__(provider, auth=auth, base_url=base_url, **kwargs)
+            self.base_url = base_url
+            self.auth = auth
+
+        def validate_config(self):
+            type(self).validated = True
+
+        def execute(self, prompt, row):
+            self.state = CallerState.FINISHED
+            return ProviderResponse(text="mocked litellm response", usage_tokens=42)
+
     monkeypatch.setattr(llm_module, "LLMRequestsMapper", FakeMapper)
     monkeypatch.setattr(llm_module, "OllamaProvider", FakeOllamaProvider)
+    monkeypatch.setattr(llm_module, "LiteLLMProvider", FakeLiteLLMProvider)
+    return FakeLiteLLMProvider
 
 
 # ---------------------------------------------------------------------------
@@ -152,20 +184,25 @@ def test_provider_tables_are_isolated(db_file):
     """Each provider table carries only its own parameter columns."""
     with ExperimentDAO(db_file) as dao:
         tables = dao.provider_tables()
-        assert set(tables) == {"ollama", "openai"}
+        assert set(tables) == {"ollama", "openai", "litellm"}
         ollama_cols = list(tables["ollama"].c.keys())
         openai_cols = list(tables["openai"].c.keys())
+        litellm_cols = list(tables["litellm"].c.keys())
     assert "ollama_context_window" in ollama_cols
     assert "ollama_context_window" not in openai_cols
     assert "openai_seed" in openai_cols
     assert "openai_seed" not in ollama_cols
+    assert {"litellm_min_p", "litellm_best_of"} <= set(litellm_cols)
+    assert "vllm_min_p" not in litellm_cols
+    assert "ollama_context_window" not in litellm_cols
+    assert "litellm_min_p" not in ollama_cols
 
 
 def test_fetch_rows_tags_provider(db_file):
     with ExperimentDAO(db_file) as dao:
         rows = dao.fetch_rows()
     providers = {r["_provider"] for r in rows}
-    assert providers == {"ollama", "openai"}
+    assert providers == {"ollama", "openai", "litellm"}
 
 
 def test_fetch_rows_by_id_and_code(db_file):
@@ -207,6 +244,51 @@ def test_run_openai_branch(db_file, mock_providers):
     assert exp.raw_response["usage"]["prompt_tokens"] == 10
     saved = json.loads(mgr.dao.fetch_rows(id_experiment=2)[0]["response_json"])
     assert saved["raw_response"]["usage"]["total_tokens"] == 42
+
+
+def test_run_litellm_dispatches_to_provider_class(db_file, mock_providers):
+    """A litellm row goes through LiteLLMProvider, not the legacy mapper."""
+    mgr = ExperimentsManager(db_file)
+    exp = mgr.run(3)
+
+    assert exp.status == "success"
+    assert exp.state == CallerState.FINISHED.value
+    assert exp.response_text == "mocked litellm response"
+    assert exp.usage_tokens == 42
+    row = mgr.dao.fetch_rows(id_experiment=3)[0]
+    assert row["response_text"] == "mocked litellm response"
+    assert json.loads(row["response_json"])["provider"] == "litellm"
+
+
+def test_run_litellm_validates_config_before_calling(db_file, mock_providers):
+    """Credentials are checked up front, not swallowed into a row status."""
+    mgr = ExperimentsManager(db_file)
+    mgr.run(3)
+    assert mock_providers.validated is True
+
+
+def test_run_litellm_config_error_aborts_the_run(db_file, monkeypatch):
+    """A missing token raises out of the run instead of writing an error row."""
+    import llmexer.base.llm_provider as llm_module
+
+    monkeypatch.delenv("PROVIDER_LITELLM_URL", raising=False)
+    monkeypatch.delenv("PROVIDER_LITELLM_KEY", raising=False)
+
+    called = []
+
+    class ExplodingProvider(llm_module.LiteLLMProvider):
+        def execute(self, prompt, row):  # pragma: no cover - must not run
+            called.append(prompt)
+            raise AssertionError("execute must not be reached")
+
+    monkeypatch.setattr(llm_module, "LiteLLMProvider", ExplodingProvider)
+
+    mgr = ExperimentsManager(db_file)
+    with pytest.raises(ProviderConfigException):
+        mgr.run(3)
+    assert called == []
+    # Nothing was written back for that row.
+    assert mgr.dao.fetch_rows(id_experiment=3)[0]["status"] is None
 
 
 def test_build_response_payload_includes_raw_response():
@@ -260,11 +342,11 @@ def test_run_error_state_recorded(db_file, monkeypatch):
 def test_stats_before_run(db_file):
     mgr = ExperimentsManager(db_file)
     data = mgr.stats()
-    assert data["total"] == 2
+    assert data["total"] == 3
     assert data["finished"] == 0
     assert "pending" not in data
-    assert data["providers"] == {"ollama": 1, "openai": 1}
-    assert set(data["models"]) == {"llama3.3:latest", "gpt-4o"}
+    assert data["providers"] == {"ollama": 1, "openai": 1, "litellm": 1}
+    assert set(data["models"]) == {"llama3.3:latest", "gpt-4o", "gpt-oss:120b"}
     # Each model is an aggregate dict: nothing run yet -> all open, no finished.
     for agg in data["models"].values():
         assert agg["requests"] == 1
@@ -326,9 +408,7 @@ def test_cli_stats_command(projects_dir):
         {"ollama": [dict(OLLAMA_ROW)], "openai": [dict(OPENAI_ROW)]},
     )
 
-    result = runner.invoke(
-        app, ["experiment", "stats", "--pid", pid, "--file", _DB_NAME]
-    )
+    result = runner.invoke(app, ["experiment", "stats", "--pid", pid, "--file", _DB_NAME])
 
     assert result.exit_code == 0, result.exception
     assert "total" in result.output
@@ -347,9 +427,7 @@ def test_cli_stats_defaults_to_single_db(projects_dir, mock_providers):
     os.makedirs(exp_subdir)
     seed_db(exp_subdir / _DB_NAME, {"ollama": [dict(OLLAMA_ROW)]})
 
-    run_result = runner.invoke(
-        app, ["experiment", "run", "--pid", pid, "--file", _DB_NAME]
-    )
+    run_result = runner.invoke(app, ["experiment", "run", "--pid", pid, "--file", _DB_NAME])
     assert run_result.exit_code == 0, run_result.exception
 
     result = runner.invoke(app, ["experiment", "stats", "--pid", pid])

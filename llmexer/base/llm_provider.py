@@ -8,13 +8,60 @@ from enum import Enum
 from typing import Any, Dict, Optional, Tuple
 
 from llmexer.base.llm_core import LLMRunResult
+from llmexer.exceptions import ProviderConfigException
 
 URL_MAP: Dict[str, Optional[str]] = {
     "ollama": "http://localhost:11434/v1",
     "vllm": "http://localhost:8000/v1",
     "openai": None,
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    # A LiteLLM proxy is always remote and site-specific: there is no sensible
+    # default, so PROVIDER_LITELLM_URL must be set explicitly.
+    "litellm": None,
 }
+
+
+def is_known_provider(provider: str) -> bool:
+    """Whether ``provider`` is one of the built-in providers in :data:`URL_MAP`."""
+
+    return str(provider or "").strip().lower() in URL_MAP
+
+
+def validate_provider(provider: str) -> str:
+    """Return the normalised provider name, raising if it cannot be reached.
+
+    A provider is usable when it is either built in (:data:`URL_MAP`) or has an
+    explicit ``PROVIDER_<UPPER>_URL`` configured. Anything else has no
+    resolvable endpoint and would otherwise fall through to the OpenAI SDK's
+    default host (``api.openai.com``) with the ``"na"`` API key placeholder,
+    producing a confusing ``401`` that mentions OpenAI even when no OpenAI model
+    is involved.
+
+    Args:
+        provider (str): provider name as written in ``llms-for-experiment.csv``.
+
+    Returns:
+        str: the lower-cased provider name.
+
+    Raises:
+        ProviderConfigException: if the provider is neither built in nor
+            explicitly pointed at a base URL.
+    """
+
+    normalised = str(provider or "").strip().lower()
+    if normalised in URL_MAP:
+        return normalised
+    if os.environ.get(f"PROVIDER_{normalised.upper()}_URL"):
+        # A deliberately configured custom endpoint.
+        return normalised
+    raise ProviderConfigException(
+        f"Unknown LLM provider '{provider}'. Supported providers: "
+        f"{', '.join(sorted(URL_MAP))}. Check the 'provider' column of "
+        "llms-for-experiment.csv — it takes a provider name (e.g. 'litellm'), "
+        "not a "
+        "profile name from llm-params.csv (e.g. 'litellm-default'). To use a "
+        f"custom endpoint, set PROVIDER_{normalised.upper()}_URL."
+    )
 
 
 def resolve_provider_config(provider: str) -> Tuple[Optional[str], str]:
@@ -64,7 +111,9 @@ class CallerState(str, Enum):
 
 @dataclass
 class ProviderAuth:
-    api_key: str = "na"
+    # ``repr=False``: Typer renders tracebacks with locals shown, so anything in
+    # a dataclass repr ends up on screen and in the log. Keep the token out.
+    api_key: str = field(default="na", repr=False)
     extra_headers: dict[str, str] = field(default_factory=dict)
 
 
@@ -120,9 +169,7 @@ class LLMProviderBase(ABC):
 class LLMRequestsMapper:
     """Translates generic CSV row parameters to provider-specific OpenAI SDK arguments."""
 
-    def __init__(
-        self, provider: str, base_url: Optional[str] = None, api_key: str = "na"
-    ):
+    def __init__(self, provider: str, base_url: Optional[str] = None, api_key: str = "na"):
         from openai import OpenAI  # lazy import — openai is an optional dependency
 
         self.provider = provider.lower()
@@ -161,6 +208,18 @@ class LLMRequestsMapper:
                 for k, v in {
                     "min_p": row.get("vllm_min_p"),
                     "best_of": row.get("vllm_best_of"),
+                }.items()
+                if v is not None
+            }
+
+        elif self.provider == "litellm":
+            if row.get("max_tokens") is not None:
+                payload["max_tokens"] = row["max_tokens"]
+            extra_body = {
+                k: v
+                for k, v in {
+                    "min_p": row.get("litellm_min_p"),
+                    "best_of": row.get("litellm_best_of"),
                 }.items()
                 if v is not None
             }
@@ -262,9 +321,99 @@ class OllamaProvider(LLMProviderBase):
             )
             text = completion.choices[0].message.content or ""
             tokens = getattr(completion.usage, "total_tokens", None)
-            self.response = ProviderResponse(
-                text=text, usage_tokens=tokens, raw=completion  # gitleaks:allow
+            self.response = ProviderResponse(text=text, usage_tokens=tokens, raw=completion)  # gitleaks:allow
+            self.state = CallerState.FINISHED
+        except Exception as exc:
+            self.response = ProviderResponse(text="", usage_tokens=None, raw=str(exc))
+            self.state = CallerState.ERROR
+        finally:
+            elapsed = time.monotonic() - t0
+            self.stats.call_count += 1
+            self.stats.elapsed_seconds += elapsed
+            if self.response and self.response.usage_tokens:
+                self.stats.total_tokens += self.response.usage_tokens
+        return self.response
+
+
+@dataclass
+class LiteLLMProvider(LLMProviderBase):
+    """Concrete LLM provider for models served behind a LiteLLM proxy.
+
+    The proxy exposes a single OpenAI-compatible endpoint in front of a vLLM
+    backend, so the hyperparameters mirror the ``vllm`` ones (``min_p`` /
+    ``best_of`` passed through ``extra_body``). Unlike the local providers, the
+    proxy always requires an API token, and there is no default URL — both are
+    validated up front by :meth:`validate_config`.
+    """
+
+    base_url: Optional[str] = URL_MAP["litellm"]
+
+    def validate_config(self) -> None:
+        """Ensure the proxy URL and API token are configured.
+
+        Raises:
+            ProviderConfigException: if the base URL or the API token is missing.
+        """
+
+        if not self.base_url:
+            raise ProviderConfigException(
+                f"Provider '{self.provider}' requires a base URL. "
+                f"Set PROVIDER_{self.provider.upper()}_URL in your .env."
             )
+        if not self.auth.api_key or self.auth.api_key == "na":
+            raise ProviderConfigException(
+                f"Provider '{self.provider}' requires an API token. "
+                f"Set PROVIDER_{self.provider.upper()}_KEY in your .env."
+            )
+
+    def build_session(self) -> None:
+        from openai import OpenAI
+
+        self.validate_config()
+        self.session = OpenAI(base_url=self.base_url, api_key=self.auth.api_key)
+
+    def build_request(self, prompt: str, row: dict) -> ProviderRequest:
+        extra_body: Dict[str, Any] = {
+            k: v
+            for k, v in {
+                "min_p": row.get("litellm_min_p"),
+                "best_of": row.get("litellm_best_of"),
+            }.items()
+            if v is not None
+        }
+        params: Dict[str, Any] = {
+            "temperature": row.get("temperature", 0.7),
+            "top_p": row.get("top_p", 1.0),
+        }
+        if row.get("max_tokens") is not None:
+            params["max_tokens"] = row["max_tokens"]
+        if extra_body:
+            params["extra_body"] = extra_body
+        self.request = ProviderRequest(
+            model=str(row.get("model_name", "")),
+            prompt=prompt,
+            params=params,
+        )
+        return self.request
+
+    def execute(self, prompt: str, row: dict) -> ProviderResponse:
+        self.data = row
+        self.state = CallerState.RUNNING
+        t0 = time.monotonic()
+        try:
+            if self.session is None:
+                self.build_session()
+            req = self.build_request(prompt, row)
+            extra_body = req.params.pop("extra_body", None)
+            completion = self.session.chat.completions.create(
+                model=req.model,
+                messages=[{"role": "user", "content": req.prompt}],
+                extra_body=extra_body or None,
+                **req.params,
+            )
+            text = completion.choices[0].message.content or ""
+            tokens = getattr(completion.usage, "total_tokens", None)
+            self.response = ProviderResponse(text=text, usage_tokens=tokens, raw=completion)  # gitleaks:allow
             self.state = CallerState.FINISHED
         except Exception as exc:
             self.response = ProviderResponse(text="", usage_tokens=None, raw=str(exc))

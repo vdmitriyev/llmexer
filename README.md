@@ -35,16 +35,22 @@ This tool requires access to local or remote running LLMs. It uses a `.env` file
     DOCLING_USER=myuser
     DOCLING_PASSWORD=mypassword
     ```
-4.  Set the API key for LLM providers (optional, used by `experiment run` for ollama, vllm, OpenAI, Gemini):
+4.  Set the API key for LLM providers (optional, used by `experiment run` for ollama, vllm, litellm, OpenAI, Gemini):
     ```env
     # Base URL for a specific provider
     PROVIDER_OLLAMA_URL=http://localhost:11434/v1
     PROVIDER_VLLM_URL=http://localhost:8000/v1
 
-    # The API key for a specific provider (takes precedence over LLM_API_KEY)
+    # The API key for a specific provider
     PROVIDER_OPENAI_KEY=sk-...
     ```
-     The pattern is `PROVIDER_<PROVIDER_UPPER>_URL` and `PROVIDER_<PROVIDER_UPPER>_KEY` where `<PROVIDER_UPPER>` is the provider name in uppercase (e.g. `OLLAMA`, `VLLM`, `OPENAI`, `GEMINI`).
+     The pattern is `PROVIDER_<PROVIDER_UPPER>_URL` and `PROVIDER_<PROVIDER_UPPER>_KEY` where `<PROVIDER_UPPER>` is the provider name in uppercase (e.g. `OLLAMA`, `VLLM`, `LITELLM`, `OPENAI`, `GEMINI`).
+
+     The `litellm` provider talks to a [LiteLLM](https://docs.litellm.ai/) proxy sitting in front of a vLLM backend. Unlike the local providers it has **no default URL** and **requires an API token** - both must be set, otherwise `experiment run` aborts immediately with a clear error instead of failing later with an opaque `401`:
+    ```env
+    PROVIDER_LITELLM_URL=https://your-litellm-proxy.example.org/v1
+    PROVIDER_LITELLM_KEY=sk-...
+    ```
 5.  Enable the OpenAlex search engine (optional, used by `search run` as a second source after Semantic Scholar; skipped if unset):
     ```env
     OPENALEX_API_KEY=...
@@ -92,20 +98,20 @@ llmexer experiment init --pid llm-survey-2026
 
 Initialization of the project creates following files (inside <PROJECT_NAME> folder):
 
-* *`experiment/llm-models.csv` - list of models to use (name, provider, notes); pre-filled with `gemma4:31b`, `phi4:14b`
+* *`experiment/llms-for-experiment.csv` - list of models to use (provider, model_name, notes); pre-filled with `gemma4:31b`, `phi4:14b`
 * `experiment/data.csv` - input data rows (ID, Title, Abstract)
 * `experiment/mapping.csv` - maps data IDs to prompt IDs; pre-filled with `D01;prompt01` and `D02;prompt01`
 * `experiment/prompts/prompt01.txt` - a starter Jinja2 prompt template using `{{title}}` and `{{abstract}}`
 * `experiment/llm-params.csv` - LLM hyperparameter profiles;
     - identity columns: `provider`, `model_name`, `profile_name`;
     - universal columns: `temperature`, `top_p`, `max_tokens`;
-    - provider-grouped columns: `ollama_context_window`, `ollama_repeat_penalty` (ollama), `vllm_min_p`, `vllm_best_of` (vllm), `openai_seed` (openai), `gemini_thinking_level` (gemini); pre-filled with example profiles for `ollama`, `openai`, `vllm`, and `gemini`
+    - provider-grouped columns: `ollama_context_window`, `ollama_repeat_penalty` (ollama), `vllm_min_p`, `vllm_best_of` (vllm), `openai_seed` (openai), `gemini_thinking_level` (gemini), `litellm_min_p`, `litellm_best_of` (litellm); pre-filled with example profiles for `ollama`, `openai`, `vllm`, `gemini`, and `litellm`
 
 </details>
 
 **4. Generate the full experiment database**
 
-After filling in `experiment/llm-models.csv`, `experiment/data.csv`, `experiment/mapping.csv`, `experiment/llm-params.csv`, and your Jinja2 prompt templates:
+After filling in `experiment/llms-for-experiment.csv`, `experiment/data.csv`, `experiment/mapping.csv`, `experiment/llm-params.csv`, and your Jinja2 prompt templates:
 ```bash
 llmexer experiment generate --pid llm-survey-2026
 ```
@@ -303,11 +309,11 @@ The `experiment` (alias: `exp`) category provides commands for initialising, gen
 
 | Command   | Description | Command Example |
 |-----------|-------------|-----------------|
-| `init` | Initialise an existing project with a standard folder structure (`experiment/`, `experiment/prompts/`) and template files: `llm-models.csv` (pre-filled with example ollama models), `data.csv`, `mapping.csv` (pre-filled with D01 and D02 rows), `prompts/prompt01.txt` (Jinja2 template using `{{title}}` and `{{abstract}}`), and `llm-params.csv` (hyperparameter profiles; universal: `temperature`, `top_p`, `max_tokens`; ollama: `ollama_context_window`, `ollama_repeat_penalty`; vllm: `vllm_min_p`, `vllm_best_of`; openai: `openai_seed`; gemini: `gemini_thinking_level`). Raises an error if already initialised. | `llmexer experiment init --pid my-project` |
+| `init` | Initialise an existing project with a standard folder structure (`experiment/`, `experiment/prompts/`) and template files: `llms-for-experiment.csv` (pre-filled with example ollama models), `data.csv`, `mapping.csv` (pre-filled with D01 and D02 rows), `prompts/prompt01.txt` (Jinja2 template using `{{title}}` and `{{abstract}}`), and `llm-params.csv` (hyperparameter profiles; universal: `temperature`, `top_p`, `max_tokens`; ollama: `ollama_context_window`, `ollama_repeat_penalty`; vllm: `vllm_min_p`, `vllm_best_of`; openai: `openai_seed`; gemini: `gemini_thinking_level`). Raises an error if already initialised. | `llmexer experiment init --pid my-project` |
 | `copy-papers` | Copy parsed papers (`.md`/`.txt`) from the project's `papers/` folder into `experiment/data.csv` as rows `ID;filename;content`, with IDs `P01`, `P02`, … ordered alphabetically by filename (`.md` preferred over `.txt` when both exist). An existing `data.csv` is backed up to `data_backup_<YYYYMMDD>_<NN>.csv` first. | `llmexer experiment copy-papers --pid my-project` |
 | `copy-search` | Copy a search results CSV (`--file`, absolute or relative to the project's `searches/` folder) into `experiment/data.csv` as rows `ID;Title;Abstract;doi;authors`, with IDs `S01`, `S02`, … preserving the source file's row order. An existing `data.csv` is backed up to `data_backup_<YYYYMMDD>_<NN>.csv` first. | `llmexer experiment copy-search --pid my-project --file <SEARCH_ID>__results.csv` |
-| `generate` | Render all (data row × prompt × LLM models × LLM parameters) combinations and write a self-contained SQLite database `experiment/experiment_<YYYYMMDD>_<NN>.db` (`<NN>` is a zero-padded counter starting at `01`). Each LLM provider gets its own table (e.g. `experiment_ollama`) with columns `ID`, `code` (`DATAID_PROMPTID_MODELNAME_PROFILENAME`), `prompt`, `tokens_estimate`, `original_data`, `model_name`, `provider_name`, that provider's param columns from `llm-params.csv` (`profile_name`, `temperature`, `top_p`, `max_tokens`, plus the provider-specific ones, e.g. `ollama_context_window`, `ollama_repeat_penalty`), the `prompt_hash` / `original_data_hash` columns, and the result columns filled in by `run`. Rows are sorted by model order from `llm-models.csv`. Supports `--dry-run`. | `llmexer experiment generate --pid my-project` |
-| `run` | Execute every row in the generated database `experiment_*.db` (no separate params file needed — all columns are embedded). Calls each LLM via the OpenAI SDK (supports ollama, vllm, openai, gemini) and writes results **back into the same database in place** (response, status, token usage, timestamps, plus the complete raw backend response under `raw_response`); re-runs skip rows that already finished successfully and update the rest. Individual JSON responses are saved under `experiment/responses/`. Supports `--dry-run`, `--file` (choose a specific `.db`, defaults to the newest), `--filter-provider` (only run rows for a specific provider), `--id` (run a single combination by its `ID` or `code`). API key read from `LLM_API_KEY` or `PROVIDER_<PROVIDER_UPPER>_KEY` env vars; URL from `PROVIDER_<PROVIDER_UPPER>_URL` or built-in defaults. Requires `openai` package (`pip install openai`). | `llmexer experiment run --pid my-project --filter-provider ollama` |
+| `generate` | Render all (data row × prompt × LLM models × LLM parameters) combinations and write a self-contained SQLite database `experiment/experiment_<YYYYMMDD>_<NN>.db` (`<NN>` is a zero-padded counter starting at `01`). Each LLM provider gets its own table (e.g. `experiment_ollama`) with columns `ID`, `code` (`DATAID_PROMPTID_MODELNAME_PROFILENAME`), `prompt`, `tokens_estimate`, `original_data`, `model_name`, `provider_name`, that provider's param columns from `llm-params.csv` (`profile_name`, `temperature`, `top_p`, `max_tokens`, plus the provider-specific ones, e.g. `ollama_context_window`, `ollama_repeat_penalty`), the `prompt_hash` / `original_data_hash` columns, and the result columns filled in by `run`. Rows are sorted by model order from `llms-for-experiment.csv`. Supports `--dry-run`. | `llmexer experiment generate --pid my-project` |
+| `run` | Execute every row in the generated database `experiment_*.db` (no separate params file needed — all columns are embedded). Calls each LLM via the OpenAI SDK (supports ollama, vllm, litellm, openai, gemini) and writes results **back into the same database in place** (response, status, token usage, timestamps, plus the complete raw backend response under `raw_response`); re-runs skip rows that already finished successfully and update the rest. Individual JSON responses are saved under `experiment/responses/`. Supports `--dry-run`, `--file` (choose a specific `.db`, defaults to the newest), `--filter-provider` (only run rows for a specific provider), `--id` (run a single combination by its `ID` or `code`). API key read from the `PROVIDER_<PROVIDER_UPPER>_KEY` env var; URL from `PROVIDER_<PROVIDER_UPPER>_URL` or built-in defaults (`litellm` requires both to be set explicitly). Requires `openai` package (`pip install openai`). | `llmexer experiment run --pid my-project --filter-provider ollama` |
 | `stats` | Show aggregate statistics from a project's experiment database: totals (total, finished, running, errors), total tokens, and per-provider / per-model breakdowns rendered as Rich tables. The Models table has per-model columns `requests`, `finished`, `open` (pending/unrun), `time total` (HH:MM:SS over finished requests), `average time` (HH:MM:SS mean per finished request), and `tokens` (summed over finished requests). With no `--file` it reads the project's single `experiment_*.db` (pass `--file` to choose one when several exist). | `llmexer experiment stats --pid my-project` |
 | `list` | List all projects with their initialization state and generated experiment databases, with optional sorting by name or date. | `llmexer experiment list --sort-by date --desc` |
 

@@ -2,6 +2,14 @@
 History
 =======
 
+0.3.3 (2026-08-31)
+-------------------
+
+* Add the ``litellm`` LLM provider: vLLM models served behind a `LiteLLM <https://docs.litellm.ai/>`_ proxy, reached over the proxy's OpenAI-compatible endpoint. Configured with ``PROVIDER_LITELLM_URL`` and ``PROVIDER_LITELLM_KEY``; both are mandatory (the proxy always authenticates with an API token and has no sensible default URL), so ``experiment run`` aborts up front with a clear message instead of failing later with an opaque ``401``. Hyperparameters mirror the ``vllm`` ones: ``litellm_min_p`` and ``litellm_best_of``, alongside the common ``temperature`` / ``top_p`` / ``max_tokens``.
+* Fix ``experiment init``: the ``openai`` and ``gemini`` example rows of ``llm-params.csv`` were each one field short, so ``openai_seed`` was parsed as ``vllm_best_of`` and ``gemini_thinking_level`` as ``openai_seed``.
+* Keep provider API tokens out of ``ProviderAuth``'s ``repr``, so they are no longer printed by Typer's ``show_locals`` tracebacks or the log.
+* **Breaking:** rename the experiment model roster ``llm-models.csv`` to ``llms-for-experiment.csv`` and reorder its columns to ``provider;model_name;notes`` (was ``name;provider;notes``). The model column is now called ``model_name`` in both input CSVs and in the generated tables, so ``experiment generate`` joins ``llms-for-experiment.csv`` and ``llm-params.csv`` on identically named columns. There is no fallback: existing projects must rename the file and reorder its columns, otherwise ``experiment generate`` reports the file as missing and ``experiment list`` reports the project as not initialised.
+
 0.3.2 (2026-08-25)
 -------------------
 

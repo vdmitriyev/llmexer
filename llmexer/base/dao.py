@@ -77,6 +77,8 @@ COLUMN_TYPES: Dict[str, Any] = {
     "vllm_best_of": Integer,
     "openai_seed": Integer,
     "gemini_thinking_level": String,
+    "litellm_min_p": Float,
+    "litellm_best_of": Integer,
     # results
     "response_text": Text,
     "usage_tokens": Integer,
@@ -136,11 +138,7 @@ def list_db_files(folder: str) -> List[str]:
 
     if not os.path.isdir(folder):
         return []
-    return sorted(
-        f
-        for f in os.listdir(folder)
-        if f.startswith(DB_PREFIX) and f.endswith(DB_SUFFIX)
-    )
+    return sorted(f for f in os.listdir(folder) if f.startswith(DB_PREFIX) and f.endswith(DB_SUFFIX))
 
 
 def _counter_of(filename: str) -> int:
@@ -169,9 +167,7 @@ def next_db_filename(
 
     if date is None:
         date = datetime.now(timezone.utc).strftime("%Y%m%d")
-    existing = [
-        f for f in list_db_files(folder) if f.startswith(prefix) and f.endswith(suffix)
-    ]
+    existing = [f for f in list_db_files(folder) if f.startswith(prefix) and f.endswith(suffix)]
     counter = max((_counter_of(f) for f in existing), default=0) + 1
     return f"{prefix}_{date}_{counter:02d}{suffix}"
 
@@ -220,10 +216,7 @@ class ExperimentDAO:
 
     # ----------------------------------------------------------------- schema
     def _build_table(self, provider: str) -> Table:
-        columns = [
-            Column(name, COLUMN_TYPES[name], primary_key=(name == "ID"))
-            for name in _provider_columns(provider)
-        ]
+        columns = [Column(name, COLUMN_TYPES[name], primary_key=(name == "ID")) for name in _provider_columns(provider)]
         return Table(table_name_for(provider), self.metadata, *columns)
 
     def ensure_provider_table(self, provider: str) -> Table:
@@ -247,9 +240,7 @@ class ExperimentDAO:
     def _table_for(self, provider: str) -> Table:
         key = str(provider).lower()
         if key not in self._tables:
-            raise LLMExerException(
-                f"No experiment table for provider '{provider}' in '{self.db_path}'."
-            )
+            raise LLMExerException(f"No experiment table for provider '{provider}' in '{self.db_path}'.")
         return self._tables[key]
 
     # ---------------------------------------------------------------- generate
@@ -266,14 +257,10 @@ class ExperimentDAO:
         table = self.ensure_provider_table(provider)
         self.create_tables()
         valid = set(table.c.keys())
-        payload = [
-            {k: _clean_value(v) for k, v in row.items() if k in valid} for row in rows
-        ]
+        payload = [{k: _clean_value(v) for k, v in row.items() if k in valid} for row in rows]
         with self.engine.begin() as conn:
             conn.execute(insert(table), payload)
-        logger.info(
-            f"Inserted {len(payload)} row(s) into '{table.name}' of '{self.db_path}'."
-        )
+        logger.info(f"Inserted {len(payload)} row(s) into '{table.name}' of '{self.db_path}'.")
         return len(payload)
 
     # --------------------------------------------------------------------- run
@@ -349,11 +336,7 @@ class ExperimentDAO:
                 running += count(table.c.state == "running")
 
                 token_sum = conn.execute(
-                    select(
-                        func.sum(
-                            func.coalesce(table.c.total_tokens, table.c.usage_tokens, 0)
-                        )
-                    ).select_from(table)
+                    select(func.sum(func.coalesce(table.c.total_tokens, table.c.usage_tokens, 0))).select_from(table)
                 ).scalar()
                 total_tokens += int(token_sum or 0)
 
@@ -361,9 +344,7 @@ class ExperimentDAO:
                 # open (pending/unrun, NULL status) rows, plus tokens and elapsed
                 # time accumulated over the model's *finished* rows only.
                 is_finished = table.c.status == "success"
-                finished_tokens = func.coalesce(
-                    table.c.total_tokens, table.c.usage_tokens, 0
-                )
+                finished_tokens = func.coalesce(table.c.total_tokens, table.c.usage_tokens, 0)
                 for (
                     name,
                     cnt,
@@ -407,9 +388,7 @@ class ExperimentDAO:
 
         # Mean elapsed time per finished request (over the cross-table totals).
         for agg in models.values():
-            agg["avg_elapsed_seconds"] = (
-                agg["elapsed_seconds"] / agg["finished"] if agg["finished"] else 0.0
-            )
+            agg["avg_elapsed_seconds"] = agg["elapsed_seconds"] / agg["finished"] if agg["finished"] else 0.0
 
         return {
             "total": total,
