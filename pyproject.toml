@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llmexer"
 description = "Framework and CLI utility to create and curate datasets (e.g., publications, metadata, LLM prompts, etc.) and orchestrate (design, run, evaluate) various LLM experiments on them"
-version = "0.3.2"
+version = "0.3.3"
 readme = "README.md"
 authors = [
   {name = "vdmitriyev"},
