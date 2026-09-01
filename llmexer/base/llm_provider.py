@@ -60,7 +60,8 @@ def validate_provider(provider: str) -> str:
         f"{', '.join(sorted(URL_MAP))}. Check the 'provider' column of "
         f"{FILE_LLMS_FOR_EXPERIMENT} — it takes a provider name (e.g. 'litellm'), "
         "not a "
-        f"profile name from {FILE_LLM_PARAMS} (e.g. 'litellm-default'). To use a "
+        f"profile name from {FILE_LLM_PARAMS} (e.g. 'litellm-default'); a profile "
+        "belongs in the 'profile_name' column. To use a "
         f"custom endpoint, set PROVIDER_{normalised.upper()}_URL."
     )
 

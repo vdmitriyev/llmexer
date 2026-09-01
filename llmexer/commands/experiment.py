@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 import shutil
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -18,6 +18,7 @@ from rich.table import Table
 from llmexer.base.dao import ExperimentDAO, latest_db, list_db_files, next_db_filename
 from llmexer.base.experiment import (
     _PARAM_COLUMNS,
+    CSV_JOIN_KEY_COLUMNS,
     DIR_EXPERIMENT,
     DIR_PROMPTS,
     DIR_RESPONSES,
@@ -47,22 +48,93 @@ class SortBy(str, Enum):
 app = typer.Typer(help="Manage LLM experiments.")
 
 
-def _join_key(provider: Any, model_name: Any) -> tuple[str, str]:
+def _key_part(value: Any) -> str:
+    """Normalise one join-key cell: a missing value becomes ``""``, else stripped.
+
+    ``pd.read_csv`` yields ``NaN`` for an empty cell and ``str(nan)`` is the
+    string ``"nan"``, which would join against a profile literally named ``nan``
+    and print ``nan`` in every warning. Collapse it to ``""`` instead.
+
+    Args:
+        value (Any): a raw CSV cell.
+
+    Returns:
+        str: the stripped value, or ``""`` when the cell is empty.
+    """
+
+    return "" if pd.isna(value) else str(value).strip()
+
+
+def _join_key(provider: Any, model_name: Any, profile_name: Any) -> tuple[str, str, str]:
     """Identity key shared by ``llms-for-experiment.csv`` and ``llm-params.csv``.
 
-    Surrounding whitespace is stripped so a stray space in a CSV cell does not
-    silently drop a model, but the comparison stays case-sensitive: model names
-    are sent verbatim to the provider, where casing can be significant.
+    The join is on all THREE columns, so a model row matches exactly one profile
+    row; running one model under two profiles means listing it twice in
+    ``llms-for-experiment.csv``. Surrounding whitespace is stripped so a stray
+    space in a CSV cell does not silently drop a model, but the comparison stays
+    case-sensitive: model names are sent verbatim to the provider, where casing
+    can be significant. An empty ``profile_name`` normalises to ``""`` and so
+    matches nothing.
 
     Args:
         provider (Any): the ``provider`` cell.
         model_name (Any): the ``model_name`` cell.
+        profile_name (Any): the ``profile_name`` cell.
 
     Returns:
-        tuple[str, str]: ``(provider, model_name)``, both stripped.
+        tuple[str, str, str]: ``(provider, model_name, profile_name)``, stripped.
     """
 
-    return (str(provider).strip(), str(model_name).strip())
+    return (_key_part(provider), _key_part(model_name), _key_part(profile_name))
+
+
+def _row_join_key(row: Any) -> tuple[str, str, str]:
+    """Build the join key from a CSV row of either file."""
+
+    return _join_key(row["provider"], row["model_name"], row["profile_name"])
+
+
+def _require_join_columns(df: pd.DataFrame, filename: str, pid: str, expected_header: str) -> None:
+    """Fail fast when a CSV predates the three-column join key.
+
+    Without this a ``llms-for-experiment.csv`` written before ``profile_name``
+    existed would die with a bare ``KeyError`` deep inside the join.
+    """
+
+    missing = [column for column in CSV_JOIN_KEY_COLUMNS if column not in df.columns]
+    if missing:
+        raise LLMExerException(
+            f"'{filename}' of project '{pid}' is missing required column(s): "
+            f"{', '.join(missing)}. Expected header: '{expected_header}'. Models and profiles "
+            f"are matched on {', '.join(CSV_JOIN_KEY_COLUMNS)}; list a model once per profile "
+            "it should run under."
+        )
+
+
+def _check_unique_join_keys(df: pd.DataFrame, filename: str, pid: str) -> None:
+    """Abort when the same (model_name, provider, profile_name) appears twice.
+
+    The check runs on the NORMALISED key, not on the raw cells: ``duplicated()``
+    would let ``' ollama '`` and ``'ollama'`` through, yet the join collapses
+    them and the two rows would then fight over one parameter set.
+    """
+
+    counts = Counter(_row_join_key(row) for _, row in df.iterrows())
+    duplicates = [key for key, count in counts.items() if count > 1]
+    if not duplicates:
+        return
+
+    for provider, model_name, profile_name in duplicates:
+        cprint(
+            f"[bold red]Error:[/bold red] duplicated row in {filename}: "
+            f"model_name='{model_name}', provider='{provider}', "
+            f"profile_name='{profile_name}' (x{counts[(provider, model_name, profile_name)]})."
+        )
+    raise LLMExerException(
+        f"'{filename}' of project '{pid}' has {len(duplicates)} duplicated row(s): the "
+        "combination of 'model_name', 'provider' and 'profile_name' must be unique. "
+        "Nothing was generated."
+    )
 
 
 def _find_db_files(experiment_subdir_path: str) -> list[str]:
@@ -234,9 +306,9 @@ def init(
     # llms-for-experiment.csv
     models_path = os.path.join(experiment_subdir_path, FILE_LLMS_FOR_EXPERIMENT)
     with open(models_path, "w", encoding="utf-8") as f:
-        f.write("provider;model_name;notes\n")
-        f.write("ollama;gemma4:31b;local model\n")
-        f.write("ollama;phi4:14b;local model\n")
+        f.write("provider;model_name;profile_name;notes\n")
+        f.write("ollama;gemma4:31b;ollama-default;local model\n")
+        f.write("ollama;phi4:14b;ollama-creative;local model\n")
 
     # data.csv
     data_path = os.path.join(experiment_subdir_path, FILE_DATA)
@@ -487,16 +559,33 @@ def generate(
     mapping_df = pd.read_csv(mapping_path, sep=";", encoding="utf-8")
     params_df = pd.read_csv(llm_params_path, sep=";", encoding="utf-8")
 
+    # Structural problems win over "the file is empty": a missing column or a
+    # duplicated combination is reported before anything else happens.
+    _require_join_columns(models_df, FILE_LLMS_FOR_EXPERIMENT, pid, "provider;model_name;profile_name;notes")
+    _require_join_columns(params_df, FILE_LLM_PARAMS, pid, "provider;model_name;profile_name;temperature;...")
+    _check_unique_join_keys(models_df, FILE_LLMS_FOR_EXPERIMENT, pid)
+    _check_unique_join_keys(params_df, FILE_LLM_PARAMS, pid)
+
     if params_df.empty:
         cprint(f"[bold yellow]Warning:[/bold yellow] {FILE_LLM_PARAMS} is empty — no rows will be generated.")
         return
 
-    # Profiles are matched to models on BOTH identity columns, so a profile
-    # written for another provider cannot attach itself to a same-named model.
-    # Values are stripped but compared case-sensitively.
-    params_by_key: dict = defaultdict(list)
+    # Profiles are matched to models on ALL THREE identity columns, so neither a
+    # profile written for another provider nor another profile of the same model
+    # can attach itself. Values are stripped but compared case-sensitively.
+    # Uniqueness was enforced above, so there is exactly one row per key.
+    params_by_key: dict = {}
     for _, param_row in params_df.iterrows():
-        params_by_key[_join_key(param_row["provider"], param_row["model_name"])].append(param_row)
+        key = _row_join_key(param_row)
+        if not key[2]:
+            # An unnamed profile would join a models row that is *also* blank,
+            # which is never what the user meant. Reject it on both sides.
+            cprint(
+                f"[bold yellow]Warning:[/bold yellow] a row of {FILE_LLM_PARAMS} for model "
+                f"'{key[1]}' has an empty 'profile_name' — ignored."
+            )
+            continue
+        params_by_key[key] = param_row
 
     # Surface unknown provider names now rather than at run time, where they
     # would otherwise create a table named after the typo. This is a warning,
@@ -505,23 +594,30 @@ def generate(
     from llmexer.base.llm_provider import is_known_provider
 
     for _, model_row in models_df.iterrows():
-        if not is_known_provider(model_row["provider"]):
+        provider_name, model_name, profile_name = _row_join_key(model_row)
+        if not is_known_provider(provider_name):
             cprint(
                 f"[bold yellow]Warning:[/bold yellow] unknown provider "
-                f"'{model_row['provider']}' for model '{model_row['model_name']}'. The "
+                f"'{provider_name}' for model '{model_name}'. The "
                 f"'provider' column of {FILE_LLMS_FOR_EXPERIMENT} takes a provider "
                 "name (e.g. "
-                "'litellm'), not a profile name (e.g. 'litellm-default'). "
+                "'litellm'), not a profile name (e.g. 'litellm-default') — a profile "
+                "belongs in the 'profile_name' column. "
                 "'experiment run' will fail unless PROVIDER_"
-                f"{str(model_row['provider']).strip().upper()}_URL is set."
+                f"{provider_name.upper()}_URL is set."
             )
         # Warned once per model here, rather than once per data row below.
-        if _join_key(model_row["provider"], model_row["model_name"]) not in params_by_key:
+        if (provider_name, model_name, profile_name) not in params_by_key:
+            empty_hint = (
+                f" The 'profile_name' cell is empty; it must name a profile from {FILE_LLM_PARAMS}."
+                if not profile_name
+                else ""
+            )
             cprint(
                 f"[bold yellow]Warning:[/bold yellow] no profile in {FILE_LLM_PARAMS} "
-                f"matches model '{model_row['model_name']}' with provider "
-                f"'{model_row['provider']}' — skipping. Profiles are matched on both "
-                "'provider' and 'model_name'."
+                f"matches model '{model_name}' with provider "
+                f"'{provider_name}' and profile '{profile_name}' — skipping. Profiles are "
+                "matched on 'provider', 'model_name' and 'profile_name'." + empty_hint
             )
 
     data_lookup = data_df.set_index("ID").to_dict(orient="index")
@@ -558,23 +654,29 @@ def generate(
         prompt_hash = hashlib.sha256(rendered_prompt.encode("utf-8")).hexdigest()
 
         for _, model_row in models_df.iterrows():
-            provider_name, model_name = _join_key(model_row["provider"], model_row["model_name"])
-            for param_row in params_by_key.get((provider_name, model_name), []):
-                rows.append(
-                    {
-                        "ID": row_counter,
-                        "code": f"{data_id}_{prompt_id}_{model_name}" f"_{param_row['profile_name']}",
-                        "prompt": rendered_prompt,
-                        "tokens_estimate": len(rendered_prompt) // 4,
-                        "original_data": original_data_str,
-                        "model_name": model_name,
-                        "provider_name": provider_name,
-                        "prompt_hash": prompt_hash,
-                        "original_data_hash": original_data_hash,
-                        **{k: param_row.get(k) for k in _PARAM_COLUMNS},
-                    }
-                )
-                row_counter += 1
+            key = _row_join_key(model_row)
+            param_row = params_by_key.get(key)
+            if param_row is None:
+                continue  # already reported once per model row above
+            provider_name, model_name, profile_name = key
+            rows.append(
+                {
+                    "ID": row_counter,
+                    "code": f"{data_id}_{prompt_id}_{model_name}_{profile_name}",
+                    "prompt": rendered_prompt,
+                    "tokens_estimate": len(rendered_prompt) // 4,
+                    "original_data": original_data_str,
+                    "model_name": model_name,
+                    "provider_name": provider_name,
+                    "prompt_hash": prompt_hash,
+                    "original_data_hash": original_data_hash,
+                    **{k: param_row.get(k) for k in _PARAM_COLUMNS},
+                    # After the unpack: store the stripped profile so `code` and
+                    # the params table's primary key can never disagree.
+                    "profile_name": profile_name,
+                }
+            )
+            row_counter += 1
 
     if not rows:
         cprint(

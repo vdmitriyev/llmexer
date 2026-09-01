@@ -56,6 +56,7 @@ _LLM_PARAMS_HEADER = (
     "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level\n"
 )
 _LLM_PARAMS_ROW = "ollama;llama3.3:latest;ollama-default;0.7;1.0;512;4096;1.1;;;;\n"
+_MODELS_HEADER = "provider;model_name;profile_name;notes\n"
 
 
 @pytest.fixture()
@@ -72,7 +73,7 @@ def initialised_experiment(projects_dir):
     os.makedirs(prompts_dir)
 
     (exp_subdir / "llms-for-experiment.csv").write_text(
-        "provider;model_name;notes\nollama;llama3.3:latest;local model\n",
+        _MODELS_HEADER + "ollama;llama3.3:latest;ollama-default;local model\n",
         encoding="utf-8",
     )
     (exp_subdir / "data.csv").write_text(
@@ -255,7 +256,7 @@ def test_generate_multiple_models_multiple_rows(projects_dir):
     os.makedirs(prompts_dir)
 
     (exp_subdir / "llms-for-experiment.csv").write_text(
-        "provider;model_name;notes\nprovider-a;model-a;\nprovider-b;model-b;\n",
+        _MODELS_HEADER + "provider-a;model-a;profile-a;\nprovider-b;model-b;profile-b;\n",
         encoding="utf-8",
     )
     (exp_subdir / "data.csv").write_text(
@@ -293,7 +294,7 @@ def test_generate_sorted_by_model_order(projects_dir):
 
     # model-b is listed second in llms-for-experiment.csv — its rows must appear after model-a's
     (exp_subdir / "llms-for-experiment.csv").write_text(
-        "provider;model_name;notes\np;model-a;\np;model-b;\n",
+        _MODELS_HEADER + "p;model-a;profile-a;\np;model-b;profile-b;\n",
         encoding="utf-8",
     )
     (exp_subdir / "data.csv").write_text(
@@ -374,7 +375,7 @@ def test_generate_prompt_hash_deterministic(projects_dir):
     os.makedirs(prompts_dir)
 
     (exp_subdir / "llms-for-experiment.csv").write_text(
-        "provider;model_name;notes\np;model-a;\np;model-b;\n",
+        _MODELS_HEADER + "p;model-a;profile-a;\np;model-b;profile-b;\n",
         encoding="utf-8",
     )
     (exp_subdir / "data.csv").write_text(
@@ -475,7 +476,7 @@ def test_generate_missing_data_csv_raises(projects_dir):
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
-    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;m;\n", encoding="utf-8")
+    (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + "p;m;default;\n", encoding="utf-8")
     (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;p\n", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(_LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8")
 
@@ -492,7 +493,7 @@ def test_generate_missing_mapping_csv_raises(projects_dir):
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
-    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;m;\n", encoding="utf-8")
+    (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + "p;m;default;\n", encoding="utf-8")
     (exp_subdir / "data.csv").write_text("ID;Title\nD01;T\n", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(_LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8")
 
@@ -510,7 +511,7 @@ def test_generate_missing_data_id_skips_row(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;m;\n", encoding="utf-8")
+    (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + "p;m;default;\n", encoding="utf-8")
     (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8")
     (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;prompt01\nBAD-ID;prompt01\n", encoding="utf-8")
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
@@ -533,7 +534,7 @@ def test_generate_missing_prompt_file_skips_row(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;m;\n", encoding="utf-8")
+    (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + "p;m;default;\n", encoding="utf-8")
     (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8")
     (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;nonexistent-prompt\n", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(_LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8")
@@ -552,7 +553,7 @@ def test_generate_uses_current_experiment_from_env(projects_dir, mock_no_dotenv,
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;m;\n", encoding="utf-8")
+    (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + "p;m;default;\n", encoding="utf-8")
     (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8")
     (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;prompt01\n", encoding="utf-8")
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
@@ -592,7 +593,7 @@ def test_generate_missing_llm_params_raises(projects_dir):
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;m;\n", encoding="utf-8")
+    (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + "p;m;default;\n", encoding="utf-8")
     (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8")
     (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;prompt01\n", encoding="utf-8")
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
@@ -640,14 +641,20 @@ def test_generate_param_values_embedded(initialised_experiment, projects_dir):
     assert float(df.iloc[0]["temperature"]) == 0.7
 
 
-def test_generate_row_count_with_multiple_profiles(projects_dir):
-    """1 mapping row × 1 model × 2 param profiles = 2 result rows."""
+def test_generate_row_count_with_the_same_model_under_two_profiles(projects_dir):
+    """1 mapping row × the same model listed under 2 profiles = 2 result rows.
+
+    The join is on (provider, model_name, profile_name), so fanning a model out
+    over several profiles means listing it once per profile.
+    """
     pid = "two-profiles-exp"
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;model-a;\n", encoding="utf-8")
+    (exp_subdir / "llms-for-experiment.csv").write_text(
+        _MODELS_HEADER + "p;model-a;profile-a;\np;model-a;profile-b;\n", encoding="utf-8"
+    )
     (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8")
     (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;prompt01\n", encoding="utf-8")
     (prompts_dir / "prompt01.txt").write_text("{{title}}", encoding="utf-8")
@@ -698,13 +705,15 @@ def test_generate_params_code_value_format(initialised_experiment, projects_dir)
 
 
 def test_generate_params_rows_are_deduplicated(projects_dir):
-    """3 data rows x 2 profiles = 6 experiment rows but only 2 params rows."""
+    """3 data rows × the same model under 2 profiles = 6 rows, 2 params rows."""
     pid = "dedup-exp"
     exp_subdir = projects_dir / pid / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
-    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;model-a;\n", encoding="utf-8")
+    (exp_subdir / "llms-for-experiment.csv").write_text(
+        _MODELS_HEADER + "p;model-a;profile-a;\np;model-a;profile-b;\n", encoding="utf-8"
+    )
     (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;T1;A1.\nD02;T2;A2.\nD03;T3;A3.\n", encoding="utf-8")
     (exp_subdir / "mapping.csv").write_text(
         "data_id;prompt_id\nD01;prompt01\nD02;prompt01\nD03;prompt01\n", encoding="utf-8"
@@ -734,7 +743,7 @@ def test_generate_params_table_for_unknown_provider(projects_dir):
     exp_subdir = _write_join_project(
         projects_dir,
         "unknown-provider",
-        "provider;model_name;notes\nmystery;model-x;\n",
+        _MODELS_HEADER + "mystery;model-x;prof-a;\n",
         "mystery;model-x;prof-a;0.7;1.0;512;;;;;;\n",
     )
 
@@ -755,7 +764,7 @@ def test_generate_params_tables_per_provider(projects_dir):
     exp_subdir = _write_join_project(
         projects_dir,
         "two-providers",
-        "provider;model_name;notes\nollama;model-x;\nopenai;model-y;\n",
+        _MODELS_HEADER + "ollama;model-x;prof-a;\nopenai;model-y;prof-b;\n",
         "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n" "openai;model-y;prof-b;0.7;1.0;512;;;;;42;\n",
     )
 
@@ -784,7 +793,8 @@ def test_generate_code_includes_profile_name(initialised_experiment, projects_di
 
 # ---------------------------------------------------------------------------
 # Join semantics: llms-for-experiment.csv x llm-params.csv on
-# (provider, model_name). Values are stripped, compared case-sensitively.
+# (provider, model_name, profile_name). Values are stripped, compared
+# case-sensitively, and the combination must be unique within each file.
 # ---------------------------------------------------------------------------
 
 
@@ -807,7 +817,7 @@ def test_generate_join_uses_provider_as_part_of_the_key(projects_dir):
     exp_subdir = _write_join_project(
         projects_dir,
         "join-provider",
-        "provider;model_name;notes\nollama;model-x;\n",
+        _MODELS_HEADER + "ollama;model-x;prof-a;\n",
         "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n" "vllm;model-x;prof-b;0.7;1.0;512;;;0.05;1;;\n",
     )
 
@@ -829,7 +839,7 @@ def test_generate_warns_and_skips_model_without_a_profile(projects_dir):
     exp_subdir = _write_join_project(
         projects_dir,
         "join-unmatched",
-        "provider;model_name;notes\nollama;model-x;\nollama;model-y;\n",
+        _MODELS_HEADER + "ollama;model-x;prof-a;\nollama;model-y;prof-a;\n",
         "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n",
     )
 
@@ -847,9 +857,7 @@ def test_generate_warns_once_per_unmatched_model_not_per_data_row(projects_dir):
     exp_subdir = projects_dir / "join-warn-once" / "experiment"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
-    (exp_subdir / "llms-for-experiment.csv").write_text(
-        "provider;model_name;notes\nollama;model-y;\n", encoding="utf-8"
-    )
+    (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + "ollama;model-y;prof-a;\n", encoding="utf-8")
     (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;T1;A1.\nD02;T2;A2.\nD03;T3;A3.\n", encoding="utf-8")
     (exp_subdir / "mapping.csv").write_text(
         "data_id;prompt_id\nD01;prompt01\nD02;prompt01\nD03;prompt01\n",
@@ -873,7 +881,7 @@ def test_generate_join_strips_surrounding_whitespace(projects_dir):
     exp_subdir = _write_join_project(
         projects_dir,
         "join-spaces",
-        "provider;model_name;notes\n ollama ; model-x ;\n",
+        _MODELS_HEADER + " ollama ; model-x ; prof-a ;\n",
         "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n",
     )
 
@@ -891,7 +899,7 @@ def test_generate_join_is_case_sensitive(projects_dir):
     _write_join_project(
         projects_dir,
         "join-case",
-        "provider;model_name;notes\nOllama;model-x;\n",
+        _MODELS_HEADER + "Ollama;model-x;prof-a;\n",
         "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n",
     )
 
@@ -901,3 +909,145 @@ def test_generate_join_is_case_sensitive(projects_dir):
     output = " ".join(result.output.split())
     assert "no profile in llm-params.csv matches model 'model-x'" in output
     assert "No rows were generated" in output
+
+
+def test_generate_join_uses_profile_as_part_of_the_key(projects_dir):
+    """Right model and provider but a different profile must not match."""
+    exp_subdir = _write_join_project(
+        projects_dir,
+        "join-profile",
+        _MODELS_HEADER + "ollama;model-x;prof-b;\n",
+        "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n" "ollama;model-x;prof-b;1.2;0.9;256;2048;1.0;;;;\n",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "join-profile"])
+
+    assert result.exit_code == 0
+    df = read_experiment_df(find_db(exp_subdir))
+    # Only the named profile joined, even though both exist for this model.
+    assert list(df["profile_name"]) == ["prof-b"]
+    assert float(df.iloc[0]["temperature"]) == 1.2
+    assert len(read_params_rows(find_db(exp_subdir), "ollama")) == 1
+
+
+def test_generate_empty_profile_name_is_skipped(projects_dir):
+    """A blank profile_name matches nothing and never reads as the string 'nan'."""
+    exp_subdir = _write_join_project(
+        projects_dir,
+        "join-empty-profile",
+        _MODELS_HEADER + "ollama;model-x;;\n",
+        "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "join-empty-profile"])
+
+    assert result.exit_code == 0
+    output = " ".join(result.output.split())
+    assert "no profile in llm-params.csv matches model 'model-x'" in output
+    assert "profile ''" in output
+    # pandas turns an empty cell into NaN; it must never leak as a join value.
+    assert "nan" not in output
+    assert "No rows were generated" in output
+    assert not list(exp_subdir.glob("experiment_*.db"))
+
+
+def test_generate_duplicate_model_rows_abort(projects_dir):
+    """The same combination twice in llms-for-experiment.csv aborts the run."""
+    exp_subdir = _write_join_project(
+        projects_dir,
+        "dup-models",
+        _MODELS_HEADER + "ollama;model-x;prof-a;\nollama;model-x;prof-a;second\n",
+        "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "dup-models"])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, LLMExerException)
+    assert "must be unique" in str(result.exception)
+    assert "llms-for-experiment.csv" in str(result.exception)
+    output = " ".join(result.output.split())
+    assert "duplicated row in llms-for-experiment.csv" in output
+    assert "model_name='model-x'" in output
+    assert not list(exp_subdir.glob("experiment_*.db"))
+
+
+def test_generate_duplicate_param_rows_abort(projects_dir):
+    """The same combination twice in llm-params.csv aborts the run."""
+    exp_subdir = _write_join_project(
+        projects_dir,
+        "dup-params",
+        _MODELS_HEADER + "ollama;model-x;prof-a;\n",
+        "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n" "ollama;model-x;prof-a;1.2;0.9;256;2048;1.0;;;;\n",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "dup-params"])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, LLMExerException)
+    assert "must be unique" in str(result.exception)
+    assert "llm-params.csv" in str(result.exception)
+    assert "duplicated row in llm-params.csv" in " ".join(result.output.split())
+    assert not list(exp_subdir.glob("experiment_*.db"))
+
+
+def test_generate_duplicate_check_ignores_surrounding_whitespace(projects_dir):
+    """Two rows differing only by padding are the same combination.
+
+    They collapse to one key in the join, so they must also collide here —
+    a raw-cell duplicate check would let them through.
+    """
+    exp_subdir = _write_join_project(
+        projects_dir,
+        "dup-spaces",
+        _MODELS_HEADER + "ollama;model-x;prof-a;\n ollama ; model-x ; prof-a ;\n",
+        "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "dup-spaces"])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, LLMExerException)
+    assert "must be unique" in str(result.exception)
+    assert not list(exp_subdir.glob("experiment_*.db"))
+
+
+def test_generate_models_csv_without_profile_name_raises(projects_dir):
+    """A pre-split llms-for-experiment.csv reports the missing column clearly."""
+    exp_subdir = _write_join_project(
+        projects_dir,
+        "old-models-format",
+        "provider;model_name;notes\nollama;model-x;\n",
+        "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "old-models-format"])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, LLMExerException)
+    message = str(result.exception)
+    assert "profile_name" in message
+    assert "llms-for-experiment.csv" in message
+    assert not list(exp_subdir.glob("experiment_*.db"))
+
+
+def test_generate_params_csv_without_profile_name_raises(projects_dir):
+    """The same column check guards llm-params.csv."""
+    exp_subdir = projects_dir / "old-params-format" / "experiment"
+    prompts_dir = exp_subdir / "prompts"
+    os.makedirs(prompts_dir)
+    (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + "ollama;model-x;prof-a;\n", encoding="utf-8")
+    (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8")
+    (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;prompt01\n", encoding="utf-8")
+    (prompts_dir / "prompt01.txt").write_text("{{title}}", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(
+        "provider;model_name;temperature\nollama;model-x;0.7\n", encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "old-params-format"])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, LLMExerException)
+    message = str(result.exception)
+    assert "profile_name" in message
+    assert "llm-params.csv" in message

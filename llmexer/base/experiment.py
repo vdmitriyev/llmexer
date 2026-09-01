@@ -13,6 +13,16 @@ FILE_MAPPING = "mapping.csv"
 FILE_LLM_PARAMS = "llm-params.csv"
 FILE_LLMS_FOR_EXPERIMENT = "llms-for-experiment.csv"
 
+# Identity triple shared by llms-for-experiment.csv and llm-params.csv. A model
+# row joins EXACTLY ONE profile row on these three columns; to run one model
+# under two profiles, list it twice in llms-for-experiment.csv. The combination
+# must be unique within each file.
+CSV_JOIN_KEY_COLUMNS = [
+    "provider",
+    "model_name",
+    "profile_name",
+]
+
 # Parameter columns copied from each ``llm-params.csv`` row into a generated
 # row (``model_name``/``provider`` from that file are the join key / captured by
 # llms-for-experiment.csv, so they are not duplicated here). The DAO routes

@@ -345,7 +345,8 @@ def test_map_output_is_consumable_by_generate(initialised_experiment, mock_no_do
     """A mapping produced by `map` drives `generate` end to end."""
     pid, exp_subdir = initialised_experiment
     (exp_subdir / "llms-for-experiment.csv").write_text(
-        "provider;model_name;notes\nollama;llama3.3:latest;local model\n", encoding="utf-8"
+        "provider;model_name;profile_name;notes\nollama;llama3.3:latest;ollama-default;local model\n",
+        encoding="utf-8",
     )
     (exp_subdir / "llm-params.csv").write_text(_LLM_PARAMS_HEADER + _LLM_PARAMS_ROW, encoding="utf-8")
 

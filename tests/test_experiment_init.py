@@ -75,7 +75,7 @@ def test_init_creates_models_csv(experiment, projects_dir):
     models_file = exp_path / "experiment" / "llms-for-experiment.csv"
     assert models_file.exists()
     lines = models_file.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == "provider;model_name;notes"
+    assert lines[0] == "provider;model_name;profile_name;notes"
     assert "gemma4:31b" in lines[1]
     assert "ollama" in lines[1]
     # Every example row must have exactly as many fields as the header,
@@ -228,6 +228,27 @@ def test_init_creates_llm_params_csv(experiment, projects_dir):
     expected_fields = len(lines[0].split(";"))
     for line in lines[1:]:
         assert len(line.split(";")) == expected_fields, line
+
+
+def test_init_templates_join_on_the_triple(projects_dir):
+    """Every models-template row must match exactly one llm-params row.
+
+    The two templates are joined on (provider, model_name, profile_name); if
+    they ever drift apart, `init` would ship a project that generates 0 rows.
+    """
+    pid = "test-exp"
+    exp_path = projects_dir / pid
+    os.makedirs(exp_path)
+    runner.invoke(app, ["experiment", "init", "--pid", pid])
+
+    key = ["provider", "model_name", "profile_name"]
+    subdir = exp_path / "experiment"
+    models = pd.read_csv(subdir / "llms-for-experiment.csv", sep=";")
+    params = pd.read_csv(subdir / "llm-params.csv", sep=";")
+
+    available = {tuple(row) for row in params[key].itertuples(index=False)}
+    for row in models[key].itertuples(index=False):
+        assert tuple(row) in available, f"{tuple(row)} has no matching profile"
 
 
 def test_init_llm_params_values_land_in_their_own_columns(experiment, projects_dir):
