@@ -602,7 +602,8 @@ def generate(
         cprint(f"[bold yellow]Dry run:[/bold yellow] would write {len(rows)} row(s) to '{output_path}'")
         return
 
-    # Each provider gets its own table holding only its parameters.
+    # Each provider gets its own pair of tables: experiment_<provider> for the
+    # rows and params_<provider> for the parameter sets they point at.
     by_provider: dict = defaultdict(list)
     for row in rows:
         by_provider[str(row["provider_name"]).lower()].append(row)

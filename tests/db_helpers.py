@@ -89,6 +89,25 @@ def table_columns(db_path, provider):
         return list(dao.provider_tables()[provider].c.keys())
 
 
+def params_table_columns(db_path, provider):
+    """Return the ordered column names of a provider's params table."""
+
+    with ExperimentDAO(str(db_path)) as dao:
+        return list(dao.params_tables()[provider].c.keys())
+
+
+def read_params_rows(db_path, provider):
+    """Return all ``params_<provider>`` rows as dicts, ordered by the key pair."""
+
+    from sqlalchemy import select
+
+    with ExperimentDAO(str(db_path)) as dao:
+        table = dao.params_tables()[provider]
+        stmt = select(table).order_by(table.c.params_code, table.c.profile_name)
+        with dao.engine.connect() as conn:
+            return [dict(m) for m in conn.execute(stmt).mappings()]
+
+
 def find_db(exp_subdir):
     """Return the single ``experiment_*.db`` path in ``exp_subdir``."""
 

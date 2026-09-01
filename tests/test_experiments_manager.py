@@ -2,6 +2,7 @@
 
 import json
 import os
+import sqlite3
 
 import pandas as pd
 import pytest
@@ -18,6 +19,7 @@ from tests.db_helpers import (
     OLLAMA_ROW,
     OPENAI_ROW,
     read_experiment_df,
+    read_params_rows,
     seed_db,
 )
 
@@ -180,10 +182,10 @@ def test_run_without_open_raises():
         ExperimentsManager().run(1)
 
 
-def test_provider_tables_are_isolated(db_file):
-    """Each provider table carries only its own parameter columns."""
+def test_params_tables_are_isolated(db_file):
+    """Each provider's params table carries only its own parameter columns."""
     with ExperimentDAO(db_file) as dao:
-        tables = dao.provider_tables()
+        tables = dao.params_tables()
         assert set(tables) == {"ollama", "openai", "litellm"}
         ollama_cols = list(tables["ollama"].c.keys())
         openai_cols = list(tables["openai"].c.keys())
@@ -196,6 +198,127 @@ def test_provider_tables_are_isolated(db_file):
     assert "vllm_min_p" not in litellm_cols
     assert "ollama_context_window" not in litellm_cols
     assert "litellm_min_p" not in ollama_cols
+    # Every params table is keyed the same way.
+    for cols in (ollama_cols, openai_cols, litellm_cols):
+        assert cols[:2] == ["params_code", "profile_name"]
+
+
+def test_provider_tables_hold_no_parameters(db_file):
+    """No parameter value is stored on an experiment table any more."""
+    with ExperimentDAO(db_file) as dao:
+        tables = dao.provider_tables()
+        assert set(tables) == {"ollama", "openai", "litellm"}
+        for provider, table in tables.items():
+            cols = list(table.c.keys())
+            assert "params_code" in cols, provider
+            assert "profile_name" in cols, provider
+            for absent in (
+                "temperature",
+                "top_p",
+                "max_tokens",
+                "ollama_context_window",
+                "openai_seed",
+                "litellm_min_p",
+            ):
+                assert absent not in cols, (provider, absent)
+
+
+def test_fetch_rows_join_returns_flat_params(db_file):
+    """A fetched row carries its parameters inline, with no duplicated keys."""
+    with ExperimentDAO(db_file) as dao:
+        row = dao.fetch_rows(id_experiment=1)[0]
+    assert row["params_code"] == "llama3.3:latest_ollama"
+    assert row["profile_name"] == "ollama-default"
+    assert row["temperature"] == 0.7
+    assert row["max_tokens"] == 512
+    assert row["ollama_context_window"] == 4096
+    assert row["ollama_repeat_penalty"] == 1.1
+    # Selecting both tables whole would produce these suffixed duplicates.
+    assert "params_code_1" not in row
+    assert "profile_name_1" not in row
+
+
+def test_fetch_rows_keeps_a_row_whose_params_are_missing(db_file):
+    """An orphaned experiment row still comes back, with NULL parameters."""
+    with ExperimentDAO(db_file) as dao:
+        params = dao.params_tables()["ollama"]
+        with dao.engine.begin() as conn:
+            conn.execute(params.delete())
+        rows = dao.fetch_rows(provider="ollama")
+    assert len(rows) == 1
+    assert rows[0]["ID"] == 1
+    assert rows[0]["temperature"] is None
+    assert rows[0]["ollama_context_window"] is None
+
+
+def test_insert_rows_deduplicates_parameter_sets(tmp_path):
+    """Many experiment rows sharing a profile store exactly one params row."""
+    path = tmp_path / "dedup.db"
+    rows = [{**OLLAMA_ROW, "ID": i, "code": f"D{i:02d}"} for i in range(1, 6)]
+    with ExperimentDAO(str(path), create=True) as dao:
+        assert dao.insert_rows("ollama", rows) == 5
+
+    assert len(read_params_rows(path, "ollama")) == 1
+
+
+def test_insert_rows_twice_reuses_one_params_row(tmp_path):
+    """A second insert of the same profile must not violate the composite PK."""
+    path = tmp_path / "twice.db"
+    with ExperimentDAO(str(path), create=True) as dao:
+        dao.insert_rows("ollama", [dict(OLLAMA_ROW)])
+        dao.insert_rows("ollama", [{**OLLAMA_ROW, "ID": 9, "code": "D09"}])
+
+    with ExperimentDAO(str(path)) as dao:
+        assert len(dao.fetch_rows(provider="ollama")) == 2
+    assert len(read_params_rows(path, "ollama")) == 1
+
+
+def test_insert_rows_separates_profiles_of_one_model(tmp_path):
+    """Two profiles for the same model are two params rows sharing a code."""
+    path = tmp_path / "profiles.db"
+    rows = [
+        {**OLLAMA_ROW, "ID": 1, "code": "D01", "profile_name": "hot", "temperature": 1.2},
+        {**OLLAMA_ROW, "ID": 2, "code": "D02", "profile_name": "cold", "temperature": 0.1},
+    ]
+    with ExperimentDAO(str(path), create=True) as dao:
+        dao.insert_rows("ollama", rows)
+
+    params = read_params_rows(path, "ollama")
+    assert [p["profile_name"] for p in params] == ["cold", "hot"]
+    assert {p["params_code"] for p in params} == {"llama3.3:latest_ollama"}
+    with ExperimentDAO(str(path)) as dao:
+        fetched = {r["ID"]: r["temperature"] for r in dao.fetch_rows(provider="ollama")}
+    assert fetched == {1: 1.2, 2: 0.1}
+
+
+def test_open_old_layout_database_raises(tmp_path):
+    """A pre-split database has no params table and must be rejected."""
+    path = tmp_path / "legacy.db"
+    con = sqlite3.connect(str(path))
+    con.execute(
+        "CREATE TABLE experiment_ollama "
+        "(ID INTEGER PRIMARY KEY, code VARCHAR, profile_name VARCHAR, temperature FLOAT)"
+    )
+    con.commit()
+    con.close()
+
+    with pytest.raises(LLMExerException) as exc:
+        ExperimentDAO(str(path))
+    message = str(exc.value)
+    assert "params_ollama" in message
+    assert "experiment generate" in message
+
+
+def test_open_old_layout_database_raises_through_manager(tmp_path):
+    """The same clean break surfaces through ExperimentsManager.open()."""
+    path = tmp_path / "legacy_manager.db"
+    con = sqlite3.connect(str(path))
+    con.execute("CREATE TABLE experiment_ollama (ID INTEGER PRIMARY KEY, code VARCHAR)")
+    con.commit()
+    con.close()
+
+    with pytest.raises(LLMExerException):
+        ExperimentsManager().open(str(path))
 
 
 def test_fetch_rows_tags_provider(db_file):

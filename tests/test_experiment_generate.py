@@ -15,7 +15,14 @@ from llmexer.exceptions import (
     ProjectIDRequiredException,
     ProjectNotExistsException,
 )
-from tests.db_helpers import find_db, list_dbs, read_experiment_df, table_columns
+from tests.db_helpers import (
+    find_db,
+    list_dbs,
+    params_table_columns,
+    read_experiment_df,
+    read_params_rows,
+    table_columns,
+)
 
 runner = CliRunner()
 
@@ -106,7 +113,7 @@ def test_generate_creates_output_db(initialised_experiment, projects_dir):
 
 
 def test_generate_ollama_table_has_correct_columns(initialised_experiment, projects_dir):
-    """The ollama table holds the common+ollama+result columns in order."""
+    """The ollama table holds identity + join key + result columns in order."""
     pid, exp_subdir = initialised_experiment
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
@@ -120,12 +127,8 @@ def test_generate_ollama_table_has_correct_columns(initialised_experiment, proje
         "original_data",
         "model_name",
         "provider_name",
+        "params_code",
         "profile_name",
-        "temperature",
-        "top_p",
-        "max_tokens",
-        "ollama_context_window",
-        "ollama_repeat_penalty",
         "response_text",
         "usage_tokens",
         "status",
@@ -138,8 +141,14 @@ def test_generate_ollama_table_has_correct_columns(initialised_experiment, proje
         "prompt_hash",
         "original_data_hash",
     ]
-    # Other providers' parameter columns must NOT appear in the ollama table.
+    # Parameter values live in params_ollama now, not on every experiment row —
+    # neither this provider's own params nor any other provider's.
     for absent in (
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "ollama_context_window",
+        "ollama_repeat_penalty",
         "vllm_min_p",
         "vllm_best_of",
         "openai_seed",
@@ -597,13 +606,14 @@ def test_generate_missing_llm_params_raises(projects_dir):
 
 
 def test_generate_includes_ollama_param_columns(initialised_experiment, projects_dir):
-    """The ollama table should carry the common params and ollama-specific params."""
+    """The ollama params table carries the common and ollama-specific params."""
     pid, exp_subdir = initialised_experiment
 
     runner.invoke(app, ["experiment", "generate", "--pid", pid])
 
-    cols = table_columns(find_db(exp_subdir), "ollama")
+    cols = params_table_columns(find_db(exp_subdir), "ollama")
     for col in [
+        "params_code",
         "profile_name",
         "temperature",
         "top_p",
@@ -654,6 +664,114 @@ def test_generate_row_count_with_multiple_profiles(projects_dir):
     assert list(df["profile_name"]) == ["profile-a", "profile-b"]
 
 
+def test_generate_params_table_has_correct_columns(initialised_experiment, projects_dir):
+    """The ollama params table holds the join key then the parameter values."""
+    pid, exp_subdir = initialised_experiment
+
+    runner.invoke(app, ["experiment", "generate", "--pid", pid])
+
+    assert params_table_columns(find_db(exp_subdir), "ollama") == [
+        "params_code",
+        "profile_name",
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "ollama_context_window",
+        "ollama_repeat_penalty",
+    ]
+
+
+def test_generate_params_code_value_format(initialised_experiment, projects_dir):
+    """params_code is <model_name>_<provider> on both sides of the join."""
+    pid, exp_subdir = initialised_experiment
+
+    runner.invoke(app, ["experiment", "generate", "--pid", pid])
+
+    db = find_db(exp_subdir)
+    assert read_experiment_df(db).iloc[0]["params_code"] == "llama3.3:latest_ollama"
+    params = read_params_rows(db, "ollama")
+    assert len(params) == 1
+    assert params[0]["params_code"] == "llama3.3:latest_ollama"
+    assert params[0]["profile_name"] == "ollama-default"
+    assert params[0]["temperature"] == 0.7
+    assert params[0]["ollama_context_window"] == 4096
+
+
+def test_generate_params_rows_are_deduplicated(projects_dir):
+    """3 data rows x 2 profiles = 6 experiment rows but only 2 params rows."""
+    pid = "dedup-exp"
+    exp_subdir = projects_dir / pid / "experiment"
+    prompts_dir = exp_subdir / "prompts"
+    os.makedirs(prompts_dir)
+
+    (exp_subdir / "llms-for-experiment.csv").write_text("provider;model_name;notes\np;model-a;\n", encoding="utf-8")
+    (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;T1;A1.\nD02;T2;A2.\nD03;T3;A3.\n", encoding="utf-8")
+    (exp_subdir / "mapping.csv").write_text(
+        "data_id;prompt_id\nD01;prompt01\nD02;prompt01\nD03;prompt01\n", encoding="utf-8"
+    )
+    (prompts_dir / "prompt01.txt").write_text("{{title}}", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER + "p;model-a;profile-a;0.5;1.0;256;;;;;;\n" + "p;model-a;profile-b;1.0;0.9;512;;;;;;\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", pid])
+    assert result.exit_code == 0
+
+    db = find_db(exp_subdir)
+    df = read_experiment_df(db)
+    assert len(df) == 6
+    # The whole point of the split: the two profiles are stored once each.
+    params = read_params_rows(db, "p")
+    assert [p["profile_name"] for p in params] == ["profile-a", "profile-b"]
+    assert [p["temperature"] for p in params] == [0.5, 1.0]
+    # ...and every experiment row still resolves its own values through the join.
+    assert sorted(df["temperature"]) == [0.5, 0.5, 0.5, 1.0, 1.0, 1.0]
+
+
+def test_generate_params_table_for_unknown_provider(projects_dir):
+    """A provider with no known params still gets a common-params table."""
+    exp_subdir = _write_join_project(
+        projects_dir,
+        "unknown-provider",
+        "provider;model_name;notes\nmystery;model-x;\n",
+        "mystery;model-x;prof-a;0.7;1.0;512;;;;;;\n",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "unknown-provider"])
+
+    assert result.exit_code == 0
+    assert params_table_columns(find_db(exp_subdir), "mystery") == [
+        "params_code",
+        "profile_name",
+        "temperature",
+        "top_p",
+        "max_tokens",
+    ]
+
+
+def test_generate_params_tables_per_provider(projects_dir):
+    """Two providers produce two params tables, each with its own columns."""
+    exp_subdir = _write_join_project(
+        projects_dir,
+        "two-providers",
+        "provider;model_name;notes\nollama;model-x;\nopenai;model-y;\n",
+        "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n" "openai;model-y;prof-b;0.7;1.0;512;;;;;42;\n",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "two-providers"])
+
+    assert result.exit_code == 0
+    db = find_db(exp_subdir)
+    ollama_cols = params_table_columns(db, "ollama")
+    openai_cols = params_table_columns(db, "openai")
+    assert "ollama_context_window" in ollama_cols
+    assert "openai_seed" not in ollama_cols
+    assert "openai_seed" in openai_cols
+    assert "ollama_context_window" not in openai_cols
+    assert read_params_rows(db, "openai")[0]["openai_seed"] == 42
+
+
 def test_generate_code_includes_profile_name(initialised_experiment, projects_dir):
     """code field should end with _{profile_name}."""
     pid, exp_subdir = initialised_experiment
@@ -700,8 +818,8 @@ def test_generate_join_uses_provider_as_part_of_the_key(projects_dir):
     # Only the ollama profile joined; the vllm one is not a match.
     assert list(df["profile_name"]) == ["prof-a"]
     assert list(df["provider_name"]) == ["ollama"]
-    # The row lives in the ollama table, so it carries ollama params only.
-    columns = table_columns(find_db(exp_subdir), "ollama")
+    # The row lives in the ollama tables, so it carries ollama params only.
+    columns = params_table_columns(find_db(exp_subdir), "ollama")
     assert "ollama_context_window" in columns
     assert "vllm_min_p" not in columns
 

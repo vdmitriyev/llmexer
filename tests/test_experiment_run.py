@@ -224,9 +224,7 @@ def test_run_creates_individual_json_files(experiment_with_db, mock_llm_mapper):
     assert "response_text" in data
 
 
-def test_run_uses_current_experiment_from_env(
-    projects_dir, mock_no_dotenv, mock_llm_mapper, monkeypatch
-):
+def test_run_uses_current_experiment_from_env(projects_dir, mock_no_dotenv, mock_llm_mapper, monkeypatch):
     """When --pid is omitted, run should use PROJECT_ID from the environment."""
     pid = "env-run-exp"
     exp_subdir = projects_dir / pid / "experiment"
@@ -282,9 +280,7 @@ def test_run_failed_call_still_writes_row(experiment_with_db, monkeypatch):
 
         def execute(self, prompt, row):
             self.state = CallerState.ERROR
-            return ProviderResponse(
-                text="", usage_tokens=None, raw="connection refused"
-            )
+            return ProviderResponse(text="", usage_tokens=None, raw="connection refused")
 
     monkeypatch.setattr(llm_module, "OllamaProvider", ErrorOllamaProvider)
 
@@ -313,11 +309,7 @@ def test_run_skips_already_successful_row(projects_dir, mock_llm_mapper):
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _EXPERIMENT_DB_NAME,
-        {
-            "ollama": [
-                {**OLLAMA_ROW, "status": "success", "response_text": "prior result"}
-            ]
-        },
+        {"ollama": [{**OLLAMA_ROW, "status": "success", "response_text": "prior result"}]},
     )
 
     result = runner.invoke(
@@ -441,6 +433,45 @@ def test_run_missing_openai_package_raises(experiment_with_db, monkeypatch):
 # ---------------------------------------------------------------------------
 # Per-provider env var tests
 # ---------------------------------------------------------------------------
+
+
+def test_run_passes_joined_params_to_the_provider(experiment_with_db, monkeypatch):
+    """Parameters stored in params_<provider> reach the provider on the row.
+
+    They live in a separate table now, so `run` only works if the DAO joins them
+    back onto the flat row dict the provider reads by name.
+    """
+    import llmexer.base.llm_provider as llm_module
+    from llmexer.base.llm_provider import CallerState, ProviderResponse
+
+    captured = {}
+
+    class CapturingOllamaProvider:
+        def __init__(self, provider, auth=None, base_url=None, **kwargs):
+            pass
+
+        def execute(self, prompt, row):
+            captured["row"] = dict(row)
+            self.state = CallerState.FINISHED
+            return ProviderResponse(text="x", usage_tokens=1)
+
+    monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
+
+    pid, _ = experiment_with_db
+    runner.invoke(
+        app,
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME],
+    )
+
+    row = captured.get("row")
+    assert row is not None
+    assert row["temperature"] == 0.7
+    assert row["top_p"] == 1.0
+    assert row["max_tokens"] == 512
+    assert row["ollama_context_window"] == 4096
+    assert row["ollama_repeat_penalty"] == 1.1
+    assert row["profile_name"] == "ollama-default"
+    assert row["params_code"] == "llama3.3:latest_ollama"
 
 
 def test_run_uses_provider_url_from_env(experiment_with_db, monkeypatch):
@@ -570,9 +601,7 @@ def experiment_with_two_provider_rows(projects_dir):
     return pid, exp_subdir
 
 
-def test_run_filter_provider_runs_only_matching_rows(
-    experiment_with_two_provider_rows, mock_llm_mapper
-):
+def test_run_filter_provider_runs_only_matching_rows(experiment_with_two_provider_rows, mock_llm_mapper):
     """--filter-provider ollama runs only ollama rows; openai stays pending."""
     pid, exp_subdir = experiment_with_two_provider_rows
 
@@ -600,9 +629,7 @@ def test_run_filter_provider_runs_only_matching_rows(
     assert pd.isna(openai_row["status"])
 
 
-def test_run_filter_provider_no_match_exits_cleanly(
-    experiment_with_two_provider_rows, mock_llm_mapper
-):
+def test_run_filter_provider_no_match_exits_cleanly(experiment_with_two_provider_rows, mock_llm_mapper):
     """--filter-provider gemini on a DB with no gemini rows exits 0, runs nothing."""
     pid, exp_subdir = experiment_with_two_provider_rows
 
@@ -627,9 +654,7 @@ def test_run_filter_provider_no_match_exits_cleanly(
     assert df["status"].isna().all()
 
 
-def test_run_filter_provider_case_insensitive(
-    experiment_with_two_provider_rows, mock_llm_mapper
-):
+def test_run_filter_provider_case_insensitive(experiment_with_two_provider_rows, mock_llm_mapper):
     """--filter-provider OLLAMA (upper-case) should match the ollama table."""
     pid, exp_subdir = experiment_with_two_provider_rows
 
@@ -654,9 +679,7 @@ def test_run_filter_provider_case_insensitive(
     assert ollama_row["status"] == "success"
 
 
-def test_run_filter_provider_dry_run_shows_filtered_count(
-    experiment_with_two_provider_rows, mock_llm_mapper
-):
+def test_run_filter_provider_dry_run_shows_filtered_count(experiment_with_two_provider_rows, mock_llm_mapper):
     """Dry-run with --filter-provider should print the filtered row count (1)."""
     pid, _ = experiment_with_two_provider_rows
 
@@ -680,9 +703,7 @@ def test_run_filter_provider_dry_run_shows_filtered_count(
     assert "1" in result.output
 
 
-def test_run_sequential_filtered_runs_persist_into_one_db(
-    experiment_with_two_provider_rows, mock_llm_mapper
-):
+def test_run_sequential_filtered_runs_persist_into_one_db(experiment_with_two_provider_rows, mock_llm_mapper):
     """Two filtered runs leave a single database with both providers' rows filled."""
     pid, exp_subdir = experiment_with_two_provider_rows
 
@@ -705,9 +726,5 @@ def test_run_sequential_filtered_runs_persist_into_one_db(
     df = read_experiment_df(find_db(exp_subdir))
     assert len(df) == 2
     # Both rows are now populated (ollama from run 1, openai from run 2).
-    assert (
-        df[df["provider_name"].str.lower() == "ollama"].iloc[0]["status"] == "success"
-    )
-    assert (
-        df[df["provider_name"].str.lower() == "openai"].iloc[0]["status"] == "success"
-    )
+    assert df[df["provider_name"].str.lower() == "ollama"].iloc[0]["status"] == "success"
+    assert df[df["provider_name"].str.lower() == "openai"].iloc[0]["status"] == "success"
