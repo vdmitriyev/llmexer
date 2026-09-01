@@ -111,17 +111,19 @@ Initialization of the project creates following files (inside <PROJECT_NAME> fol
 
 **4. Generate the full experiment database**
 
-After filling in `experiment/llms-for-experiment.csv`, `experiment/data.csv`, `experiment/mapping.csv`, `experiment/llm-params.csv`, and your Jinja2 prompt templates:
+After filling in `experiment/llms-for-experiment.csv`, `experiment/data.csv`, `experiment/mapping.csv`, `experiment/llm-params.csv`, and your Jinja2 prompt templates and use `map` to bring all together.
 
-`experiment/mapping.csv` can be built for you rather than written by hand — handy after
+<details>
+* `experiment/mapping.csv` can be built for you rather than written by hand — handy after
 `experiment copy-papers` or `experiment copy-search` has replaced `data.csv` with `P01`/`S01`-style IDs.
-`map` pairs every data row with every selected prompt and backs up any existing `mapping.csv`:
+* `map` pairs every data row with every selected prompt and backs up any existing `mapping.csv`
+</details>
+
 ```bash
-llmexer experiment map --pid llm-survey-2026                          # every prompt in prompts/
 llmexer experiment map --pid llm-survey-2026 --prompt prompt01,prompt02
 ```
 
-Then:
+At the end, generate database file with experiments:
 ```bash
 llmexer experiment generate --pid llm-survey-2026
 ```
