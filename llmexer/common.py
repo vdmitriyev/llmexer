@@ -55,9 +55,7 @@ def __save_json__(content: dict, filepath: str = None):
         logger.debug(f"API response successfully saved to: '{filepath}'")
         return filepath
     except IOError as e:
-        logger.error(
-            f"I/O Error: Could not save response to: '{filepath}'. Details: {e}"
-        )
+        logger.error(f"I/O Error: Could not save response to: '{filepath}'. Details: {e}")
     except Exception as e:
         logger.error(
             f"An unexpected error occurred while saving response to: '{filepath}'. Exception: {e}",
@@ -97,9 +95,7 @@ def get_proper_pid(pid: str) -> str:
         if settings.project_id:
             pid = settings.project_id
         else:
-            raise ProjectIDRequiredException(
-                "No project ID provided. Use --pid or set PROJECT_ID in .env file."
-            )
+            raise ProjectIDRequiredException("No project ID provided. Use --pid or set PROJECT_ID in .env file.")
 
     return pid
 
@@ -127,7 +123,6 @@ def get_experiment_subdir_path(pid: str) -> str:
     experiment_subdir_path = os.path.join(project_path, DIR_EXPERIMENT)
     if not os.path.exists(experiment_subdir_path):
         raise LLMExerException(
-            f"Project '{pid}' has not been initialised. "
-            f"Run `experiment init --pid {pid}` first."
+            f"Project '{pid}' has not been initialised. " f"Run `experiment init --pid {pid}` first."
         )
     return experiment_subdir_path

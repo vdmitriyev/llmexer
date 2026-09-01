@@ -52,9 +52,7 @@ def rename(
         if settings.project_id:
             old_id = settings.project_id
         else:
-            raise LLMExerException(
-                "No project ID provided. Use --old-id or set PROJECT_ID in .env file."
-            )
+            raise LLMExerException("No project ID provided. Use --old-id or set PROJECT_ID in .env file.")
 
     old_path = os.path.join(PROJECTS_PATH, old_id)
     new_path = os.path.join(PROJECTS_PATH, new_id)
@@ -66,9 +64,7 @@ def rename(
         raise ProjectAlreadyExistsException(f"Project '{new_id}' already exists.")
 
     os.rename(old_path, new_path)
-    cprint(
-        f"Renamed project: [bold yellow]{old_id}[/bold yellow] → [bold yellow]{new_id}[/bold yellow]"
-    )
+    cprint(f"Renamed project: [bold yellow]{old_id}[/bold yellow] → [bold yellow]{new_id}[/bold yellow]")
 
 
 @app.command()
@@ -85,6 +81,4 @@ def current() -> None:
                 f"[bold red](not found in {PROJECTS_PATH})[/bold red]"
             )
     else:
-        cprint(
-            "[bold red]No current project set.[/bold red] Set PROJECT_ID in .env file."
-        )
+        cprint("[bold red]No current project set.[/bold red] Set PROJECT_ID in .env file.")

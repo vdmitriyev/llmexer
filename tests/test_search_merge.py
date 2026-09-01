@@ -73,9 +73,7 @@ def _read_results(exp_path, pid):
 
 
 def _read_filtered(exp_path, pid):
-    return pd.read_csv(
-        exp_path / "searches" / f"{pid}{MERGED_FILTERED_SUFFIX}", sep=";"
-    )
+    return pd.read_csv(exp_path / "searches" / f"{pid}{MERGED_FILTERED_SUFFIX}", sep=";")
 
 
 SEARCH_A = "20260101-aaaaaaaa"
@@ -149,9 +147,7 @@ def test_merge_sorts_by_year_desc_blanks_last(projects_dir, mock_no_dotenv, expe
     assert df.iloc[3]["doi"] == "10.1/b"
 
 
-def test_merge_produces_two_files_with_yaml_columns(
-    projects_dir, mock_no_dotenv, experiment
-):
+def test_merge_produces_two_files_with_yaml_columns(projects_dir, mock_no_dotenv, experiment):
     """merge writes both merged files; the filtered file's column is the search id (YAML stem)."""
     pid, exp_path = experiment
     _write_csv(exp_path, f"{SEARCH_A}__results.csv", [_row(doi="10.1/x", title="X")])
@@ -188,12 +184,8 @@ def test_merge_only_filtered_files(projects_dir, mock_no_dotenv, experiment):
 def test_merge_case_insensitive_doi(projects_dir, mock_no_dotenv, experiment):
     """DOIs differing only in case are treated as the same publication."""
     pid, exp_path = experiment
-    _write_csv(
-        exp_path, f"{SEARCH_A}__results.csv", [_row(doi="10.1/AbC", title="Paper")]
-    )
-    _write_csv(
-        exp_path, f"{SEARCH_B}__results.csv", [_row(doi="10.1/abc", title="Paper")]
-    )
+    _write_csv(exp_path, f"{SEARCH_A}__results.csv", [_row(doi="10.1/AbC", title="Paper")])
+    _write_csv(exp_path, f"{SEARCH_B}__results.csv", [_row(doi="10.1/abc", title="Paper")])
 
     result = runner.invoke(app, ["search", "merge"])
     assert result.exit_code == 0, result.output
@@ -206,12 +198,8 @@ def test_merge_case_insensitive_doi(projects_dir, mock_no_dotenv, experiment):
 def test_merge_title_fallback(projects_dir, mock_no_dotenv, experiment):
     """Rows without a DOI dedup by normalized title."""
     pid, exp_path = experiment
-    _write_csv(
-        exp_path, f"{SEARCH_A}__results.csv", [_row(doi="", title="A Shared  Title")]
-    )
-    _write_csv(
-        exp_path, f"{SEARCH_B}__results.csv", [_row(doi="", title="a shared title")]
-    )
+    _write_csv(exp_path, f"{SEARCH_A}__results.csv", [_row(doi="", title="A Shared  Title")])
+    _write_csv(exp_path, f"{SEARCH_B}__results.csv", [_row(doi="", title="a shared title")])
 
     result = runner.invoke(app, ["search", "merge"])
     assert result.exit_code == 0, result.output
@@ -221,9 +209,7 @@ def test_merge_title_fallback(projects_dir, mock_no_dotenv, experiment):
     assert df.iloc[0]["duplicates_counter"] == 1
 
 
-def test_merge_metadata_completed_from_duplicates(
-    projects_dir, mock_no_dotenv, experiment
-):
+def test_merge_metadata_completed_from_duplicates(projects_dir, mock_no_dotenv, experiment):
     """Missing metadata is filled from the first duplicate that has it."""
     pid, exp_path = experiment
     _write_csv(
@@ -251,9 +237,7 @@ def test_merge_no_files_raises(projects_dir, mock_no_dotenv, experiment):
     assert isinstance(result.exception, LLMExerException)
 
 
-def test_merge_existing_without_rewrite_raises(
-    projects_dir, mock_no_dotenv, experiment
-):
+def test_merge_existing_without_rewrite_raises(projects_dir, mock_no_dotenv, experiment):
     """An existing merged file without --rewrite raises SearchResultsAlreadyExistException."""
     pid, exp_path = experiment
     _write_csv(exp_path, f"{SEARCH_A}__results.csv", [_row(doi="10.1/x", title="X")])

@@ -69,9 +69,7 @@ def add(
 
     provided = sum(p is not None for p in [file, directory, url])
     if provided != 1:
-        raise UnexpectedCLIParamsException(
-            "Exactly one of --file, --directory, or --url must be provided."
-        )
+        raise UnexpectedCLIParamsException("Exactly one of --file, --directory, or --url must be provided.")
 
     pid = get_proper_pid(pid)
     experiment_path = get_project_directory_path(pid)
@@ -86,9 +84,7 @@ def add(
 
         dst = os.path.join(papers_path, src.name)
         if os.path.exists(dst):
-            cprint(
-                f"A paper already exists in the papers directory: [bold yellow]{src.name}[/bold yellow]"
-            )
+            cprint(f"A paper already exists in the papers directory: [bold yellow]{src.name}[/bold yellow]")
             return
 
         if not settings.dry_run:
@@ -125,9 +121,7 @@ def add(
                     logger.debug("Copied '%s' -> '%s'", src, dst)
                     copied_papers_cnt += 1
 
-        cprint(
-            f"[bold green]Added[/bold green] {copied_papers_cnt} PDF(s) to project '{pid}'."
-        )
+        cprint(f"[bold green]Added[/bold green] {copied_papers_cnt} PDF(s) to project '{pid}'.")
 
     else:  # url
         filename = download_pdf_from_url(url, papers_path)
@@ -162,15 +156,11 @@ def download(
 
     provided = sum(p is not None and p != [] for p in [doi or None, search_file])
     if provided != 1:
-        raise UnexpectedCLIParamsException(
-            "Exactly one of --doi or --search-file must be provided."
-        )
+        raise UnexpectedCLIParamsException("Exactly one of --doi or --search-file must be provided.")
 
     resolved_email = email or os.getenv("UNPAYWALL_EMAIL")
     if not resolved_email:
-        raise PaperDownloadException(
-            "Unpaywall email is required. Use --email or set UNPAYWALL_EMAIL in .env."
-        )
+        raise PaperDownloadException("Unpaywall email is required. Use --email or set UNPAYWALL_EMAIL in .env.")
 
     pid = get_proper_pid(pid)
     experiment_path = get_project_directory_path(pid)
@@ -185,9 +175,7 @@ def download(
     failed_csv_path: Optional[str] = None
     if doi:
         for single_doi in doi:
-            sanitized = "".join(
-                c if (c.isalnum() or c in "-_.") else "_" for c in single_doi
-            )
+            sanitized = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in single_doi)
             download_items.append((single_doi, f"{sanitized}.pdf", None))
     else:
         use_forced_name = True
@@ -207,9 +195,7 @@ def download(
                 continue
             title = row.get("title")
             pdf_filename = str(row.get("pdf_filename"))
-            download_items.append(
-                (str(single_doi), pdf_filename, str(title) if title else None)
-            )
+            download_items.append((str(single_doi), pdf_filename, str(title) if title else None))
 
     succeeded, failed, exists, skipped = 0, 0, 0, 0
     cnt = len(download_items)
@@ -235,11 +221,7 @@ def download(
             )
             continue
 
-        download_kwargs = (
-            {"forced_name": pdf_filename}
-            if use_forced_name
-            else {"fallback_name": pdf_filename}
-        )
+        download_kwargs = {"forced_name": pdf_filename} if use_forced_name else {"fallback_name": pdf_filename}
         try:
             filename = download_pdf_from_url(pdf_url, papers_path, **download_kwargs)
         except PaperAlreadyExistsException as exc:
@@ -270,9 +252,7 @@ def download(
             continue
 
         logger.debug("Downloaded DOI '%s' -> '%s'", single_doi, filename)
-        cprint(
-            f"{label} [bold green]downloaded[/bold green] '{single_doi}' as '{filename}'."
-        )
+        cprint(f"{label} [bold green]downloaded[/bold green] '{single_doi}' as '{filename}'.")
         succeeded += 1
 
     if failed_csv_path and failed_records and not settings.dry_run:
@@ -282,10 +262,7 @@ def download(
             columns=["doi", "title", "url", "pdf_filename", "pdf_downloaded"],
         ).to_csv(failed_csv_path, index=False, encoding="utf-8", sep=";")
         logger.debug("Saved failed records to '%s'", failed_csv_path)
-        cprint(
-            f"Failed list saved to: [bold]"
-            f"{os.path.join(SEARCHES_LOGS_DIR, Path(failed_csv_path).name)}[/bold]"
-        )
+        cprint(f"Failed list saved to: [bold]" f"{os.path.join(SEARCHES_LOGS_DIR, Path(failed_csv_path).name)}[/bold]")
 
     cprint(
         f"Downloaded: [bold green]{succeeded}[/bold green]. Exists: [bold green]{exists}[/bold green]. Skipped: [bold yellow]{skipped}[/bold yellow]. Failed: [bold red]{failed}[/bold red]"
@@ -295,9 +272,7 @@ def download(
     if search_file and not settings.dry_run:
         from llmexer.commands.search import _search_id_from_file, _sync_search
 
-        _sync_search(
-            _search_id_from_file(search_file), experiment_path, add_new_rows=False
-        )
+        _sync_search(_search_id_from_file(search_file), experiment_path, add_new_rows=False)
 
 
 @app.command()
@@ -350,21 +325,13 @@ def extract(
     papers_path = os.path.join(experiment_path, PAPERS_DIR)
 
     if not os.path.exists(papers_path):
-        cprint(
-            f"[bold yellow]Warning:[/bold yellow] No papers directory found for project '{pid}'."
-        )
+        cprint(f"[bold yellow]Warning:[/bold yellow] No papers directory found for project '{pid}'.")
         return
 
-    pdfs = [
-        Path(papers_path) / fname
-        for fname in os.listdir(papers_path)
-        if fname.lower().endswith(".pdf")
-    ]
+    pdfs = [Path(papers_path) / fname for fname in os.listdir(papers_path) if fname.lower().endswith(".pdf")]
 
     if not pdfs:
-        cprint(
-            f"[bold yellow]Warning:[/bold yellow] No PDF files found in papers directory for project '{pid}'."
-        )
+        cprint(f"[bold yellow]Warning:[/bold yellow] No PDF files found in papers directory for project '{pid}'.")
         return
 
     if processor == PDFProcessor.docling:
@@ -392,16 +359,12 @@ def extract(
                 md_path = pdf_path.parent / f"{stem}.md"
 
                 if skip_if_md and md_path.exists():
-                    cprint(
-                        f"{label} [bold blue]existing[/bold blue] '{pdf_path.name}' (markdown already extracted)."
-                    )
+                    cprint(f"{label} [bold blue]existing[/bold blue] '{pdf_path.name}' (markdown already extracted).")
                     exists += 1
                     continue
 
                 if not rewrite and txt_path.exists():
-                    cprint(
-                        f"{label} [bold blue]existing[/bold blue] '{pdf_path.name}' (already extracted)."
-                    )
+                    cprint(f"{label} [bold blue]existing[/bold blue] '{pdf_path.name}' (already extracted).")
                     exists += 1
                     continue
 
@@ -409,9 +372,7 @@ def extract(
                     reader = pypdf.PdfReader(str(pdf_path))
                     text = "\n".join(page.extract_text() or "" for page in reader.pages)
                 except Exception as exc:
-                    cprint(
-                        f"{label} [bold red]error[/bold red] '{pdf_path.name}'. Extraction failed ({exc})."
-                    )
+                    cprint(f"{label} [bold red]error[/bold red] '{pdf_path.name}'. Extraction failed ({exc}).")
                     logger.debug("Extraction failed for '%s': %s", pdf_path, exc)
                     errors += 1
                     continue
@@ -435,23 +396,15 @@ def extract(
                 md_path = pdf_path.parent / f"{stem}.md"
 
                 if not rewrite and md_path.exists():
-                    cprint(
-                        f"{label} [bold blue]existing[/bold blue] '{pdf_path.name}' (already extracted)."
-                    )
+                    cprint(f"{label} [bold blue]existing[/bold blue] '{pdf_path.name}' (already extracted).")
                     exists += 1
                     continue
 
                 try:
-                    md_content = extract_via_docling(
-                        pdf_path, resolved_url, docling_auth
-                    )
+                    md_content = extract_via_docling(pdf_path, resolved_url, docling_auth)
                 except PaperExtractException as exc:
-                    cprint(
-                        f"{label} [bold red]error[/bold red] '{pdf_path.name}'. Extraction failed ({exc})."
-                    )
-                    logger.debug(
-                        "Docling extraction failed for '%s': %s", pdf_path, exc
-                    )
+                    cprint(f"{label} [bold red]error[/bold red] '{pdf_path.name}'. Extraction failed ({exc}).")
+                    logger.debug("Docling extraction failed for '%s': %s", pdf_path, exc)
                     errors += 1
                     continue
 

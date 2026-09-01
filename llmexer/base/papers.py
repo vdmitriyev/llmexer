@@ -100,9 +100,7 @@ def extract_via_docling(pdf_path: Path, url: str, auth: tuple) -> str:
                 timeout=DOCLING_TIMEOUT,
             )
     except requests.RequestException as exc:
-        raise PaperExtractException(
-            f"Docling request failed for '{pdf_path.name}': {exc}"
-        ) from exc
+        raise PaperExtractException(f"Docling request failed for '{pdf_path.name}': {exc}") from exc
 
     if resp.status_code != 200:
         raise PaperExtractException(
@@ -112,9 +110,7 @@ def extract_via_docling(pdf_path: Path, url: str, auth: tuple) -> str:
     try:
         data = resp.json()
     except ValueError as exc:
-        raise PaperExtractException(
-            f"Docling returned non-JSON response for '{pdf_path.name}'."
-        ) from exc
+        raise PaperExtractException(f"Docling returned non-JSON response for '{pdf_path.name}'.") from exc
 
     docs = data.get("documents") or [data.get("document", {})]
     for doc in docs:
@@ -123,9 +119,7 @@ def extract_via_docling(pdf_path: Path, url: str, auth: tuple) -> str:
             no_images_md = remove_empty_image_placeholders(md)
             return no_images_md
 
-    raise PaperExtractException(
-        f"Could not find Markdown content in docling response for '{pdf_path.name}'."
-    )
+    raise PaperExtractException(f"Could not find Markdown content in docling response for '{pdf_path.name}'.")
 
 
 def download_pdf_from_url(
@@ -145,9 +139,7 @@ def download_pdf_from_url(
     if forced_name is not None:
         dst = os.path.join(papers_path, forced_name)
         if os.path.exists(dst):
-            raise PaperAlreadyExistsException(
-                f"A paper named '{forced_name}' already exists in the papers directory."
-            )
+            raise PaperAlreadyExistsException(f"A paper named '{forced_name}' already exists in the papers directory.")
 
     try:
         session = make_http_session()
@@ -177,15 +169,12 @@ def download_pdf_from_url(
                 filename = fallback_name
             else:
                 raise PaperAddException(
-                    f"Could not resolve a PDF filename from URL '{url}' "
-                    f"(resolved name: '{filename}')."
+                    f"Could not resolve a PDF filename from URL '{url}' " f"(resolved name: '{filename}')."
                 )
 
     dst = os.path.join(papers_path, filename)
     if os.path.exists(dst):
-        raise PaperAlreadyExistsException(
-            f"A paper named '{forced_name}' already exists in the papers directory."
-        )
+        raise PaperAlreadyExistsException(f"A paper named '{forced_name}' already exists in the papers directory.")
 
     if not settings.dry_run:
         try:
@@ -211,16 +200,12 @@ def resolve_unpaywall_pdf_url(doi: str, email: str) -> str:
         response = session.get(unpaywall_url, timeout=30)
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise PaperDownloadException(
-            f"Unpaywall API request failed for DOI '{doi}': {exc}"
-        ) from exc
+        raise PaperDownloadException(f"Unpaywall API request failed for DOI '{doi}': {exc}") from exc
 
     try:
         data = response.json()
     except ValueError as exc:
-        raise PaperDownloadException(
-            f"Unpaywall returned non-JSON response for DOI '{doi}'."
-        ) from exc
+        raise PaperDownloadException(f"Unpaywall returned non-JSON response for DOI '{doi}'.") from exc
 
     best_oa = data.get("best_oa_location")
     if not best_oa:
@@ -228,9 +213,7 @@ def resolve_unpaywall_pdf_url(doi: str, email: str) -> str:
 
     pdf_url = best_oa.get("url_for_pdf")
     if not pdf_url:
-        raise PaperDownloadException(
-            f"Open-access location found for DOI '{doi}' but no PDF URL is available."
-        )
+        raise PaperDownloadException(f"Open-access location found for DOI '{doi}' but no PDF URL is available.")
 
     return pdf_url
 
@@ -252,16 +235,10 @@ def make_structured_filename(
     """Build a filename in the form YEAR_AUTHOR_TITLE_DOI.pdf, sanitizing each part."""
 
     def _clean(value: str) -> str:
-        return "".join(
-            c if (c.isalnum() or c in "-_.") else "_" for c in str(value)
-        ).strip("_")
+        return "".join(c if (c.isalnum() or c in "-_.") else "_" for c in str(value)).strip("_")
 
     year_part = _clean(year) if year and str(year).strip() else "NO_year"
     author_part = _clean(author) if author and str(author).strip() else "NO_author"
-    title_part = (
-        _clean(title).lower()[:60].title()
-        if title and str(title).strip()
-        else "NO_title"
-    )
+    title_part = _clean(title).lower()[:60].title() if title and str(title).strip() else "NO_title"
     doi_part = _clean(doi).lower() if doi and str(doi).strip() else "NO_doi"
     return f"{year_part}_{author_part}_{title_part}_{doi_part}.pdf"

@@ -16,9 +16,7 @@ def get_logger(logger_name: str = None, logging_level: str = APP_LOG_LEVEL) -> N
     if not logger.handlers:
 
         # Sets up a logger that logs to both a file and the console.
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
         file_handler = logging.FileHandler(LOG_FILE_NAME)
         file_handler.setFormatter(formatter)

@@ -102,15 +102,15 @@ def _resolve_experiment_db(pid: str, file: str) -> tuple[str, str]:
     return db_path, experiment_subdir_path
 
 
-def _next_data_backup_name(folder: str) -> str:
-    """Return the next ``data_backup_<YYYYMMDD>_<NN>.csv`` name for ``folder``.
+def _next_backup_name(folder: str, stem: str) -> str:
+    """Return the next ``<stem>_backup_<YYYYMMDD>_<NN>.csv`` name for ``folder``.
 
     ``<NN>`` is a zero-padded counter, one greater than the highest counter among
-    today's existing ``data_backup_<today>_*.csv`` files (starts at ``01``).
+    today's existing ``<stem>_backup_<today>_*.csv`` files (starts at ``01``).
     """
 
     date = datetime.now(timezone.utc).strftime("%Y%m%d")
-    prefix = f"data_backup_{date}_"
+    prefix = f"{stem}_backup_{date}_"
     counter = 0
     if os.path.isdir(folder):
         for fname in os.listdir(folder):
@@ -123,6 +123,25 @@ def _next_data_backup_name(folder: str) -> str:
     return f"{prefix}{counter + 1:02d}.csv"
 
 
+def _write_csv_with_backup(folder: str, filename: str, df: pd.DataFrame) -> tuple[str, str]:
+    """Write ``df`` to ``folder/filename``, backing up any existing file first.
+
+    The backup is named ``<stem>_backup_<YYYYMMDD>_<NN>.csv`` so repeated runs on
+    the same day never overwrite each other.
+
+    Returns ``(path, backup_name)`` where ``backup_name`` is ``""`` when no prior
+    file existed.
+    """
+
+    path = os.path.join(folder, filename)
+    backup_name = ""
+    if os.path.exists(path):
+        backup_name = _next_backup_name(folder, os.path.splitext(filename)[0])
+        shutil.copy2(path, os.path.join(folder, backup_name))
+    df.to_csv(path, index=False, sep=";", encoding="utf-8")
+    return path, backup_name
+
+
 def _write_data_csv(experiment_subdir_path: str, df: pd.DataFrame) -> tuple[str, str]:
     """Write ``df`` to ``experiment/data.csv``, backing up any existing file first.
 
@@ -130,13 +149,59 @@ def _write_data_csv(experiment_subdir_path: str, df: pd.DataFrame) -> tuple[str,
     prior ``data.csv`` existed.
     """
 
-    data_path = os.path.join(experiment_subdir_path, "data.csv")
-    backup_name = ""
-    if os.path.exists(data_path):
-        backup_name = _next_data_backup_name(experiment_subdir_path)
-        shutil.copy2(data_path, os.path.join(experiment_subdir_path, backup_name))
-    df.to_csv(data_path, index=False, sep=";", encoding="utf-8")
-    return data_path, backup_name
+    return _write_csv_with_backup(experiment_subdir_path, "data.csv", df)
+
+
+def _resolve_prompt_ids(prompts_subdir: str, prompt: list[str] | None) -> list[str]:
+    """Resolve ``--prompt`` values into existing prompt IDs from ``prompts/``.
+
+    Each value may itself be a comma-separated list, and the ``.txt`` extension is
+    optional: both ``prompt01`` and ``prompt01.txt`` resolve to the ID
+    ``prompt01`` — the extension-less form ``experiment generate`` expects in
+    ``mapping.csv``. Duplicates are dropped, keeping the order given.
+
+    When no value is passed, every ``*.txt`` in ``prompts/`` is used, sorted by
+    filename.
+
+    Raises:
+        LLMExerException: if a name escapes ``prompts/``, if any named prompt file
+            is missing (all missing names are reported at once), or if no prompt
+            templates exist at all.
+    """
+
+    names: list[str] = []
+    for value in prompt or []:
+        names.extend(part.strip() for part in str(value).split(","))
+    names = [name for name in names if name]
+
+    prompt_ids: list[str] = []
+
+    if not names:
+        prompt_ids = sorted(
+            os.path.splitext(fname)[0] for fname in os.listdir(prompts_subdir) if fname.lower().endswith(".txt")
+        )
+        if not prompt_ids:
+            raise LLMExerException(
+                f"No prompt templates found in '{prompts_subdir}'. Add at least one '<name>.txt' file first."
+            )
+        return prompt_ids
+
+    for name in names:
+        if os.path.sep in name or (os.path.altsep and os.path.altsep in name) or ".." in name:
+            raise LLMExerException(f"Invalid prompt name '{name}': it must be a file name inside 'prompts/'.")
+        prompt_id = name[: -len(".txt")] if name.lower().endswith(".txt") else name
+        if prompt_id not in prompt_ids:
+            prompt_ids.append(prompt_id)
+
+    missing = [
+        f"{prompt_id}.txt"
+        for prompt_id in prompt_ids
+        if not os.path.exists(os.path.join(prompts_subdir, f"{prompt_id}.txt"))
+    ]
+    if missing:
+        raise LLMExerException(f"Prompt file(s) not found in '{prompts_subdir}': {', '.join(missing)}.")
+
+    return prompt_ids
 
 
 @app.command()
@@ -314,6 +379,72 @@ def copy_search(
     cprint(
         f"Copied [bold green]{len(df)}[/bold green] search result(s) → "
         f"[bold yellow]data.csv[/bold yellow]{backup_note}"
+    )
+
+
+@app.command(name="map")
+def map_data(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    prompt: list[str] = typer.Option(
+        None,
+        "--prompt",
+        help="Prompt file(s) from prompts/ to pair with every data row. Repeatable, and "
+        "each value may itself be a comma-separated list. The '.txt' extension is "
+        "optional. If omitted, every prompt in prompts/ is used.",
+    ),
+) -> None:
+    """Build mapping.csv by pairing every row of data.csv with the selected prompt(s)
+
+    Every data row is paired with every selected prompt (a cross join), written
+    prompt by prompt: all data rows for the first prompt, then the second, and so
+    on. An existing ``mapping.csv`` is backed up first.
+    """
+
+    pid = get_proper_pid(pid)
+    experiment_subdir_path = get_experiment_subdir_path(pid)
+
+    data_path = os.path.join(experiment_subdir_path, "data.csv")
+    prompts_subdir = os.path.join(experiment_subdir_path, "prompts")
+
+    for label, path in [("data.csv", data_path), ("prompts/", prompts_subdir)]:
+        if not os.path.exists(path):
+            raise LLMExerException(f"Required file or directory not found for project '{pid}': {label}")
+
+    data_df = pd.read_csv(data_path, sep=";", encoding="utf-8")
+    if "ID" not in data_df.columns:
+        raise LLMExerException(f"'data.csv' of project '{pid}' is missing the required 'ID' column.")
+
+    # Resolved before anything is written, so a typo leaves mapping.csv untouched.
+    prompt_ids = _resolve_prompt_ids(prompts_subdir, prompt)
+
+    data_ids = [str(value).strip() for value in data_df["ID"]]
+    if not data_ids:
+        cprint(
+            "[bold yellow]Warning:[/bold yellow] data.csv has no rows — mapping.csv left unchanged. "
+            "Fill it in, or run `experiment copy-papers` / `experiment copy-search` first."
+        )
+        return
+
+    rows = [{"data_id": data_id, "prompt_id": prompt_id} for prompt_id in prompt_ids for data_id in data_ids]
+    df = pd.DataFrame(rows, columns=["data_id", "prompt_id"])
+
+    mapping_path = os.path.join(experiment_subdir_path, "mapping.csv")
+    if settings.dry_run:
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write {len(rows)} row(s) to '{mapping_path}'")
+        return
+
+    _, backup_name = _write_csv_with_backup(experiment_subdir_path, "mapping.csv", df)
+
+    backup_note = f" (backed up previous mapping.csv \u2192 {backup_name})" if backup_name else ""
+    cprint(
+        f"Mapped [bold green]{len(data_ids)}[/bold green] data row(s) \u00d7 "
+        f"[bold green]{len(prompt_ids)}[/bold green] prompt(s) = "
+        f"[bold green]{len(rows)}[/bold green] row(s) \u2192 "
+        f"[bold yellow]mapping.csv[/bold yellow]{backup_note}"
     )
 
 

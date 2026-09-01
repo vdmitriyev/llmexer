@@ -43,9 +43,7 @@ def experiment_with_search(projects_dir, monkeypatch):
     search_id = "20260409-aabbccdd"
     yaml_file = searches_path / f"{search_id}.yaml"
     yaml_file.write_text(
-        yaml.dump(
-            {"query": "test query", "year": "2020-2025", "onlyOpenAccess": False}
-        ),
+        yaml.dump({"query": "test query", "year": "2020-2025", "onlyOpenAccess": False}),
         encoding="utf-8",
     )
 
@@ -141,9 +139,7 @@ def test_filter_excludes_doi(projects_dir, mock_no_dotenv, experiment_with_searc
     assert "10.1/en1" not in set(df["doi"])
 
 
-def test_filter_excludes_not_downloaded(
-    projects_dir, mock_no_dotenv, experiment_with_search
-):
+def test_filter_excludes_not_downloaded(projects_dir, mock_no_dotenv, experiment_with_search):
     """--downloaded keeps only rows that are downloaded."""
     pid, search_id, searches_path = experiment_with_search
 
@@ -155,9 +151,7 @@ def test_filter_excludes_not_downloaded(
     assert df.iloc[0]["search_engine_internal_id"] == "p1"
 
 
-def test_filter_chains_on_existing_filtered(
-    projects_dir, mock_no_dotenv, experiment_with_search
-):
+def test_filter_chains_on_existing_filtered(projects_dir, mock_no_dotenv, experiment_with_search):
     """A second run reads the existing __filtered.csv (not the results) and rewrites it."""
     pid, search_id, searches_path = experiment_with_search
 
@@ -182,14 +176,11 @@ def test_filter_logs_applied(projects_dir, mock_no_dotenv, experiment_with_searc
     assert log_path.exists()
     content = log_path.read_text(encoding="utf-8").strip()
     assert (
-        f"search file: {search_id}__filtered.csv; "
-        "filter applied: language=de ; input rows: 3; output rows: 2"
+        f"search file: {search_id}__filtered.csv; " "filter applied: language=de ; input rows: 3; output rows: 2"
     ) in content
 
 
-def test_filter_no_criteria_raises(
-    projects_dir, mock_no_dotenv, experiment_with_search
-):
+def test_filter_no_criteria_raises(projects_dir, mock_no_dotenv, experiment_with_search):
     """Supplying no filter criterion raises UnexpectedCLIParamsException."""
     pid, search_id, _ = experiment_with_search
 
@@ -208,9 +199,7 @@ def test_filter_no_file_raises(projects_dir, mock_no_dotenv, monkeypatch):
     assert isinstance(result.exception, UnexpectedCLIParamsException)
 
 
-def test_filter_missing_source_warns(
-    projects_dir, mock_no_dotenv, experiment_with_search
-):
+def test_filter_missing_source_warns(projects_dir, mock_no_dotenv, experiment_with_search):
     """When neither filtered nor results CSV exists, exits 0 with a warning."""
     pid, search_id, searches_path = experiment_with_search
     (searches_path / f"{search_id}__results.csv").unlink()
@@ -297,14 +286,8 @@ def test_filter_all_searches_when_no_file(projects_dir, mock_no_dotenv, monkeypa
 
     # Each search has its own line in the shared log.
     log = (searches_path / "logs" / "filters-applied.log").read_text(encoding="utf-8")
-    assert (
-        "search file: 20260101-aaaaaaaa__filtered.csv; filter applied: language=de"
-        in log
-    )
-    assert (
-        "search file: 20260102-bbbbbbbb__filtered.csv; filter applied: language=de"
-        in log
-    )
+    assert "search file: 20260101-aaaaaaaa__filtered.csv; filter applied: language=de" in log
+    assert "search file: 20260102-bbbbbbbb__filtered.csv; filter applied: language=de" in log
 
 
 def test_filter_no_searches_no_file(projects_dir, mock_no_dotenv, monkeypatch):

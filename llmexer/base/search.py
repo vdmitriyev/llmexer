@@ -82,17 +82,13 @@ def synf_df_runs_of_search_and_papers(
         if col in df.columns and df[col].dtype != object:
             df[col] = df[col].astype(object)
 
-    known_pdf_filenames = set(
-        df["pdf_filename"].dropna().astype(str).str.strip().loc[lambda s: s != ""]
-    )
+    known_pdf_filenames = set(df["pdf_filename"].dropna().astype(str).str.strip().loc[lambda s: s != ""])
 
     for idx, row in df.iterrows():
         pdf_filename = str(row.get("pdf_filename", "") or "").strip()
         if not pdf_filename:
             continue
-        stem = (
-            pdf_filename[:-4] if pdf_filename.lower().endswith(".pdf") else pdf_filename
-        )
+        stem = pdf_filename[:-4] if pdf_filename.lower().endswith(".pdf") else pdf_filename
 
         changed = False
         if (papers_dir / pdf_filename).exists():
@@ -136,9 +132,7 @@ def synf_df_runs_of_search_and_papers(
 
     added_count = len(new_rows)
     if new_rows:
-        df = pd.concat(
-            [df, pd.DataFrame(new_rows, columns=_PAPER_CSV_COLUMNS)], ignore_index=True
-        )
+        df = pd.concat([df, pd.DataFrame(new_rows, columns=_PAPER_CSV_COLUMNS)], ignore_index=True)
 
     return df, updated_count, added_count
 
@@ -210,11 +204,7 @@ def gather_search_csvs(searches_path: str) -> tuple[list, list]:
         raise LLMExerException(f"No searches directory found: {searches_path}")
 
     def _collect(suffix):
-        return sorted(
-            p
-            for p in Path(searches_path).glob(f"*{suffix}.csv")
-            if _MERGED_MARKER not in p.name
-        )
+        return sorted(p for p in Path(searches_path).glob(f"*{suffix}.csv") if _MERGED_MARKER not in p.name)
 
     return _collect(_RESULTS_STEM_SUFFIX), _collect(_FILTERED_STEM_SUFFIX)
 
@@ -350,9 +340,7 @@ def combine_new_records(existing: list[dict], new: list[dict]) -> list[dict]:
     return combined
 
 
-def read_search_params(
-    file: str, experiment_path: str, query_default: str = None
-) -> tuple[str, str, str, bool]:
+def read_search_params(file: str, experiment_path: str, query_default: str = None) -> tuple[str, str, str, bool]:
     """Read search parameters from a YAML config file.
 
     Returns:
