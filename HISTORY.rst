@@ -5,7 +5,7 @@ History
 0.3.4 (2026-09-01)
 -------------------
 
-* Add ``experiment map``: build ``mapping.csv`` from ``data.csv`` and the templates in ``prompts/``, instead of writing every ``data_id;prompt_id`` pair by hand. Every data row is paired with every selected prompt (a cross join), written prompt by prompt. ``--prompt`` selects templates and is repeatable, each value may itself be a comma-separated list, and the ``.txt`` extension is optional; omitting it uses every prompt in ``prompts/``. A named prompt that does not exist aborts the command with all missing names listed at once, so a typo never yields a partial mapping. An existing ``mapping.csv`` is backed up to ``mapping_backup_<YYYYMMDD>_<NN>.csv`` first, mirroring how ``copy-papers`` / ``copy-search`` back up ``data.csv``. Supports ``--dry-run``.
+* Add ``experiment map``: rebuild ``mapping.csv`` as the cross join of ``data.csv`` and the prompts selected with ``--prompt`` (all of ``prompts/`` when omitted), backing up any existing mapping first. Supports ``--dry-run``.
 * ``experiment generate``: match ``llms-for-experiment.csv`` to ``llm-params.csv`` on **both** ``provider`` and ``model_name``. Previously only ``model_name`` was compared, so a profile written for another provider attached itself to a same-named model and its provider-specific parameters were silently dropped on insert. Values are stripped, compared case-sensitively.
 * ``experiment generate``: warn when a model has no matching profile — that model is skipped and the remaining models still generate.
 
