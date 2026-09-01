@@ -506,7 +506,7 @@ def test_generate_missing_data_id_skips_row(projects_dir):
     (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;prompt01\nBAD-ID;prompt01\n", encoding="utf-8")
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
-        _LLM_PARAMS_HEADER + "default;m;p;0.7;1.0;512;4096;1.1;;;;\n", encoding="utf-8"
+        _LLM_PARAMS_HEADER + "p;m;default;0.7;1.0;512;4096;1.1;;;;\n", encoding="utf-8"
     )
 
     result = runner.invoke(app, ["experiment", "generate", "--pid", pid])
@@ -548,7 +548,7 @@ def test_generate_uses_current_experiment_from_env(projects_dir, mock_no_dotenv,
     (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;prompt01\n", encoding="utf-8")
     (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
     (exp_subdir / "llm-params.csv").write_text(
-        _LLM_PARAMS_HEADER + "default;m;p;0.7;1.0;512;4096;1.1;;;;\n", encoding="utf-8"
+        _LLM_PARAMS_HEADER + "p;m;default;0.7;1.0;512;4096;1.1;;;;\n", encoding="utf-8"
     )
 
     monkeypatch.setenv("PROJECT_ID", pid)
@@ -662,3 +662,124 @@ def test_generate_code_includes_profile_name(initialised_experiment, projects_di
 
     df = read_experiment_df(find_db(exp_subdir))
     assert df.iloc[0]["code"].endswith("_ollama-default")
+
+
+# ---------------------------------------------------------------------------
+# Join semantics: llms-for-experiment.csv x llm-params.csv on
+# (provider, model_name). Values are stripped, compared case-sensitively.
+# ---------------------------------------------------------------------------
+
+
+def _write_join_project(projects_dir, pid, models_csv, params_rows):
+    """Write a minimal project with one data row and one prompt."""
+    exp_subdir = projects_dir / pid / "experiment"
+    prompts_dir = exp_subdir / "prompts"
+    os.makedirs(prompts_dir)
+
+    (exp_subdir / "llms-for-experiment.csv").write_text(models_csv, encoding="utf-8")
+    (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;Title;Abstract.\n", encoding="utf-8")
+    (exp_subdir / "mapping.csv").write_text("data_id;prompt_id\nD01;prompt01\n", encoding="utf-8")
+    (prompts_dir / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(_LLM_PARAMS_HEADER + params_rows, encoding="utf-8")
+    return exp_subdir
+
+
+def test_generate_join_uses_provider_as_part_of_the_key(projects_dir):
+    """A profile for another provider must not attach to a same-named model."""
+    exp_subdir = _write_join_project(
+        projects_dir,
+        "join-provider",
+        "provider;model_name;notes\nollama;model-x;\n",
+        "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n" "vllm;model-x;prof-b;0.7;1.0;512;;;0.05;1;;\n",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "join-provider"])
+
+    assert result.exit_code == 0
+    df = read_experiment_df(find_db(exp_subdir))
+    # Only the ollama profile joined; the vllm one is not a match.
+    assert list(df["profile_name"]) == ["prof-a"]
+    assert list(df["provider_name"]) == ["ollama"]
+    # The row lives in the ollama table, so it carries ollama params only.
+    columns = table_columns(find_db(exp_subdir), "ollama")
+    assert "ollama_context_window" in columns
+    assert "vllm_min_p" not in columns
+
+
+def test_generate_warns_and_skips_model_without_a_profile(projects_dir):
+    """A model with no matching profile is reported, the rest still generate."""
+    exp_subdir = _write_join_project(
+        projects_dir,
+        "join-unmatched",
+        "provider;model_name;notes\nollama;model-x;\nollama;model-y;\n",
+        "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "join-unmatched"])
+
+    assert result.exit_code == 0
+    output = " ".join(result.output.split())
+    assert "no profile in llm-params.csv matches model 'model-y'" in output
+    df = read_experiment_df(find_db(exp_subdir))
+    assert list(df["model_name"]) == ["model-x"]
+
+
+def test_generate_warns_once_per_unmatched_model_not_per_data_row(projects_dir):
+    """The unmatched-model warning is emitted once, not once per data row."""
+    exp_subdir = projects_dir / "join-warn-once" / "experiment"
+    prompts_dir = exp_subdir / "prompts"
+    os.makedirs(prompts_dir)
+    (exp_subdir / "llms-for-experiment.csv").write_text(
+        "provider;model_name;notes\nollama;model-y;\n", encoding="utf-8"
+    )
+    (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;T1;A1.\nD02;T2;A2.\nD03;T3;A3.\n", encoding="utf-8")
+    (exp_subdir / "mapping.csv").write_text(
+        "data_id;prompt_id\nD01;prompt01\nD02;prompt01\nD03;prompt01\n",
+        encoding="utf-8",
+    )
+    (prompts_dir / "prompt01.txt").write_text("{{title}}", encoding="utf-8")
+    (exp_subdir / "llm-params.csv").write_text(
+        _LLM_PARAMS_HEADER + "ollama;other-model;prof-a;0.7;1.0;512;4096;1.1;;;;\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "join-warn-once"])
+
+    assert result.exit_code == 0
+    output = " ".join(result.output.split())
+    assert output.count("no profile in llm-params.csv matches model 'model-y'") == 1
+
+
+def test_generate_join_strips_surrounding_whitespace(projects_dir):
+    """Stray spaces in either file must not silently drop a model."""
+    exp_subdir = _write_join_project(
+        projects_dir,
+        "join-spaces",
+        "provider;model_name;notes\n ollama ; model-x ;\n",
+        "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "join-spaces"])
+
+    assert result.exit_code == 0
+    df = read_experiment_df(find_db(exp_subdir))
+    # Stored stripped, so the table name and run-time dispatch stay clean.
+    assert list(df["model_name"]) == ["model-x"]
+    assert list(df["provider_name"]) == ["ollama"]
+
+
+def test_generate_join_is_case_sensitive(projects_dir):
+    """Only whitespace is normalised — casing must still match exactly."""
+    _write_join_project(
+        projects_dir,
+        "join-case",
+        "provider;model_name;notes\nOllama;model-x;\n",
+        "ollama;model-x;prof-a;0.7;1.0;512;4096;1.1;;;;\n",
+    )
+
+    result = runner.invoke(app, ["experiment", "generate", "--pid", "join-case"])
+
+    assert result.exit_code == 0
+    output = " ".join(result.output.split())
+    assert "no profile in llm-params.csv matches model 'model-x'" in output
+    assert "No rows were generated" in output

@@ -2,6 +2,12 @@
 History
 =======
 
+0.3.4 (2026-09-01)
+-------------------
+
+* ``experiment generate``: match ``llms-for-experiment.csv`` to ``llm-params.csv`` on **both** ``provider`` and ``model_name``. Previously only ``model_name`` was compared, so a profile written for another provider attached itself to a same-named model and its provider-specific parameters were silently dropped on insert. Values are stripped, compared case-sensitively.
+* ``experiment generate``: warn when a model has no matching profile — that model is skipped and the remaining models still generate.
+
 0.3.3 (2026-08-31)
 -------------------
 

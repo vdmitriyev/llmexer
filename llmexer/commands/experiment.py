@@ -8,6 +8,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import typer
@@ -40,6 +41,24 @@ class SortBy(str, Enum):
 
 
 app = typer.Typer(help="Manage LLM experiments.")
+
+
+def _join_key(provider: Any, model_name: Any) -> tuple[str, str]:
+    """Identity key shared by ``llms-for-experiment.csv`` and ``llm-params.csv``.
+
+    Surrounding whitespace is stripped so a stray space in a CSV cell does not
+    silently drop a model, but the comparison stays case-sensitive: model names
+    are sent verbatim to the provider, where casing can be significant.
+
+    Args:
+        provider (Any): the ``provider`` cell.
+        model_name (Any): the ``model_name`` cell.
+
+    Returns:
+        tuple[str, str]: ``(provider, model_name)``, both stripped.
+    """
+
+    return (str(provider).strip(), str(model_name).strip())
 
 
 def _find_db_files(experiment_subdir_path: str) -> list[str]:
@@ -336,6 +355,13 @@ def generate(
         cprint("[bold yellow]Warning:[/bold yellow] llm-params.csv is empty — no rows will be generated.")
         return
 
+    # Profiles are matched to models on BOTH identity columns, so a profile
+    # written for another provider cannot attach itself to a same-named model.
+    # Values are stripped but compared case-sensitively.
+    params_by_key: dict = defaultdict(list)
+    for _, param_row in params_df.iterrows():
+        params_by_key[_join_key(param_row["provider"], param_row["model_name"])].append(param_row)
+
     # Surface unknown provider names now rather than at run time, where they
     # would otherwise create a table named after the typo. This is a warning,
     # not an error: a custom endpoint only needs PROVIDER_<UPPER>_URL to be set
@@ -352,6 +378,14 @@ def generate(
                 "'litellm'), not a profile name (e.g. 'litellm-default'). "
                 "'experiment run' will fail unless PROVIDER_"
                 f"{str(model_row['provider']).strip().upper()}_URL is set."
+            )
+        # Warned once per model here, rather than once per data row below.
+        if _join_key(model_row["provider"], model_row["model_name"]) not in params_by_key:
+            cprint(
+                f"[bold yellow]Warning:[/bold yellow] no profile in llm-params.csv "
+                f"matches model '{model_row['model_name']}' with provider "
+                f"'{model_row['provider']}' — skipping. Profiles are matched on both "
+                "'provider' and 'model_name'."
             )
 
     data_lookup = data_df.set_index("ID").to_dict(orient="index")
@@ -388,35 +422,23 @@ def generate(
         prompt_hash = hashlib.sha256(rendered_prompt.encode("utf-8")).hexdigest()
 
         for _, model_row in models_df.iterrows():
-            model_name = str(model_row["model_name"])
-            for _, param_row in params_df.iterrows():
-                if model_row["model_name"] == param_row["model_name"]:
-                    # Profiles are joined on model name alone, so a profile
-                    # written for another provider would silently contribute
-                    # parameters that this provider's table cannot hold.
-                    if str(param_row["provider"]).strip().lower() != str(model_row["provider"]).strip().lower():
-                        cprint(
-                            f"[bold yellow]Warning:[/bold yellow] profile "
-                            f"'{param_row['profile_name']}' is defined for provider "
-                            f"'{param_row['provider']}' but model '{model_name}' "
-                            f"uses provider '{model_row['provider']}' — its "
-                            f"'{param_row['provider']}_*' parameters will be dropped."
-                        )
-                    rows.append(
-                        {
-                            "ID": row_counter,
-                            "code": f"{data_id}_{prompt_id}_{model_name}" f"_{param_row['profile_name']}",
-                            "prompt": rendered_prompt,
-                            "tokens_estimate": len(rendered_prompt) // 4,
-                            "original_data": original_data_str,
-                            "model_name": model_name,
-                            "provider_name": str(model_row["provider"]),
-                            "prompt_hash": prompt_hash,
-                            "original_data_hash": original_data_hash,
-                            **{k: param_row.get(k) for k in _PARAM_COLUMNS},
-                        }
-                    )
-                    row_counter += 1
+            provider_name, model_name = _join_key(model_row["provider"], model_row["model_name"])
+            for param_row in params_by_key.get((provider_name, model_name), []):
+                rows.append(
+                    {
+                        "ID": row_counter,
+                        "code": f"{data_id}_{prompt_id}_{model_name}" f"_{param_row['profile_name']}",
+                        "prompt": rendered_prompt,
+                        "tokens_estimate": len(rendered_prompt) // 4,
+                        "original_data": original_data_str,
+                        "model_name": model_name,
+                        "provider_name": provider_name,
+                        "prompt_hash": prompt_hash,
+                        "original_data_hash": original_data_hash,
+                        **{k: param_row.get(k) for k in _PARAM_COLUMNS},
+                    }
+                )
+                row_counter += 1
 
     if not rows:
         cprint("[bold yellow]Warning:[/bold yellow] No rows were generated. Check your mapping.csv and data.csv.")
@@ -424,7 +446,7 @@ def generate(
 
     # Sort by model order (stable -> preserves mapping order within a model),
     # then renumber IDs 1..N across the whole generation.
-    model_order = list(models_df["model_name"].astype(str))
+    model_order = [str(name).strip() for name in models_df["model_name"]]
 
     def _model_rank(row: dict) -> int:
         name = str(row["model_name"])
