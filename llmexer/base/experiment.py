@@ -1,13 +1,16 @@
-"""Base methods and feature to be used in experiment CLI command."""
+f"""Base methods and feature to be used in experiment CLI command."""
 
 import os
 import uuid
 
 DIR_EXPERIMENT = "experiment"
 DIR_RESPONSES = "responses"
+DIR_PROMPTS = "prompts"
 
-# The experiment's model roster. Its identity columns (``provider``,
-# ``model_name``) deliberately match ``llm-params.csv`` and the generated tables.
+# files describing an experiment
+FILE_DATA = "data.csv"
+FILE_MAPPING = "mapping.csv"
+FILE_LLM_PARAMS = "llm-params.csv"
 FILE_LLM_MODELS = "llms-for-experiment.csv"
 
 _OUTPUT_COLUMNS = [
@@ -129,7 +132,7 @@ def generate_project_id() -> str:
 def _is_experiment_initialized(experiment_path: str) -> bool:
     """Check if an experiment has been initialized with required CSV files."""
     experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
-    required_files = ["data.csv", "llm-params.csv", "mapping.csv", FILE_LLM_MODELS]
+    required_files = [FILE_DATA, FILE_LLM_PARAMS, FILE_MAPPING, FILE_LLM_MODELS]
     return all(os.path.exists(os.path.join(experiment_subdir_path, f)) for f in required_files)
 
 

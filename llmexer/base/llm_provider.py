@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple
 
+from llmexer.base.experiment import FILE_LLM_PARAMS, FILE_LLMS_FOR_EXPERIMENT
 from llmexer.base.llm_core import LLMRunResult
 from llmexer.exceptions import ProviderConfigException
 
@@ -57,9 +58,9 @@ def validate_provider(provider: str) -> str:
     raise ProviderConfigException(
         f"Unknown LLM provider '{provider}'. Supported providers: "
         f"{', '.join(sorted(URL_MAP))}. Check the 'provider' column of "
-        "llms-for-experiment.csv — it takes a provider name (e.g. 'litellm'), "
+        f"{FILE_LLMS_FOR_EXPERIMENT} — it takes a provider name (e.g. 'litellm'), "
         "not a "
-        "profile name from llm-params.csv (e.g. 'litellm-default'). To use a "
+        f"profile name from {FILE_LLM_PARAMS} (e.g. 'litellm-default'). To use a "
         f"custom endpoint, set PROVIDER_{normalised.upper()}_URL."
     )
 

@@ -19,8 +19,12 @@ from llmexer.base.dao import ExperimentDAO, latest_db, list_db_files, next_db_fi
 from llmexer.base.experiment import (
     _PARAM_COLUMNS,
     DIR_EXPERIMENT,
+    DIR_PROMPTS,
     DIR_RESPONSES,
-    FILE_LLM_MODELS,
+    FILE_DATA,
+    FILE_LLM_PARAMS,
+    FILE_LLMS_FOR_EXPERIMENT,
+    FILE_MAPPING,
     _get_generated_experiment_files,
     _is_experiment_initialized,
 )
@@ -149,7 +153,7 @@ def _write_data_csv(experiment_subdir_path: str, df: pd.DataFrame) -> tuple[str,
     prior ``data.csv`` existed.
     """
 
-    return _write_csv_with_backup(experiment_subdir_path, "data.csv", df)
+    return _write_csv_with_backup(experiment_subdir_path, FILE_DATA, df)
 
 
 def _resolve_prompt_ids(prompts_subdir: str, prompt: list[str] | None) -> list[str]:
@@ -223,26 +227,26 @@ def init(
         raise LLMExerException(f"Project '{pid}' has already been initialised.")
 
     # Create subfolders
-    prompts_subdir = os.path.join(experiment_subdir_path, "prompts")
+    prompts_subdir = os.path.join(experiment_subdir_path, DIR_PROMPTS)
     ensure_directory_exists(experiment_subdir_path)
     ensure_directory_exists(prompts_subdir)
 
     # llms-for-experiment.csv
-    models_path = os.path.join(experiment_subdir_path, FILE_LLM_MODELS)
+    models_path = os.path.join(experiment_subdir_path, FILE_LLMS_FOR_EXPERIMENT)
     with open(models_path, "w", encoding="utf-8") as f:
         f.write("provider;model_name;notes\n")
         f.write("ollama;gemma4:31b;local model\n")
         f.write("ollama;phi4:14b;local model\n")
 
     # data.csv
-    data_path = os.path.join(experiment_subdir_path, "data.csv")
+    data_path = os.path.join(experiment_subdir_path, FILE_DATA)
     with open(data_path, "w", encoding="utf-8") as f:
         f.write("ID;Title;Abstract\n")
         f.write("D01;Sample Paper Title One;This is the abstract of the first sample paper.\n")
         f.write("D02;Sample Paper Title Two;This is the abstract of the second sample paper.\n")
 
     # mapping.csv
-    mapping_path = os.path.join(experiment_subdir_path, "mapping.csv")
+    mapping_path = os.path.join(experiment_subdir_path, FILE_MAPPING)
     with open(mapping_path, "w", encoding="utf-8") as f:
         f.write("data_id;prompt_id\n")
         f.write("D01;prompt01\n")
@@ -258,7 +262,7 @@ def init(
         )
 
     # llm-params.csv
-    llm_params_path = os.path.join(experiment_subdir_path, "llm-params.csv")
+    llm_params_path = os.path.join(experiment_subdir_path, FILE_LLM_PARAMS)
     with open(llm_params_path, "w", encoding="utf-8") as f:
         f.write(
             "provider;model_name;profile_name;temperature;top_p;max_tokens;"
@@ -324,9 +328,10 @@ def copy_papers(
     df = pd.DataFrame(rows, columns=["ID", "filename", "content"])
     _, backup_name = _write_data_csv(experiment_subdir_path, df)
 
-    backup_note = f" (backed up previous data.csv → {backup_name})" if backup_name else ""
+    backup_note = f" (backed up previous {FILE_DATA} → {backup_name})" if backup_name else ""
     cprint(
-        f"Copied [bold green]{len(rows)}[/bold green] paper(s) → " f"[bold yellow]data.csv[/bold yellow]{backup_note}"
+        f"Copied [bold green]{len(rows)}[/bold green] paper(s) → "
+        f"[bold yellow]{FILE_DATA}[/bold yellow]{backup_note}"
     )
 
 
@@ -375,10 +380,10 @@ def copy_search(
     )
     _, backup_name = _write_data_csv(experiment_subdir_path, df)
 
-    backup_note = f" (backed up previous data.csv → {backup_name})" if backup_name else ""
+    backup_note = f" (backed up previous {FILE_DATA} → {backup_name})" if backup_name else ""
     cprint(
         f"Copied [bold green]{len(df)}[/bold green] search result(s) → "
-        f"[bold yellow]data.csv[/bold yellow]{backup_note}"
+        f"[bold yellow]{FILE_DATA}[/bold yellow]{backup_note}"
     )
 
 
@@ -407,16 +412,16 @@ def map_data(
     pid = get_proper_pid(pid)
     experiment_subdir_path = get_experiment_subdir_path(pid)
 
-    data_path = os.path.join(experiment_subdir_path, "data.csv")
-    prompts_subdir = os.path.join(experiment_subdir_path, "prompts")
+    data_path = os.path.join(experiment_subdir_path, FILE_DATA)
+    prompts_subdir = os.path.join(experiment_subdir_path, DIR_PROMPTS)
 
-    for label, path in [("data.csv", data_path), ("prompts/", prompts_subdir)]:
+    for label, path in [(FILE_DATA, data_path), (f"{DIR_PROMPTS}/", prompts_subdir)]:
         if not os.path.exists(path):
             raise LLMExerException(f"Required file or directory not found for project '{pid}': {label}")
 
     data_df = pd.read_csv(data_path, sep=";", encoding="utf-8")
     if "ID" not in data_df.columns:
-        raise LLMExerException(f"'data.csv' of project '{pid}' is missing the required 'ID' column.")
+        raise LLMExerException(f"'{FILE_DATA}' of project '{pid}' is missing the required 'ID' column.")
 
     # Resolved before anything is written, so a typo leaves mapping.csv untouched.
     prompt_ids = _resolve_prompt_ids(prompts_subdir, prompt)
@@ -424,7 +429,7 @@ def map_data(
     data_ids = [str(value).strip() for value in data_df["ID"]]
     if not data_ids:
         cprint(
-            "[bold yellow]Warning:[/bold yellow] data.csv has no rows — mapping.csv left unchanged. "
+            f"[bold yellow]Warning:[/bold yellow] {FILE_DATA} has no rows — {FILE_MAPPING} left unchanged. "
             "Fill it in, or run `experiment copy-papers` / `experiment copy-search` first."
         )
         return
@@ -432,19 +437,19 @@ def map_data(
     rows = [{"data_id": data_id, "prompt_id": prompt_id} for prompt_id in prompt_ids for data_id in data_ids]
     df = pd.DataFrame(rows, columns=["data_id", "prompt_id"])
 
-    mapping_path = os.path.join(experiment_subdir_path, "mapping.csv")
+    mapping_path = os.path.join(experiment_subdir_path, FILE_MAPPING)
     if settings.dry_run:
         cprint(f"[bold yellow]Dry run:[/bold yellow] would write {len(rows)} row(s) to '{mapping_path}'")
         return
 
-    _, backup_name = _write_csv_with_backup(experiment_subdir_path, "mapping.csv", df)
+    _, backup_name = _write_csv_with_backup(experiment_subdir_path, FILE_MAPPING, df)
 
-    backup_note = f" (backed up previous mapping.csv \u2192 {backup_name})" if backup_name else ""
+    backup_note = f" (backed up previous {FILE_MAPPING} \u2192 {backup_name})" if backup_name else ""
     cprint(
         f"Mapped [bold green]{len(data_ids)}[/bold green] data row(s) \u00d7 "
         f"[bold green]{len(prompt_ids)}[/bold green] prompt(s) = "
         f"[bold green]{len(rows)}[/bold green] row(s) \u2192 "
-        f"[bold yellow]mapping.csv[/bold yellow]{backup_note}"
+        f"[bold yellow]{FILE_MAPPING}[/bold yellow]{backup_note}"
     )
 
 
@@ -461,18 +466,18 @@ def generate(
     pid = get_proper_pid(pid)
     experiment_subdir_path = get_experiment_subdir_path(pid)
 
-    models_path = os.path.join(experiment_subdir_path, FILE_LLM_MODELS)
-    data_path = os.path.join(experiment_subdir_path, "data.csv")
-    mapping_path = os.path.join(experiment_subdir_path, "mapping.csv")
-    llm_params_path = os.path.join(experiment_subdir_path, "llm-params.csv")
-    prompts_subdir = os.path.join(experiment_subdir_path, "prompts")
+    models_path = os.path.join(experiment_subdir_path, FILE_LLMS_FOR_EXPERIMENT)
+    data_path = os.path.join(experiment_subdir_path, FILE_DATA)
+    mapping_path = os.path.join(experiment_subdir_path, FILE_MAPPING)
+    llm_params_path = os.path.join(experiment_subdir_path, FILE_LLM_PARAMS)
+    prompts_subdir = os.path.join(experiment_subdir_path, DIR_PROMPTS)
 
     for label, path in [
-        (FILE_LLM_MODELS, models_path),
-        ("data.csv", data_path),
-        ("mapping.csv", mapping_path),
-        ("llm-params.csv", llm_params_path),
-        ("prompts/", prompts_subdir),
+        (FILE_LLMS_FOR_EXPERIMENT, models_path),
+        (FILE_DATA, data_path),
+        (FILE_MAPPING, mapping_path),
+        (FILE_LLM_PARAMS, llm_params_path),
+        (f"{DIR_PROMPTS}/", prompts_subdir),
     ]:
         if not os.path.exists(path):
             raise LLMExerException(f"Required file or directory not found for project '{pid}': {label}")
@@ -483,7 +488,7 @@ def generate(
     params_df = pd.read_csv(llm_params_path, sep=";", encoding="utf-8")
 
     if params_df.empty:
-        cprint("[bold yellow]Warning:[/bold yellow] llm-params.csv is empty — no rows will be generated.")
+        cprint(f"[bold yellow]Warning:[/bold yellow] {FILE_LLM_PARAMS} is empty — no rows will be generated.")
         return
 
     # Profiles are matched to models on BOTH identity columns, so a profile
@@ -504,7 +509,7 @@ def generate(
             cprint(
                 f"[bold yellow]Warning:[/bold yellow] unknown provider "
                 f"'{model_row['provider']}' for model '{model_row['model_name']}'. The "
-                "'provider' column of llms-for-experiment.csv takes a provider "
+                f"'provider' column of {FILE_LLMS_FOR_EXPERIMENT} takes a provider "
                 "name (e.g. "
                 "'litellm'), not a profile name (e.g. 'litellm-default'). "
                 "'experiment run' will fail unless PROVIDER_"
@@ -513,7 +518,7 @@ def generate(
         # Warned once per model here, rather than once per data row below.
         if _join_key(model_row["provider"], model_row["model_name"]) not in params_by_key:
             cprint(
-                f"[bold yellow]Warning:[/bold yellow] no profile in llm-params.csv "
+                f"[bold yellow]Warning:[/bold yellow] no profile in {FILE_LLM_PARAMS} "
                 f"matches model '{model_row['model_name']}' with provider "
                 f"'{model_row['provider']}' — skipping. Profiles are matched on both "
                 "'provider' and 'model_name'."
@@ -530,7 +535,7 @@ def generate(
         prompt_id = str(mapping_row["prompt_id"]).strip()
 
         if data_id not in data_lookup:
-            cprint(f"[bold yellow]Warning:[/bold yellow] data_id '{data_id}' not found in data.csv — skipping.")
+            cprint(f"[bold yellow]Warning:[/bold yellow] data_id '{data_id}' not found in {FILE_DATA} — skipping.")
             continue
 
         data_row = data_lookup[data_id]
@@ -572,7 +577,10 @@ def generate(
                 row_counter += 1
 
     if not rows:
-        cprint("[bold yellow]Warning:[/bold yellow] No rows were generated. Check your mapping.csv and data.csv.")
+        cprint(
+            f"[bold yellow]Warning:[/bold yellow] No rows were generated. "
+            f"Check your {FILE_MAPPING} and {FILE_DATA}."
+        )
         return
 
     # Sort by model order (stable -> preserves mapping order within a model),
