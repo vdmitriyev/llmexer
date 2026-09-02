@@ -615,8 +615,8 @@ def test_cli_stats_multiple_dbs_requires_file(projects_dir):
     assert "--file" in str(result.exception)
 
 
-def test_cli_run_single_id(projects_dir, mock_providers):
-    pid = "single-id-exp"
+def test_cli_run_single_code(projects_dir, mock_providers):
+    pid = "single-code-exp"
     exp_subdir = projects_dir / pid / "experiment"
     os.makedirs(exp_subdir)
     seed_db(
@@ -626,12 +626,12 @@ def test_cli_run_single_id(projects_dir, mock_providers):
 
     result = runner.invoke(
         app,
-        ["experiment", "run", "--pid", pid, "--file", _DB_NAME, "--id", "1"],
+        ["experiment", "run", "--pid", pid, "--file", _DB_NAME, "--code", "1"],
     )
 
     assert result.exit_code == 0, result.exception
     df = read_experiment_df(exp_subdir / _DB_NAME)
-    # Full row set persisted; only the --id 1 (ollama) row was run.
+    # Full row set persisted; only the --code 1 (ollama) row was run.
     assert len(df) == 2
     by_id = df.set_index("ID")
     assert by_id.loc[1, "status"] == "success"

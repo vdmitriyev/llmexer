@@ -62,6 +62,10 @@ logger = get_logger()
 
 TABLE_PREFIX = "experiment_"
 PARAMS_TABLE_PREFIX = "params_"
+# `experiment try` records single ad-hoc combinations in their own table family,
+# so a try is never mistaken for a generated row by run/stats/update.
+TRY_TABLE_PREFIX = "try_experiment_"
+TRY_PARAMS_TABLE_PREFIX = "try_param_"
 DB_PREFIX = "experiment"
 DB_SUFFIX = ".db"
 
@@ -81,6 +85,8 @@ COLUMN_TYPES: Dict[str, Any] = {
     # params join key (present in BOTH the experiment and the params table)
     "params_code": String,
     "profile_name": String,
+    # key of ``try_param_<provider>``: the ID of the try the parameters were used for
+    "try_id": Integer,
     # common params
     "temperature": Float,
     "top_p": Float,
@@ -131,6 +137,30 @@ def provider_from_params_table_name(name: str) -> str:
     return name[len(PARAMS_TABLE_PREFIX) :] if name.startswith(PARAMS_TABLE_PREFIX) else name
 
 
+def try_table_name_for(provider: str) -> str:
+    """Return the try table name for a provider (``try_experiment_<provider>``)."""
+
+    return f"{TRY_TABLE_PREFIX}{str(provider).lower()}"
+
+
+def provider_from_try_table_name(name: str) -> str:
+    """Inverse of :func:`try_table_name_for`."""
+
+    return name[len(TRY_TABLE_PREFIX) :] if name.startswith(TRY_TABLE_PREFIX) else name
+
+
+def try_params_table_name_for(provider: str) -> str:
+    """Return the try params table name for a provider (``try_param_<provider>``)."""
+
+    return f"{TRY_PARAMS_TABLE_PREFIX}{str(provider).lower()}"
+
+
+def provider_from_try_params_table_name(name: str) -> str:
+    """Inverse of :func:`try_params_table_name_for`."""
+
+    return name[len(TRY_PARAMS_TABLE_PREFIX) :] if name.startswith(TRY_PARAMS_TABLE_PREFIX) else name
+
+
 def _experiment_columns(provider: str) -> List[str]:
     """Ordered column list for a provider's ``experiment_<provider>`` table."""
 
@@ -146,6 +176,19 @@ def _params_columns(provider: str) -> List[str]:
 
     extra = PROVIDER_PARAM_COLUMNS.get(str(provider).lower(), [])
     return list(PARAMS_KEY_COLUMNS) + list(COMMON_PARAM_COLUMNS) + list(extra)
+
+
+def _try_params_columns(provider: str) -> List[str]:
+    """Ordered column list for a provider's ``try_param_<provider>`` table.
+
+    Unlike ``params_<provider>``, which stores each parameter set once and is
+    keyed by ``(params_code, profile_name)``, this table holds ONE ROW PER TRY,
+    keyed by the try's ``ID``. ``experiment try`` is what a user reaches for
+    while editing ``llm-params.csv``, so two tries run under the same profile
+    name must each keep the parameters they actually ran with.
+    """
+
+    return ["try_id"] + _params_columns(provider)
 
 
 def _clean_value(value: Any) -> Any:
@@ -251,6 +294,10 @@ class ExperimentDAO:
         # Kept apart from ``_tables``: provider_tables(), fetch_rows() and
         # stats() all iterate the experiment tables and must never see these.
         self._params_tables: Dict[str, Table] = {}
+        # `experiment try` rows, kept apart from both of the above for the same
+        # reason: a try is not part of the generated experiment.
+        self._try_tables: Dict[str, Table] = {}
+        self._try_params_tables: Dict[str, Table] = {}
 
         if not create and not os.path.exists(db_path):
             raise LLMExerException(f"Experiment database not found: '{db_path}'.")
@@ -260,7 +307,14 @@ class ExperimentDAO:
         if not create:
             self.metadata.reflect(bind=self.engine)
             for table in self.metadata.tables.values():
-                if table.name.startswith(PARAMS_TABLE_PREFIX):
+                # The try prefixes are checked first: 'try_experiment_ollama'
+                # matches neither of the two prefixes below, so without these
+                # arms a try table would silently vanish on reflection.
+                if table.name.startswith(TRY_PARAMS_TABLE_PREFIX):
+                    self._try_params_tables[provider_from_try_params_table_name(table.name)] = table
+                elif table.name.startswith(TRY_TABLE_PREFIX):
+                    self._try_tables[provider_from_try_table_name(table.name)] = table
+                elif table.name.startswith(PARAMS_TABLE_PREFIX):
                     self._params_tables[provider_from_params_table_name(table.name)] = table
                 elif table.name.startswith(TABLE_PREFIX):
                     self._tables[provider_from_table_name(table.name)] = table
@@ -515,6 +569,111 @@ class ExperimentDAO:
             return
         with self.engine.begin() as conn:
             conn.execute(update(table).where(table.c.ID == row_id).values(**values))
+
+    def _build_try_table(self, provider: str) -> Table:
+        return Table(
+            try_table_name_for(provider),
+            self.metadata,
+            *[Column(name, COLUMN_TYPES[name], primary_key=(name == "ID")) for name in _experiment_columns(provider)],
+        )
+
+    def _build_try_params_table(self, provider: str) -> Table:
+        return Table(
+            try_params_table_name_for(provider),
+            self.metadata,
+            *[
+                Column(name, COLUMN_TYPES[name], primary_key=(name == "try_id"))
+                for name in _try_params_columns(provider)
+            ],
+        )
+
+    def ensure_try_tables(self, provider: str) -> tuple:
+        """Register and create the ``try_*`` table pair for ``provider``.
+
+        Idempotent: the tables are created only if the database does not have
+        them yet, and an already reflected pair is returned as it is.
+        """
+
+        key = str(provider).lower()
+        if key not in self._try_tables:
+            self._try_tables[key] = self._build_try_table(key)
+        if key not in self._try_params_tables:
+            self._try_params_tables[key] = self._build_try_params_table(key)
+        self.create_tables()
+        return self._try_tables[key], self._try_params_tables[key]
+
+    def try_tables(self) -> Dict[str, Table]:
+        """Mapping of provider name -> ``try_experiment_<provider>`` Table."""
+
+        return dict(self._try_tables)
+
+    def try_params_tables(self) -> Dict[str, Table]:
+        """Mapping of provider name -> ``try_param_<provider>`` Table."""
+
+        return dict(self._try_params_tables)
+
+    def append_try_row(self, provider: str, row: dict) -> int:
+        """Append one try and the parameters it ran with; return its new ID.
+
+        ``ID`` is left to SQLite (an ``INTEGER PRIMARY KEY`` is a rowid alias),
+        so each try simply lands after the previous one. The parameter values of
+        the same flat row are stored in ``try_param_<provider>`` under that ID.
+        """
+
+        key = str(provider).lower()
+        table, params_table = self.ensure_try_tables(key)
+
+        cleaned = {k: _clean_value(v) for k, v in row.items()}
+        cleaned["params_code"] = cleaned.get("params_code") or params_code_for(cleaned.get("model_name"), key)
+        profile = cleaned.get("profile_name")
+        cleaned["profile_name"] = "" if profile is None else str(profile)
+
+        # ``ID`` is assigned by SQLite, never taken from the caller's row.
+        exp_payload = {k: v for k, v in cleaned.items() if k in set(table.c.keys()) and k != "ID"}
+        params_payload = {k: v for k, v in cleaned.items() if k in set(params_table.c.keys())}
+
+        with self.engine.begin() as conn:
+            result = conn.execute(insert(table), exp_payload)
+            try_id = result.inserted_primary_key[0]
+            params_payload["try_id"] = try_id
+            conn.execute(insert(params_table), params_payload)
+
+        logger.info(f"Appended try {try_id} to '{table.name}' of '{self.db_path}'.")
+        return try_id
+
+    def fetch_try_rows(self, provider: Optional[str] = None) -> List[dict]:
+        """Return try rows joined to the parameters each of them ran with.
+
+        Shaped like :meth:`fetch_rows`: one flat dict per try, carrying an extra
+        ``_provider`` key, ordered by ``ID``.
+        """
+
+        if provider is not None:
+            key = str(provider).lower()
+            tables = {key: self._try_tables[key]} if key in self._try_tables else {}
+        else:
+            tables = self._try_tables
+
+        results: List[dict] = []
+        with self.engine.connect() as conn:
+            for prov, table in tables.items():
+                params_table = self._try_params_tables.get(prov)
+                if params_table is None:
+                    stmt = select(table).order_by(table.c.ID)
+                else:
+                    param_value_cols = [
+                        params_table.c[name]
+                        for name in params_table.c.keys()
+                        if name not in PARAMS_KEY_COLUMNS and name != "try_id"
+                    ]
+                    joined = table.join(params_table, table.c.ID == params_table.c.try_id, isouter=True)
+                    stmt = select(table, *param_value_cols).select_from(joined).order_by(table.c.ID)
+                for mapping in conn.execute(stmt).mappings():
+                    row = dict(mapping)
+                    row["_provider"] = prov
+                    results.append(row)
+        results.sort(key=lambda r: (r.get("ID") if r.get("ID") is not None else 0))
+        return results
 
     # ------------------------------------------------------------------ update
     def fetch_params_rows(self, provider: str) -> List[dict]:

@@ -23,6 +23,8 @@ from llmexer.base.dao import (
     list_db_files,
     next_db_filename,
     params_code_for,
+    try_params_table_name_for,
+    try_table_name_for,
 )
 from llmexer.base.experiment import (
     _PARAM_COLUMNS,
@@ -368,7 +370,7 @@ def copy_papers(
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
 ) -> None:
-    """Copy parsed papers (.md/.txt) from the project's papers/ folder into data.csv.
+    """Copy parsed papers (.md/.txt) from the project's papers/ folder into data.csv
 
     Each parsed paper becomes a row ``ID;filename;content`` with IDs ``P01``,
     ``P02``, … ordered alphabetically by filename. When a paper has both a ``.md``
@@ -429,7 +431,7 @@ def copy_search(
         help="Search results CSV to copy from (absolute, or relative to the " "project's searches/ folder).",
     ),
 ) -> None:
-    """Copy a search results file into data.csv.
+    """Copy a search results file into data.csv
 
     Writes rows ``ID;Title;Abstract;doi;authors`` with IDs ``S01``, ``S02``, …
     preserving the source file's row order. An existing ``data.csv`` is backed
@@ -643,6 +645,86 @@ def _report_unmatched_models(models_df: pd.DataFrame, params_by_key: dict) -> No
             )
 
 
+def _prompt_environment() -> Environment:
+    """Build the Jinja2 environment prompt templates are rendered with.
+
+    Autoescape stays off deliberately: these templates render LLM prompts, not
+    HTML, and escaping would corrupt the text sent to the provider.
+    ``DebugUndefined`` leaves an unknown placeholder verbatim instead of
+    blanking it, so a typo in a template is visible in the rendered prompt.
+    """
+
+    return Environment(loader=BaseLoader(), undefined=DebugUndefined)
+
+
+def _render_prompt(
+    template_str: str,
+    data_id: str,
+    data_row: dict,
+    env: Environment | None = None,
+) -> tuple[str, str, str, str]:
+    """Render one prompt template against one data row.
+
+    Returns ``(rendered_prompt, prompt_hash, original_data, original_data_hash)``
+    — the four reproducibility values every generated row carries. Shared by
+    ``generate``/``update`` and ``try``, so a try can never be rendered or hashed
+    differently from the row ``generate`` would have produced for it.
+
+    Args:
+        template_str (str): the raw Jinja2 template.
+        data_id (str): the ``ID`` of the ``data.csv`` row.
+        data_row (dict): that row's remaining columns.
+        env (Environment | None): a shared Jinja2 environment; one is built when
+            omitted (callers rendering many rows pass their own).
+    """
+
+    context = {k.lower(): v for k, v in data_row.items()}
+    context["id"] = data_id
+
+    original_data_dict = {"ID": data_id, **data_row}
+    original_data_str = json.dumps(original_data_dict, ensure_ascii=False)
+    original_data_hash = hashlib.sha256(original_data_str.encode("utf-8")).hexdigest()
+
+    env = env or _prompt_environment()
+    rendered_prompt = env.from_string(template_str).render(**context)
+    prompt_hash = hashlib.sha256(rendered_prompt.encode("utf-8")).hexdigest()
+
+    return rendered_prompt, prompt_hash, original_data_str, original_data_hash
+
+
+def _combination_row(
+    data_id: str,
+    prompt_id: str,
+    key: tuple[str, str, str],
+    param_row: Any,
+    rendered: tuple[str, str, str, str],
+) -> dict:
+    """Assemble one flat experiment row from a rendered prompt and a profile.
+
+    ``key`` is the ``(provider, model_name, profile_name)`` join key. No ``ID``
+    is assigned: ``generate`` numbers rows from 1, ``update`` continues the
+    database's sequence and ``try`` lets SQLite assign one.
+    """
+
+    provider_name, model_name, profile_name = key
+    rendered_prompt, prompt_hash, original_data_str, original_data_hash = rendered
+
+    return {
+        "code": f"{data_id}_{prompt_id}_{model_name}_{profile_name}",
+        "prompt": rendered_prompt,
+        "tokens_estimate": len(rendered_prompt) // 4,
+        "original_data": original_data_str,
+        "model_name": model_name,
+        "provider_name": provider_name,
+        "prompt_hash": prompt_hash,
+        "original_data_hash": original_data_hash,
+        **{k: param_row.get(k) for k in _PARAM_COLUMNS},
+        # After the unpack: store the stripped profile so `code` and the params
+        # table's primary key can never disagree.
+        "profile_name": profile_name,
+    }
+
+
 def _build_generated_rows(
     models_df: pd.DataFrame,
     data_df: pd.DataFrame,
@@ -657,7 +739,7 @@ def _build_generated_rows(
     """
 
     data_lookup = data_df.set_index("ID").to_dict(orient="index")
-    env = Environment(loader=BaseLoader(), undefined=DebugUndefined)
+    env = _prompt_environment()
 
     rows = []
 
@@ -669,14 +751,6 @@ def _build_generated_rows(
             cprint(f"[bold yellow]Warning:[/bold yellow] data_id '{data_id}' not found in {FILE_DATA} — skipping.")
             continue
 
-        data_row = data_lookup[data_id]
-        context = {k.lower(): v for k, v in data_row.items()}
-        context["id"] = data_id
-
-        original_data_dict = {"ID": data_id, **data_row}
-        original_data_str = json.dumps(original_data_dict, ensure_ascii=False)
-        original_data_hash = hashlib.sha256(original_data_str.encode("utf-8")).hexdigest()
-
         prompt_file_path = os.path.join(prompts_subdir, f"{prompt_id}.txt")
         if not os.path.exists(prompt_file_path):
             cprint(f"[bold yellow]Warning:[/bold yellow] prompt file '{prompt_id}.txt' not found — skipping.")
@@ -685,31 +759,14 @@ def _build_generated_rows(
         with open(prompt_file_path, "r", encoding="utf-8") as f:
             template_str = f.read()
 
-        rendered_prompt = env.from_string(template_str).render(**context)
-        prompt_hash = hashlib.sha256(rendered_prompt.encode("utf-8")).hexdigest()
+        rendered = _render_prompt(template_str, data_id, data_lookup[data_id], env=env)
 
         for _, model_row in models_df.iterrows():
             key = _row_join_key(model_row)
             param_row = params_by_key.get(key)
             if param_row is None:
                 continue  # already reported once per model row
-            provider_name, model_name, profile_name = key
-            rows.append(
-                {
-                    "code": f"{data_id}_{prompt_id}_{model_name}_{profile_name}",
-                    "prompt": rendered_prompt,
-                    "tokens_estimate": len(rendered_prompt) // 4,
-                    "original_data": original_data_str,
-                    "model_name": model_name,
-                    "provider_name": provider_name,
-                    "prompt_hash": prompt_hash,
-                    "original_data_hash": original_data_hash,
-                    **{k: param_row.get(k) for k in _PARAM_COLUMNS},
-                    # After the unpack: store the stripped profile so `code` and
-                    # the params table's primary key can never disagree.
-                    "profile_name": profile_name,
-                }
-            )
+            rows.append(_combination_row(data_id, prompt_id, key, param_row, rendered))
 
     return rows
 
@@ -1005,11 +1062,11 @@ def update(
         )
 
 
-def _report_no_rows_to_run(active_filters: list[str], id_experiment: str | None) -> None:
+def _report_no_rows_to_run(active_filters: list[str], code: str | None) -> None:
     """Explain an empty row set for ``run``.
 
-    A filter that matches nothing is a normal outcome and only warns, while an
-    ``--id`` that matches nothing names a row that does not exist and raises.
+    A filter that matches nothing is a normal outcome and only warns, while a
+    ``--code`` that matches nothing names a row that does not exist and raises.
     """
 
     if active_filters:
@@ -1017,8 +1074,8 @@ def _report_no_rows_to_run(active_filters: list[str], id_experiment: str | None)
             f"[bold yellow]Warning:[/bold yellow] No rows found for " f"{', '.join(active_filters)} — nothing to run."
         )
         return
-    if id_experiment is not None:
-        raise LLMExerException(f"No experiment row found with id '{id_experiment}'.")
+    if code is not None:
+        raise LLMExerException(f"No experiment row found with code '{code}'.")
     cprint("[bold yellow]Warning:[/bold yellow] Experiment database is empty — " "nothing to run.")
 
 
@@ -1052,10 +1109,10 @@ def run(
         help="Only run rows whose profile_name matches this value in full (case-sensitive). "
         "E.g. --filter-profile ollama-default",
     ),
-    id: str = typer.Option(
+    code: str = typer.Option(
         None,
-        "--id",
-        help="Run only a single combination by its ID (or code) instead of all rows.",
+        "--code",
+        help="Run only a single combination by its `code` (or numeric ID) instead of all rows.",
     ),
 ) -> None:
     """Run rows from the generated experiment database and save results"""
@@ -1095,13 +1152,13 @@ def run(
     with ExperimentDAO(db_path) as dao:
         rows = dao.fetch_rows(
             provider=filter_provider,
-            id_experiment=id,
+            id_experiment=code,
             model_name=filter_model,
             profile_name=filter_profile,
         )
 
         if not rows:
-            _report_no_rows_to_run(active_filters, id)
+            _report_no_rows_to_run(active_filters, code)
             return
 
         responses_dir = os.path.join(experiment_subdir_path, DIR_RESPONSES)
@@ -1158,6 +1215,213 @@ def run(
             )
 
 
+def _resolve_try_data_row(data_df: pd.DataFrame, data_id: str, pid: str) -> dict:
+    """Look up one row of ``data.csv`` by its ``ID``.
+
+    Raises:
+        LLMExerException: if the file has no ``ID`` column, or if no row carries
+            this ID -- the available IDs are named so the typo is obvious.
+    """
+
+    if "ID" not in data_df.columns:
+        raise LLMExerException(f"'{FILE_DATA}' of project '{pid}' is missing the required 'ID' column.")
+
+    lookup = {_key_part(key): value for key, value in data_df.set_index("ID").to_dict(orient="index").items()}
+    if data_id in lookup:
+        return lookup[data_id]
+
+    known = list(lookup)
+    preview = ", ".join(known[:10]) + (f" (and {len(known) - 10} more)" if len(known) > 10 else "")
+    raise LLMExerException(
+        f"No row with ID '{data_id}' in {FILE_DATA} of project '{pid}'."
+        + (f" Available ID(s): {preview}." if known else f" {FILE_DATA} has no rows.")
+    )
+
+
+def _resolve_try_profile(params_df: pd.DataFrame, profile: str, model: str | None, provider: str | None) -> tuple:
+    """Resolve a profile name to exactly one row of ``llm-params.csv``.
+
+    A profile name alone is not an identity: ``llm-params.csv`` is keyed by
+    ``(provider, model_name, profile_name)``, so the same profile name may cover
+    several models. ``--model`` and ``--provider`` narrow the candidates; an
+    ambiguous profile is reported with its candidates rather than guessed at.
+
+    Returns:
+        tuple: ``((provider, model_name, profile_name), param_row)``.
+    """
+
+    candidates = []
+    for _, param_row in params_df.iterrows():
+        key = _row_join_key(param_row)
+        row_provider, row_model, row_profile = key
+        if row_profile != profile:
+            continue
+        if model is not None and row_model != model:
+            continue
+        if provider is not None and row_provider != provider:
+            continue
+        candidates.append((key, param_row))
+
+    if len(candidates) == 1:
+        return candidates[0]
+
+    if not candidates:
+        known = sorted({_key_part(value) for value in params_df["profile_name"]} - {""})
+        narrowed = [f"{label} '{value}'" for label, value in (("model", model), ("provider", provider)) if value]
+        raise LLMExerException(
+            f"No profile '{profile}'"
+            + (f" with {' and '.join(narrowed)}" if narrowed else "")
+            + f" in {FILE_LLM_PARAMS}. Profiles are matched in full and case-sensitively."
+            + (f" Available profile(s): {', '.join(known)}." if known else "")
+        )
+
+    for (row_provider, row_model, _), _param_row in candidates:
+        cprint(f"[bold red]Error:[/bold red] candidate: {row_provider} / {row_model}")
+    raise LLMExerException(
+        f"Profile '{profile}' matches {len(candidates)} rows of {FILE_LLM_PARAMS}. "
+        "Narrow it with --model (and --provider if the same model is served by several providers)."
+    )
+
+
+def _print_try_header(model_name: str, provider: str, usage_tokens: Any = None) -> None:
+    """Print the ``model`` / ``provider`` / ``usage_tokens`` header of a try."""
+
+    header = Table(show_header=False, box=None, padding=(0, 1))
+    header.add_column(style="bold white", no_wrap=True)
+    header.add_column()
+    header.add_row("Model:", f"[bold yellow]{model_name}[/bold yellow]")
+    header.add_row("Provider:", f"[bold yellow]{provider}[/bold yellow]")
+    header.add_row("Usage tokens:", f"[bold green]{usage_tokens if usage_tokens is not None else '-'}[/bold green]")
+    console.print(header)
+
+
+@app.command(name="try")
+def try_one(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    prompt: str = typer.Option(
+        ...,
+        "--prompt",
+        help="Prompt template from prompts/ to render (the '.txt' extension is optional).",
+    ),
+    profile: str = typer.Option(
+        ...,
+        "--profile",
+        help="Profile name from llm-params.csv, matched in full (case-sensitive).",
+    ),
+    data_id: str = typer.Option(
+        ...,
+        "--data-id",
+        help="ID of the data.csv row to render the prompt with.",
+    ),
+    model: str = typer.Option(
+        None,
+        "--model",
+        help="Model name, needed only when one profile name covers several models.",
+    ),
+    provider: str = typer.Option(
+        None,
+        "--provider",
+        help="Provider, needed only when one profile and model are served by several providers.",
+    ),
+    file: str = typer.Option(
+        None,
+        "--file",
+        help="Experiment database to record the try in. Defaults to the newest one.",
+    ),
+) -> None:
+    """Performs a single experiment `try` run, where custom data x prompt x profile combination is tested once
+
+    A try is `generate` and `run` for a single combination: the three names are
+    validated first, the combination is then put together, executed against its
+    provider, and then appended to the ``try_experiment_<provider>`` and
+    ``try_param_<provider>`` tables of the database.
+    """
+
+    pid = get_proper_pid(pid)
+    db_path, experiment_subdir_path = _resolve_experiment_db(pid, file)
+
+    prompt = prompt.strip()
+    profile = profile.strip()
+    data_id = data_id.strip()
+    model = model.strip() if model is not None else None
+    provider = provider.strip() if provider is not None else None
+
+    _models_df, data_df, _mapping_df, params_df, prompts_subdir = _load_experiment_inputs(pid, experiment_subdir_path)
+
+    # Everything is resolved before a single token is sent: a typo in any of the
+    # three names must fail immediately, not after an LLM call.
+    prompt_id = _resolve_prompt_ids(prompts_subdir, [prompt])[0]
+    data_row = _resolve_try_data_row(data_df, data_id, pid)
+    key, param_row = _resolve_try_profile(params_df, profile, model, provider)
+    provider_name, model_name, _profile_name = key
+
+    with open(os.path.join(prompts_subdir, f"{prompt_id}.txt"), "r", encoding="utf-8") as f:
+        template_str = f.read()
+
+    rendered = _render_prompt(template_str, data_id, data_row)
+    row = _combination_row(data_id, prompt_id, key, param_row, rendered)
+
+    if settings.dry_run:
+        _print_try_header(model_name, provider_name)
+        cprint(
+            f"[bold yellow]Dry run:[/bold yellow] would run [bold yellow]{row['code']}[/bold yellow] "
+            f"and append it to '{os.path.basename(db_path)}'. \n\nRendered prompt:\n"
+        )
+        cprint(f'[green]{row["prompt"]}[/green]')
+        return
+
+    # Lazy import to keep openai optional
+    try:
+        import llmexer.base.llm_provider  # noqa: F401  (validates LLM deps importable)
+        from llmexer.base.llm_manager import (
+            build_response_payload,
+            result_values,
+            run_experiment_row,
+        )
+    except ImportError as exc:
+        raise LLMExerException(
+            "Missing required packages for LLM calls. " "Install them with: pip install openai pydantic"
+        ) from exc
+
+    # Opened before the call so a database this version cannot write to aborts
+    # the try instead of throwing the response away afterwards.
+    with ExperimentDAO(db_path) as dao:
+        cprint(f"Trying [bold yellow]{row['code']}[/bold yellow] against [bold yellow]{provider_name}[/bold yellow]")
+
+        experiment = run_experiment_row(row)
+
+        responses_dir = os.path.join(experiment_subdir_path, DIR_RESPONSES)
+        ensure_directory_exists(responses_dir)
+        file_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        safe_model = str(model_name).replace("/", "-").replace(":", "-")
+        json_path = os.path.join(responses_dir, f"{file_ts}_{safe_model}_{provider_name}.json")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(build_response_payload(experiment, provider_name), f, indent=2, ensure_ascii=False)
+
+        # A failed try is still a try: it is appended with its error status, so
+        # the table stays the full history of what was attempted.
+        try_id = dao.append_try_row(provider_name, {**row, **result_values(experiment, provider_name)})
+
+    _print_try_header(model_name, provider_name, experiment.usage_tokens)
+
+    if experiment.status == "success":
+        cprint("\nResponse text:\n")
+        cprint(f"[green]{experiment.response_text}[/green]")
+    else:
+        cprint(f"[bold red]{experiment.status}[/bold red]")
+
+    cprint(
+        f"\nTry [bold green]{try_id}[/bold green] appended to "
+        f"[bold yellow]{os.path.basename(db_path)}[/bold yellow] "
+        f"({', '.join((try_table_name_for(provider_name), try_params_table_name_for(provider_name)))}); "
+        f"response saved to [bold yellow]{os.path.basename(json_path)}[/bold yellow]"
+    )
+
+
 @app.command()
 def stats(
     pid: str = typer.Option(
@@ -1171,7 +1435,7 @@ def stats(
         help="Experiment database to read stats from. Defaults to the single experiment_*.db.",
     ),
 ) -> None:
-    """Show aggregate statistics for a project's experiment results.
+    """Show aggregate statistics for a project's experiment results
 
     Defaults to the single ``experiment_*.db`` produced by ``experiment
     generate``/``run``; pass ``--file`` to inspect a specific database instead.

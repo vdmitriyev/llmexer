@@ -103,6 +103,22 @@ def read_params_rows(db_path, provider):
         return dao.fetch_params_rows(provider)
 
 
+def read_try_rows(db_path, provider):
+    """Return the ``try_experiment_<provider>`` rows joined to their parameters."""
+
+    with ExperimentDAO(str(db_path)) as dao:
+        return dao.fetch_try_rows(provider)
+
+
+def try_table_names(db_path):
+    """Return the sorted table names of a database (to check the try pair exists)."""
+
+    from sqlalchemy import inspect
+
+    with ExperimentDAO(str(db_path)) as dao:
+        return sorted(inspect(dao.engine).get_table_names())
+
+
 def find_db(exp_subdir):
     """Return the single ``experiment_*.db`` path in ``exp_subdir``."""
 

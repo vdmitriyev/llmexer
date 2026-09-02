@@ -2,6 +2,12 @@
 History
 =======
 
+0.3.7 (2026-09-03)
+-------------------
+
+* **Breaking:** ``experiment run``: rename ``--id`` to ``--code``, matching the ``code`` column of the experiment table.
+* Add ``experiment try``: render and run a single data row x prompt x profile combination and print the response, recording each try in the ``try_experiment_<provider>`` / ``try_param_<provider>`` tables.
+
 0.3.6 (2026-09-02)
 -------------------
 
