@@ -336,6 +336,26 @@ def test_fetch_rows_by_id_and_code(db_file):
     assert len(by_code) == 1 and by_code[0]["ID"] == 2
 
 
+def test_fetch_rows_by_model_and_profile(db_file):
+    """model_name/profile_name select in full, case-sensitively, and combine."""
+    with ExperimentDAO(db_file) as dao:
+        by_model = dao.fetch_rows(model_name="gpt-4o")
+        by_profile = dao.fetch_rows(profile_name="ollama-default")
+        combined = dao.fetch_rows(model_name="gpt-4o", profile_name="openai-default")
+        wrong_case = dao.fetch_rows(model_name="GPT-4O")
+        partial = dao.fetch_rows(profile_name="ollama")
+        mismatched = dao.fetch_rows(model_name="gpt-4o", profile_name="ollama-default")
+
+    assert len(by_model) == 1 and by_model[0]["_provider"] == "openai"
+    assert len(by_profile) == 1 and by_profile[0]["ID"] == 1
+    # The joined parameter values still come back alongside the filtered row.
+    assert by_profile[0]["ollama_context_window"] == 4096
+    assert len(combined) == 1 and combined[0]["ID"] == 2
+    assert wrong_case == []
+    assert partial == []
+    assert mismatched == []
+
+
 # ---------------------------------------------------------------------------
 # ExperimentsManager.run
 # ---------------------------------------------------------------------------

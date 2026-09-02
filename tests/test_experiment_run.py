@@ -728,3 +728,183 @@ def test_run_sequential_filtered_runs_persist_into_one_db(experiment_with_two_pr
     # Both rows are now populated (ollama from run 1, openai from run 2).
     assert df[df["provider_name"].str.lower() == "ollama"].iloc[0]["status"] == "success"
     assert df[df["provider_name"].str.lower() == "openai"].iloc[0]["status"] == "success"
+
+
+# ---------------------------------------------------------------------------
+# --filter-model / --filter-profile tests
+# ---------------------------------------------------------------------------
+
+
+def _ollama_row(row_id, model_name, profile_name):
+    """Build one ollama row for a (model, profile) pair of the cross join."""
+    row = dict(OLLAMA_ROW)
+    row.update(
+        {
+            "ID": row_id,
+            "code": f"D01_prompt01_{model_name}_{profile_name}",
+            "model_name": model_name,
+            "profile_name": profile_name,
+        }
+    )
+    return row
+
+
+@pytest.fixture()
+def experiment_with_model_profile_matrix(projects_dir):
+    """Database with one ollama table holding two models × two profiles."""
+    pid = "filter-matrix-exp"
+    exp_subdir = projects_dir / pid / "experiment"
+    os.makedirs(exp_subdir)
+    seed_db(
+        exp_subdir / _EXPERIMENT_DB_NAME,
+        {
+            "ollama": [
+                _ollama_row(1, "llama3.3:latest", "ollama-default"),
+                _ollama_row(2, "llama3.3:latest", "ollama-creative"),
+                _ollama_row(3, "phi4:14b", "ollama-default"),
+                _ollama_row(4, "phi4:14b", "ollama-creative"),
+            ]
+        },
+    )
+    return pid, exp_subdir
+
+
+def _run_with(pid, *options):
+    """Invoke `experiment run` on the matrix database with extra options."""
+    return runner.invoke(
+        app,
+        ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME, *options],
+    )
+
+
+def _finished_ids(exp_subdir):
+    """IDs whose status is 'success' in the matrix database."""
+    df = read_experiment_df(find_db(exp_subdir))
+    return sorted(df[df["status"] == "success"]["ID"])
+
+
+def test_run_filter_model_runs_only_matching_rows(experiment_with_model_profile_matrix, mock_llm_mapper):
+    """--filter-model runs both profiles of that model; the other model stays pending."""
+    pid, exp_subdir = experiment_with_model_profile_matrix
+
+    result = _run_with(pid, "--filter-model", "llama3.3:latest")
+
+    assert result.exit_code == 0, result.output
+    assert _finished_ids(exp_subdir) == [1, 2]
+
+
+def test_run_filter_profile_runs_only_matching_rows(experiment_with_model_profile_matrix, mock_llm_mapper):
+    """--filter-profile runs that profile across every model."""
+    pid, exp_subdir = experiment_with_model_profile_matrix
+
+    result = _run_with(pid, "--filter-profile", "ollama-creative")
+
+    assert result.exit_code == 0, result.output
+    assert _finished_ids(exp_subdir) == [2, 4]
+
+
+def test_run_filter_model_and_profile_combine(experiment_with_model_profile_matrix, mock_llm_mapper):
+    """--filter-model and --filter-profile combine with AND (one row)."""
+    pid, exp_subdir = experiment_with_model_profile_matrix
+
+    result = _run_with(pid, "--filter-model", "phi4:14b", "--filter-profile", "ollama-default")
+
+    assert result.exit_code == 0, result.output
+    assert _finished_ids(exp_subdir) == [3]
+
+
+def test_run_filter_model_is_case_sensitive(experiment_with_model_profile_matrix, mock_llm_mapper):
+    """A model name in the wrong case matches nothing and runs nothing."""
+    pid, exp_subdir = experiment_with_model_profile_matrix
+
+    result = _run_with(pid, "--filter-model", "LLAMA3.3:LATEST")
+
+    assert result.exit_code == 0, result.output
+    assert "nothing to run" in result.output.lower()
+    assert _finished_ids(exp_subdir) == []
+
+
+def test_run_filter_model_needs_the_full_name(experiment_with_model_profile_matrix, mock_llm_mapper):
+    """A prefix of a model name is not a match — the filter is a full match."""
+    pid, exp_subdir = experiment_with_model_profile_matrix
+
+    result = _run_with(pid, "--filter-model", "llama3.3")
+
+    assert result.exit_code == 0, result.output
+    assert "nothing to run" in result.output.lower()
+    assert _finished_ids(exp_subdir) == []
+
+
+def test_run_filter_profile_needs_the_full_name(experiment_with_model_profile_matrix, mock_llm_mapper):
+    """A prefix of a profile name is not a match either."""
+    pid, exp_subdir = experiment_with_model_profile_matrix
+
+    result = _run_with(pid, "--filter-profile", "ollama")
+
+    assert result.exit_code == 0, result.output
+    assert _finished_ids(exp_subdir) == []
+
+
+def test_run_filter_no_match_names_the_filters(experiment_with_model_profile_matrix, mock_llm_mapper):
+    """The 'nothing to run' warning names every filter that was applied."""
+    pid, _exp_subdir = experiment_with_model_profile_matrix
+
+    result = _run_with(pid, "--filter-model", "phi4:14b", "--filter-profile", "nope")
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert "model 'phi4:14b'" in output
+    assert "profile 'nope'" in output
+
+
+def test_run_filter_surrounding_whitespace_is_ignored(experiment_with_model_profile_matrix, mock_llm_mapper):
+    """A value padded with spaces still matches the stored, stripped value."""
+    pid, exp_subdir = experiment_with_model_profile_matrix
+
+    result = _run_with(pid, "--filter-profile", " ollama-default ")
+
+    assert result.exit_code == 0, result.output
+    assert _finished_ids(exp_subdir) == [1, 3]
+
+
+def test_run_filter_profile_dry_run_writes_nothing(experiment_with_model_profile_matrix, mock_llm_mapper):
+    """--dry-run with a profile filter reports the filtered count and runs nothing."""
+    pid, exp_subdir = experiment_with_model_profile_matrix
+
+    result = runner.invoke(
+        app,
+        [
+            "--dry-run",
+            "experiment",
+            "run",
+            "--pid",
+            pid,
+            "--file",
+            _EXPERIMENT_DB_NAME,
+            "--filter-profile",
+            "ollama-default",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert "Total experiments to run: 2" in output
+    assert _finished_ids(exp_subdir) == []
+
+
+def test_run_filter_provider_and_model_combine(experiment_with_two_provider_rows, mock_llm_mapper):
+    """--filter-provider and --filter-model combine; a mismatch runs nothing."""
+    pid, exp_subdir = experiment_with_two_provider_rows
+
+    matching = _run_with(pid, "--filter-provider", "ollama", "--filter-model", "llama3.3:latest")
+
+    assert matching.exit_code == 0, matching.output
+    df = read_experiment_df(find_db(exp_subdir))
+    assert df[df["provider_name"].str.lower() == "ollama"].iloc[0]["status"] == "success"
+    assert pd.isna(df[df["provider_name"].str.lower() == "openai"].iloc[0]["status"])
+
+    # The openai model does not live in the ollama table: no rows, nothing run.
+    mismatched = _run_with(pid, "--filter-provider", "ollama", "--filter-model", "gpt-4o")
+
+    assert mismatched.exit_code == 0, mismatched.output
+    assert "nothing to run" in mismatched.output.lower()

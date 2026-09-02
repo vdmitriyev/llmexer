@@ -150,7 +150,22 @@ llmexer --dry-run experiment generate --pid llm-survey-2026
 >   ON e.params_code = p.params_code AND e.profile_name = p.profile_name;
 > ```
 
-**5. Run the experiment - call LLMs and collect results**
+**5. Extend an existing experiment database (optional)**
+
+Added a model, a profile or a few mapping rows after generating? `update` appends the missing combinations to an existing database instead of starting a new one:
+```bash
+llmexer experiment update --pid llm-survey-2026
+```
+
+<details markdown="1">
+
+The input CSVs are re-read and cross-joined exactly as `generate` does, then compared with the database: combinations it does not hold yet are appended after the highest existing `ID`, and everything already stored — including the results `run` has collected — is left untouched. With no `--file` the newest `experiment_*.db` is updated; `--dry-run` reports the row count without writing.
+
+Hyperparameters are never rewritten. If a profile of `llm-params.csv` still carries its old name but different values, `update` prints the differing columns (`db=` vs `csv=`) and stops without writing anything — otherwise rows generated before and after the change would be indistinguishable. Give the changed parameters a new `profile_name`, point the matching `llms-for-experiment.csv` row at it, and run `update` again. An edited prompt template or `data.csv` cell is reported the same way, as a warning; the stored rows keep the text they were generated with.
+
+</details>
+
+**6. Run the experiment - call LLMs and collect results**
 
 Once `experiment generate` has produced the database, run all combinations:
 ```bash
@@ -171,6 +186,14 @@ Run only a specific provider's rows (e.g. when only ollama is available):
 llmexer experiment run --pid llm-survey-2026 --filter-provider ollama
 ```
 
+Narrow the run to one model or one hyperparameter profile — both match the name in full and case-sensitively, and all three filters combine:
+```bash
+llmexer experiment run --pid llm-survey-2026 --filter-model gemma4:31b
+llmexer experiment run --pid llm-survey-2026 --filter-profile ollama-creative
+llmexer experiment run --pid llm-survey-2026 \
+  --filter-provider ollama --filter-profile ollama-default
+```
+
 Run a single combination by its `ID` (or `code`):
 ```bash
 llmexer experiment run --pid llm-survey-2026 \
@@ -179,7 +202,7 @@ llmexer experiment run --pid llm-survey-2026 \
 
 </details>
 
-**6. Inspect experiment statistics**
+**7. Inspect experiment statistics**
 
 Get aggregate statistics (total, finished, running, errors, total tokens, and per-provider / per-model breakdowns). The per-model table reports, for each model, `requests`, `finished`, `open` (pending/unrun), `time total` (HH:MM:SS elapsed over finished requests), `average time` (HH:MM:SS mean elapsed per finished request), and `tokens` (summed over finished requests). With no `--file` it reads the project's single `experiment_*.db` (pass `--file` if several exist):
 ```bash
@@ -335,7 +358,8 @@ The `experiment` (alias: `exp`) category provides commands for initialising, gen
 | `copy-search` | Copy a search results CSV (`--file`, absolute or relative to the project's `searches/` folder) into `experiment/data.csv` as rows `ID;Title;Abstract;doi;authors`, with IDs `S01`, `S02`, … preserving the source file's row order. An existing `data.csv` is backed up to `data_backup_<YYYYMMDD>_<NN>.csv` first. | `llmexer experiment copy-search --pid my-project --file <SEARCH_ID>__results.csv` |
 | `map` | Build `experiment/mapping.csv` by pairing every row of `data.csv` with the selected prompt(s) from `prompts/` — a cross join, written prompt by prompt. Use `--prompt` to pick templates (repeatable, and each value may itself be a comma-separated list; the `.txt` extension is optional); omit it to use every prompt in `prompts/`. A named prompt that does not exist aborts the command with every missing name listed, leaving `mapping.csv` untouched. An existing `mapping.csv` is backed up to `mapping_backup_<YYYYMMDD>_<NN>.csv` first. Supports `--dry-run`. | `llmexer experiment map --pid my-project --prompt prompt01,prompt02` |
 | `generate` | Render all (data row × prompt × LLM models × LLM parameters) combinations and write a self-contained SQLite database `experiment/experiment_<YYYYMMDD>_<NN>.db` (`<NN>` is a zero-padded counter starting at `01`). Each LLM provider gets two tables: `experiment_<provider>` (e.g. `experiment_ollama`) with columns `ID`, `code` (`DATAID_PROMPTID_MODELNAME_PROFILENAME`), `prompt`, `tokens_estimate`, `original_data`, `model_name`, `provider_name`, the `params_code` / `profile_name` join key, the `prompt_hash` / `original_data_hash` columns and the result columns filled in by `run`; and `params_<provider>` (e.g. `params_ollama`) with one row per hyperparameter set from `llm-params.csv` — primary key `(params_code, profile_name)`, then `temperature`, `top_p`, `max_tokens` plus the provider-specific ones (e.g. `ollama_context_window`, `ollama_repeat_penalty`). Profiles from `llm-params.csv` are matched on all three of `provider`, `model_name` and `profile_name`; a model with no matching profile is reported and skipped, and a duplicated combination in either file is reported in red and aborts before anything is written. Rows are sorted by model order from `llms-for-experiment.csv`. Supports `--dry-run`. | `llmexer experiment generate --pid my-project` |
-| `run` | Execute every row in the generated database `experiment_*.db` (no separate params file needed — all columns are embedded). Calls each LLM via the OpenAI SDK (supports ollama, vllm, litellm, openai, gemini) and writes results **back into the same database in place** (response, status, token usage, timestamps, plus the complete raw backend response under `raw_response`); re-runs skip rows that already finished successfully and update the rest. Individual JSON responses are saved under `experiment/responses/`. Supports `--dry-run`, `--file` (choose a specific `.db`, defaults to the newest), `--filter-provider` (only run rows for a specific provider), `--id` (run a single combination by its `ID` or `code`). API key read from the `PROVIDER_<PROVIDER_UPPER>_KEY` env var; URL from `PROVIDER_<PROVIDER_UPPER>_URL` or built-in defaults (`litellm` requires both to be set explicitly). Requires `openai` package (`pip install openai`). | `llmexer experiment run --pid my-project --filter-provider ollama` |
+| `update` | Add combinations added to the input CSVs into an already generated database, instead of generating a new one. The CSVs are re-read and cross-joined exactly as `generate` does, then compared with the database: combinations it does not hold yet are appended after the highest existing `ID`, while stored rows and the results `run` collected for them are left untouched (a provider new to the database gets its `experiment_<provider>` / `params_<provider>` pair created). A profile of `llm-params.csv` whose values changed under an unchanged `profile_name` aborts the command with the differing columns reported as `db=` vs `csv=` and nothing written — rename the profile and re-run. Stored rows whose prompt template or `data.csv` text has since changed are reported as a warning and left as they are. Supports `--dry-run` and `--file` (choose a specific `.db`, defaults to the newest). | `llmexer experiment update --pid my-project` |
+| `run` | Execute every row in the generated database `experiment_*.db` (no separate params file needed — all columns are embedded). Calls each LLM via the OpenAI SDK (supports ollama, vllm, litellm, openai, gemini) and writes results **back into the same database in place** (response, status, token usage, timestamps, plus the complete raw backend response under `raw_response`); re-runs skip rows that already finished successfully and update the rest. Individual JSON responses are saved under `experiment/responses/`. Supports `--dry-run`, `--file` (choose a specific `.db`, defaults to the newest), `--filter-provider` (only run rows for a specific provider, case-insensitive), `--filter-model` / `--filter-profile` (only run rows whose `model_name` / `profile_name` matches in full, case-sensitively), `--id` (run a single combination by its `ID` or `code`). The filters combine with AND; when none of the filtered rows exist the command reports it and exits cleanly. API key read from the `PROVIDER_<PROVIDER_UPPER>_KEY` env var; URL from `PROVIDER_<PROVIDER_UPPER>_URL` or built-in defaults (`litellm` requires both to be set explicitly). Requires `openai` package (`pip install openai`). | `llmexer experiment run --pid my-project --filter-provider ollama` |
 | `stats` | Show aggregate statistics from a project's experiment database: totals (total, finished, running, errors), total tokens, and per-provider / per-model breakdowns rendered as Rich tables. The Models table has per-model columns `requests`, `finished`, `open` (pending/unrun), `time total` (HH:MM:SS over finished requests), `average time` (HH:MM:SS mean per finished request), and `tokens` (summed over finished requests). With no `--file` it reads the project's single `experiment_*.db` (pass `--file` to choose one when several exist). | `llmexer experiment stats --pid my-project` |
 | `list` | List all projects with their initialization state and generated experiment databases, with optional sorting by name or date. | `llmexer experiment list --sort-by date --desc` |
 

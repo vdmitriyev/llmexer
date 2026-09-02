@@ -434,6 +434,8 @@ class ExperimentDAO:
         self,
         provider: Optional[str] = None,
         id_experiment: Optional[Any] = None,
+        model_name: Optional[str] = None,
+        profile_name: Optional[str] = None,
     ) -> List[dict]:
         """Return rows across all (or one) provider tables, ordered by ID.
 
@@ -444,6 +446,10 @@ class ExperimentDAO:
 
         Every row dict carries an extra ``_provider`` key identifying its table.
         ``id_experiment`` matches the numeric ``ID`` or the ``code`` column.
+        ``model_name`` and ``profile_name`` match their column in full and
+        case-sensitively — both are read off ``experiment_<provider>``, so no
+        parameter set has to exist for a row to be selected. Every argument
+        given narrows the result further (they combine with AND).
         """
 
         if provider is not None:
@@ -480,6 +486,13 @@ class ExperimentDAO:
                     except (TypeError, ValueError):
                         pass
                     stmt = stmt.where(or_(*conditions))
+                # SQLite compares TEXT case-sensitively unless a column declares
+                # COLLATE NOCASE, which these do not -- so `==` is the exact,
+                # case-sensitive match the CSV join uses for the same columns.
+                if model_name is not None:
+                    stmt = stmt.where(table.c.model_name == model_name)
+                if profile_name is not None:
+                    stmt = stmt.where(table.c.profile_name == profile_name)
                 stmt = stmt.order_by(table.c.ID)
                 for mapping in conn.execute(stmt).mappings():
                     row = dict(mapping)
@@ -502,6 +515,61 @@ class ExperimentDAO:
             return
         with self.engine.begin() as conn:
             conn.execute(update(table).where(table.c.ID == row_id).values(**values))
+
+    # ------------------------------------------------------------------ update
+    def fetch_params_rows(self, provider: str) -> List[dict]:
+        """Return every ``params_<provider>`` row, ordered by the key pair.
+
+        Used by `experiment update` to compare the parameter sets already stored
+        in a database against the current ``llm-params.csv``.
+        """
+
+        table = self._params_table_for(provider)
+        stmt = select(table).order_by(table.c.params_code, table.c.profile_name)
+        with self.engine.connect() as conn:
+            return [dict(mapping) for mapping in conn.execute(stmt).mappings()]
+
+    def fetch_row_index(self) -> Dict[str, Dict[str, dict]]:
+        """Return ``{provider: {code: {ID, prompt_hash, original_data_hash}}}``.
+
+        Only the identity columns are selected: an update diff needs to know
+        which combinations are already stored, not their prompts or responses,
+        which are the two largest columns in the table.
+        """
+
+        index: Dict[str, Dict[str, dict]] = {}
+        with self.engine.connect() as conn:
+            for provider, table in self._tables.items():
+                stmt = select(
+                    table.c.ID,
+                    table.c.code,
+                    table.c.prompt_hash,
+                    table.c.original_data_hash,
+                ).order_by(table.c.ID)
+                index[provider] = {
+                    str(row.code): {
+                        "ID": row.ID,
+                        "prompt_hash": row.prompt_hash,
+                        "original_data_hash": row.original_data_hash,
+                    }
+                    for row in conn.execute(stmt)
+                }
+        return index
+
+    def max_row_id(self) -> int:
+        """Return the highest ``ID`` across every experiment table (0 if empty).
+
+        ``ID`` is assigned by the caller and is the primary key, so rows appended
+        to an existing database must continue from here rather than restart at 1.
+        """
+
+        highest = 0
+        with self.engine.connect() as conn:
+            for table in self._tables.values():
+                value = conn.execute(select(func.max(table.c.ID))).scalar()
+                if value is not None:
+                    highest = max(highest, int(value))
+        return highest
 
     # ------------------------------------------------------------------- stats
     def stats(self) -> Dict[str, Any]:

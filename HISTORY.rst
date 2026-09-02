@@ -2,6 +2,12 @@
 History
 =======
 
+0.3.6 (2026-09-02)
+-------------------
+
+* Add ``experiment update``: append combinations added to the input CSVs to an existing ``experiment_*.db``, keeping stored rows and their results.
+* ``experiment run``: add ``--filter-model`` and ``--filter-profile``, matching the name in full and case-sensitively, next to the existing ``--filter-provider``.
+
 0.3.5 (2026-09-02)
 -------------------
 

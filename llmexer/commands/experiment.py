@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import os
 import shutil
 from collections import Counter, defaultdict
@@ -15,7 +16,14 @@ import typer
 from jinja2 import BaseLoader, DebugUndefined, Environment
 from rich.table import Table
 
-from llmexer.base.dao import ExperimentDAO, latest_db, list_db_files, next_db_filename
+from llmexer.base.dao import (
+    ExperimentDAO,
+    _clean_value,
+    latest_db,
+    list_db_files,
+    next_db_filename,
+    params_code_for,
+)
 from llmexer.base.experiment import (
     _PARAM_COLUMNS,
     CSV_JOIN_KEY_COLUMNS,
@@ -26,6 +34,7 @@ from llmexer.base.experiment import (
     FILE_LLM_PARAMS,
     FILE_LLMS_FOR_EXPERIMENT,
     FILE_MAPPING,
+    PARAMS_KEY_COLUMNS,
     _get_generated_experiment_files,
     _is_experiment_initialized,
 )
@@ -525,18 +534,22 @@ def map_data(
     )
 
 
-@app.command()
-def generate(
-    pid: str = typer.Option(
-        None,
-        "--pid",
-        help="Project ID to generate prompts for. If not provided, uses PROJECT_ID from .env.",
-    ),
-) -> None:
-    """Generate rendered prompts for all data-model combinations defined in the project"""
+def _load_experiment_inputs(
+    pid: str, experiment_subdir_path: str
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, str]:
+    """Read and validate the four CSVs describing an experiment.
 
-    pid = get_proper_pid(pid)
-    experiment_subdir_path = get_experiment_subdir_path(pid)
+    Shared by ``generate`` (which turns them into a new database) and ``update``
+    (which diffs them against an existing one), so both see the same inputs and
+    fail on the same structural problems.
+
+    Args:
+        pid (str): project ID, used in the error messages.
+        experiment_subdir_path (str): the project's ``experiment/`` folder.
+
+    Returns:
+        tuple: ``(models_df, data_df, mapping_df, params_df, prompts_subdir)``.
+    """
 
     models_path = os.path.join(experiment_subdir_path, FILE_LLMS_FOR_EXPERIMENT)
     data_path = os.path.join(experiment_subdir_path, FILE_DATA)
@@ -566,14 +579,18 @@ def generate(
     _check_unique_join_keys(models_df, FILE_LLMS_FOR_EXPERIMENT, pid)
     _check_unique_join_keys(params_df, FILE_LLM_PARAMS, pid)
 
-    if params_df.empty:
-        cprint(f"[bold yellow]Warning:[/bold yellow] {FILE_LLM_PARAMS} is empty — no rows will be generated.")
-        return
+    return models_df, data_df, mapping_df, params_df, prompts_subdir
 
-    # Profiles are matched to models on ALL THREE identity columns, so neither a
-    # profile written for another provider nor another profile of the same model
-    # can attach itself. Values are stripped but compared case-sensitively.
-    # Uniqueness was enforced above, so there is exactly one row per key.
+
+def _build_params_by_key(params_df: pd.DataFrame) -> dict:
+    """Index ``llm-params.csv`` by its three-column join key.
+
+    Profiles are matched to models on ALL THREE identity columns, so neither a
+    profile written for another provider nor another profile of the same model
+    can attach itself. Values are stripped but compared case-sensitively.
+    Uniqueness was enforced by the caller, so there is exactly one row per key.
+    """
+
     params_by_key: dict = {}
     for _, param_row in params_df.iterrows():
         key = _row_join_key(param_row)
@@ -586,6 +603,11 @@ def generate(
             )
             continue
         params_by_key[key] = param_row
+    return params_by_key
+
+
+def _report_unmatched_models(models_df: pd.DataFrame, params_by_key: dict) -> None:
+    """Warn once per model row about an unknown provider or a missing profile."""
 
     # Surface unknown provider names now rather than at run time, where they
     # would otherwise create a table named after the typo. This is a warning,
@@ -606,7 +628,7 @@ def generate(
                 "'experiment run' will fail unless PROVIDER_"
                 f"{provider_name.upper()}_URL is set."
             )
-        # Warned once per model here, rather than once per data row below.
+        # Warned once per model here, rather than once per data row.
         if (provider_name, model_name, profile_name) not in params_by_key:
             empty_hint = (
                 f" The 'profile_name' cell is empty; it must name a profile from {FILE_LLM_PARAMS}."
@@ -620,11 +642,24 @@ def generate(
                 "matched on 'provider', 'model_name' and 'profile_name'." + empty_hint
             )
 
+
+def _build_generated_rows(
+    models_df: pd.DataFrame,
+    data_df: pd.DataFrame,
+    mapping_df: pd.DataFrame,
+    params_by_key: dict,
+    prompts_subdir: str,
+) -> list[dict]:
+    """Render every (data row × prompt × model × parameters) combination.
+
+    The returned dicts carry no ``ID``: ``generate`` numbers them from 1 while
+    ``update`` continues the database's existing sequence.
+    """
+
     data_lookup = data_df.set_index("ID").to_dict(orient="index")
     env = Environment(loader=BaseLoader(), undefined=DebugUndefined)
 
     rows = []
-    row_counter = 1
 
     for _, mapping_row in mapping_df.iterrows():
         data_id = str(mapping_row["data_id"]).strip()
@@ -657,11 +692,10 @@ def generate(
             key = _row_join_key(model_row)
             param_row = params_by_key.get(key)
             if param_row is None:
-                continue  # already reported once per model row above
+                continue  # already reported once per model row
             provider_name, model_name, profile_name = key
             rows.append(
                 {
-                    "ID": row_counter,
                     "code": f"{data_id}_{prompt_id}_{model_name}_{profile_name}",
                     "prompt": rendered_prompt,
                     "tokens_estimate": len(rendered_prompt) // 4,
@@ -676,7 +710,163 @@ def generate(
                     "profile_name": profile_name,
                 }
             )
-            row_counter += 1
+
+    return rows
+
+
+def _sort_rows_by_model_order(rows: list[dict], models_df: pd.DataFrame) -> list[dict]:
+    """Sort generated rows by model order from ``llms-for-experiment.csv``.
+
+    The sort is stable, so the mapping order is preserved within a model.
+    """
+
+    model_order = [str(name).strip() for name in models_df["model_name"]]
+
+    def _model_rank(row: dict) -> int:
+        name = str(row["model_name"])
+        return model_order.index(name) if name in model_order else len(model_order)
+
+    rows.sort(key=_model_rank)
+    return rows
+
+
+def _params_equal(db_value: Any, csv_value: Any) -> bool:
+    """Compare one stored parameter with the value now in ``llm-params.csv``.
+
+    SQLite returns what it stored (an ``INTEGER`` ``4096``) while pandas may hand
+    over the same cell as a float (``4096.0``), so numbers are compared as
+    floats. An empty cell is ``NaN`` on the CSV side and ``NULL`` on the database
+    side; both normalise to ``None`` and compare equal.
+    """
+
+    left = _clean_value(db_value)
+    right = _clean_value(csv_value)
+    if left is None or right is None:
+        return left is None and right is None
+    try:
+        return math.isclose(float(left), float(right), rel_tol=1e-9, abs_tol=1e-12)
+    except (TypeError, ValueError):
+        return str(left).strip() == str(right).strip()
+
+
+def _collect_param_drift(dao: ExperimentDAO, rows: list[dict]) -> list[dict]:
+    """Find profiles whose parameters differ from the ones already stored.
+
+    Only profiles the database already knows are compared: one it has never seen
+    is new, not drifted, and is simply inserted. The compared columns come from
+    the *reflected* params table, so a database written with a different set of
+    provider parameters is compared on the columns it actually has.
+
+    Returns:
+        list[dict]: one entry per drifted profile, with ``provider``,
+        ``model_name``, ``profile_name`` and ``changes`` — a list of
+        ``(column, db_value, csv_value)`` triples.
+    """
+
+    params_tables = dao.params_tables()
+    stored_by_provider: dict = {}
+    drift: list[dict] = []
+    seen: set = set()
+
+    for row in rows:
+        provider = str(row["provider_name"]).lower()
+        params_table = params_tables.get(provider)
+        if params_table is None:
+            continue  # a provider new to this database: nothing to drift from
+
+        code = params_code_for(row.get("model_name"), provider)
+        profile = "" if row.get("profile_name") is None else str(row["profile_name"])
+        key = (provider, code, profile)
+        if key in seen:
+            continue  # the same parameter set recurs on every row of the cross join
+        seen.add(key)
+
+        if provider not in stored_by_provider:
+            stored_by_provider[provider] = {
+                (stored_row["params_code"], stored_row["profile_name"]): stored_row
+                for stored_row in dao.fetch_params_rows(provider)
+            }
+        stored = stored_by_provider[provider].get((code, profile))
+        if stored is None:
+            continue  # a new parameter set, inserted as it is
+
+        changes = [
+            (column, stored.get(column), row.get(column))
+            for column in params_table.c.keys()
+            if column not in PARAMS_KEY_COLUMNS and not _params_equal(stored.get(column), row.get(column))
+        ]
+        if changes:
+            drift.append(
+                {
+                    "provider": provider,
+                    "model_name": row.get("model_name"),
+                    "profile_name": profile,
+                    "changes": changes,
+                }
+            )
+    return drift
+
+
+def _report_param_drift(drift: list[dict], db_name: str) -> None:
+    """Print every drifted profile, then abort — a stored profile is immutable.
+
+    Rewriting the parameters of a profile the database already used would make
+    rows generated before and after the change indistinguishable, so the changed
+    parameters have to be published under a new ``profile_name`` instead.
+    """
+
+    for entry in drift:
+        cprint(
+            f"[bold red]Error:[/bold red] parameter drift for "
+            f"{entry['provider']} / {entry['model_name']} / {entry['profile_name']}"
+        )
+        for column, db_value, csv_value in entry["changes"]:
+            cprint(f"  {column}: db={db_value}  csv={csv_value}")
+
+    raise LLMExerException(
+        f"{len(drift)} profile(s) of {FILE_LLM_PARAMS} differ from the parameters stored in "
+        f"'{db_name}'. Nothing was added: a stored parameter set is immutable, otherwise rows "
+        "generated before and after the change would be indistinguishable. Give the changed "
+        f"parameters a new 'profile_name' in {FILE_LLM_PARAMS} (e.g. 'ollama-default-v2'), point "
+        f"the matching {FILE_LLMS_FOR_EXPERIMENT} row at it, then run `experiment update` again."
+    )
+
+
+def _report_changed_source_text(codes: list[str]) -> None:
+    """Warn about stored rows whose prompt or data text has since changed."""
+
+    preview = ", ".join(codes[:5])
+    more = f" (and {len(codes) - 5} more)" if len(codes) > 5 else ""
+    cprint(
+        f"[bold yellow]Warning:[/bold yellow] {len(codes)} stored row(s) no longer match the current "
+        f"prompt template or {FILE_DATA}: {preview}{more}. They are left untouched — run "
+        "`experiment generate` for a fresh database if the new text belongs to the experiment."
+    )
+
+
+@app.command()
+def generate(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID to generate prompts for. If not provided, uses PROJECT_ID from .env.",
+    ),
+) -> None:
+    """Generate rendered prompts for all data-model combinations defined in the project"""
+
+    pid = get_proper_pid(pid)
+    experiment_subdir_path = get_experiment_subdir_path(pid)
+
+    models_df, data_df, mapping_df, params_df, prompts_subdir = _load_experiment_inputs(pid, experiment_subdir_path)
+
+    if params_df.empty:
+        cprint(f"[bold yellow]Warning:[/bold yellow] {FILE_LLM_PARAMS} is empty — no rows will be generated.")
+        return
+
+    params_by_key = _build_params_by_key(params_df)
+    _report_unmatched_models(models_df, params_by_key)
+
+    rows = _build_generated_rows(models_df, data_df, mapping_df, params_by_key, prompts_subdir)
 
     if not rows:
         cprint(
@@ -686,14 +876,8 @@ def generate(
         return
 
     # Sort by model order (stable -> preserves mapping order within a model),
-    # then renumber IDs 1..N across the whole generation.
-    model_order = [str(name).strip() for name in models_df["model_name"]]
-
-    def _model_rank(row: dict) -> int:
-        name = str(row["model_name"])
-        return model_order.index(name) if name in model_order else len(model_order)
-
-    rows.sort(key=_model_rank)
+    # then number IDs 1..N across the whole generation.
+    rows = _sort_rows_by_model_order(rows, models_df)
     for new_id, row in enumerate(rows, start=1):
         row["ID"] = new_id
 
@@ -722,6 +906,123 @@ def generate(
 
 
 @app.command()
+def update(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    file: str = typer.Option(
+        None,
+        "--file",
+        help="Path to a specific experiment_*.db to update in place. Defaults to the newest one.",
+    ),
+) -> None:
+    """Updates an already generated database by adding new combinations from the input CSVs
+
+    The input CSVs are re-read and cross-joined exactly as ``experiment generate``
+    does, then compared with the database: combinations it does not hold yet are
+    appended after the highest existing ID, while everything already stored —
+    including collected results — is left untouched. Changed hyperparameters are
+    never applied to a stored profile; they abort the update instead.
+    """
+
+    pid = get_proper_pid(pid)
+    db_path, experiment_subdir_path = _resolve_experiment_db(pid, file)
+    db_name = os.path.basename(db_path)
+
+    models_df, data_df, mapping_df, params_df, prompts_subdir = _load_experiment_inputs(pid, experiment_subdir_path)
+
+    if params_df.empty:
+        cprint(f"[bold yellow]Warning:[/bold yellow] {FILE_LLM_PARAMS} is empty — nothing to add.")
+        return
+
+    params_by_key = _build_params_by_key(params_df)
+    _report_unmatched_models(models_df, params_by_key)
+
+    rows = _build_generated_rows(models_df, data_df, mapping_df, params_by_key, prompts_subdir)
+
+    if not rows:
+        cprint(
+            f"[bold yellow]Warning:[/bold yellow] No combinations could be built. "
+            f"Check your {FILE_MAPPING} and {FILE_DATA}."
+        )
+        return
+
+    rows = _sort_rows_by_model_order(rows, models_df)
+
+    # create=False reflects what the database already holds and keeps the
+    # legacy-layout guard, which create=True would silently bypass.
+    with ExperimentDAO(db_path) as dao:
+        # Checked before anything is written: a changed profile aborts the whole
+        # update, so the database can never end up half-updated.
+        drift = _collect_param_drift(dao, rows)
+        if drift:
+            _report_param_drift(drift, db_name)
+
+        stored_index = dao.fetch_row_index()
+
+        new_rows = []
+        changed_codes = []
+        for row in rows:
+            provider = str(row["provider_name"]).lower()
+            stored = stored_index.get(provider, {}).get(str(row["code"]))
+            if stored is None:
+                new_rows.append(row)
+            elif stored.get("prompt_hash") != row.get("prompt_hash") or stored.get("original_data_hash") != row.get(
+                "original_data_hash"
+            ):
+                changed_codes.append(str(row["code"]))
+
+        if changed_codes:
+            _report_changed_source_text(changed_codes)
+
+        if not new_rows:
+            cprint(f"Nothing to add — [bold yellow]{db_name}[/bold yellow] is already up to date.")
+            return
+
+        if settings.dry_run:
+            cprint(f"[bold yellow]Dry run:[/bold yellow] would add {len(new_rows)} row(s) to '{db_path}'")
+            return
+
+        # Continue the existing ID sequence: stored rows keep their IDs, and
+        # with them the results `run` has already written against those IDs.
+        first_id = dao.max_row_id() + 1
+        for offset, row in enumerate(new_rows):
+            row["ID"] = first_id + offset
+
+        by_provider: dict = defaultdict(list)
+        for row in new_rows:
+            by_provider[str(row["provider_name"]).lower()].append(row)
+
+        for provider, provider_rows in by_provider.items():
+            dao.insert_rows(provider, provider_rows)
+
+        cprint(
+            f"Added [bold green]{len(new_rows)}[/bold green] row(s) across "
+            f"[bold green]{len(by_provider)}[/bold green] provider table(s) → "
+            f"[bold yellow]{db_name}[/bold yellow]"
+        )
+
+
+def _report_no_rows_to_run(active_filters: list[str], id_experiment: str | None) -> None:
+    """Explain an empty row set for ``run``.
+
+    A filter that matches nothing is a normal outcome and only warns, while an
+    ``--id`` that matches nothing names a row that does not exist and raises.
+    """
+
+    if active_filters:
+        cprint(
+            f"[bold yellow]Warning:[/bold yellow] No rows found for " f"{', '.join(active_filters)} — nothing to run."
+        )
+        return
+    if id_experiment is not None:
+        raise LLMExerException(f"No experiment row found with id '{id_experiment}'.")
+    cprint("[bold yellow]Warning:[/bold yellow] Experiment database is empty — " "nothing to run.")
+
+
+@app.command()
 def run(
     pid: str = typer.Option(
         None,
@@ -739,6 +1040,18 @@ def run(
         "--filter-provider",
         help="Only run rows whose provider matches this value (case-insensitive). " "E.g. --filter-provider ollama",
     ),
+    filter_model: str = typer.Option(
+        None,
+        "--filter-model",
+        help="Only run rows whose model_name matches this value in full (case-sensitive). "
+        "E.g. --filter-model gemma4:31b",
+    ),
+    filter_profile: str = typer.Option(
+        None,
+        "--filter-profile",
+        help="Only run rows whose profile_name matches this value in full (case-sensitive). "
+        "E.g. --filter-profile ollama-default",
+    ),
     id: str = typer.Option(
         None,
         "--id",
@@ -749,6 +1062,20 @@ def run(
 
     pid = get_proper_pid(pid)
     db_path, experiment_subdir_path = _resolve_experiment_db(pid, file)
+
+    # Stored model/profile values are stripped by `generate`, so a stray space
+    # around a shell argument must not turn into a silent no-match.
+    filter_model = filter_model.strip() if filter_model is not None else None
+    filter_profile = filter_profile.strip() if filter_profile is not None else None
+    active_filters = [
+        f"{label} '{value}'"
+        for label, value in (
+            ("provider", filter_provider),
+            ("model", filter_model),
+            ("profile", filter_profile),
+        )
+        if value is not None
+    ]
 
     # Lazy import to keep openai optional
     try:
@@ -766,24 +1093,24 @@ def run(
     cprint(f"Using experiment database: [bold yellow]{os.path.basename(db_path)}[/bold yellow]")
 
     with ExperimentDAO(db_path) as dao:
-        rows = dao.fetch_rows(provider=filter_provider, id_experiment=id)
+        rows = dao.fetch_rows(
+            provider=filter_provider,
+            id_experiment=id,
+            model_name=filter_model,
+            profile_name=filter_profile,
+        )
 
         if not rows:
-            if filter_provider is not None:
-                cprint(
-                    f"[bold yellow]Warning:[/bold yellow] No rows found for provider "
-                    f"'{filter_provider}' — nothing to run."
-                )
-                return
-            if id is not None:
-                raise LLMExerException(f"No experiment row found with id '{id}'.")
-            cprint("[bold yellow]Warning:[/bold yellow] Experiment database is empty — " "nothing to run.")
+            _report_no_rows_to_run(active_filters, id)
             return
 
         responses_dir = os.path.join(experiment_subdir_path, DIR_RESPONSES)
         if not settings.dry_run:
             ensure_directory_exists(responses_dir)
             cprint(f"JSON responses will be saved into: [bold yellow]{responses_dir}[/bold yellow]")
+
+        if active_filters:
+            cprint(f"Active filter(s): [bold yellow]{', '.join(active_filters)}[/bold yellow]")
 
         total_runs = len(rows)
         cprint(f"Total experiments to run: [bold green]{total_runs}[/bold green]")
