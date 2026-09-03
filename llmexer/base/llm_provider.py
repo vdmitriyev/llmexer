@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from llmexer.base.experiment import FILE_LLM_PARAMS, FILE_LLMS_FOR_EXPERIMENT
 from llmexer.base.llm_core import LLMRunResult
+from llmexer.configs import logger
 from llmexer.exceptions import ProviderConfigException
 
 URL_MAP: Dict[str, Optional[str]] = {
@@ -106,6 +107,8 @@ def serialize_response(obj: Any) -> Optional[Dict[str, Any]]:
 
 class CallerState(str, Enum):
     STARTED = "started"
+    INCOMPLETE = "incomplete"
+    MAXTOKENREACHED = "maxtokenreached"
     RUNNING = "running"
     FINISHED = "finished"
     ERROR = "error"
@@ -261,6 +264,7 @@ class LLMRequestsMapper:
                 raw=serialize_response(response),
             )
         except Exception as e:
+            logger.exception(e)
             return LLMRunResult(
                 model=model,
                 provider=self.provider,
@@ -326,6 +330,7 @@ class OllamaProvider(LLMProviderBase):
             self.response = ProviderResponse(text=text, usage_tokens=tokens, raw=completion)  # gitleaks:allow
             self.state = CallerState.FINISHED
         except Exception as exc:
+            logger.exception(exc)
             self.response = ProviderResponse(text="", usage_tokens=None, raw=str(exc))
             self.state = CallerState.ERROR
         finally:
@@ -413,11 +418,19 @@ class LiteLLMProvider(LLMProviderBase):
                 extra_body=extra_body or None,
                 **req.params,
             )
-            text = completion.choices[0].message.content or ""
+            text = ""
+            if completion.choices[0].finish_reason == "length":
+                self.state = CallerState.MAXTOKENREACHED
+                text = "No answer. Max token reached"
+
+            if self.state != CallerState.MAXTOKENREACHED:
+                text = completion.choices[0].message.content or ""
+                self.state = CallerState.FINISHED
+
             tokens = getattr(completion.usage, "total_tokens", None)
             self.response = ProviderResponse(text=text, usage_tokens=tokens, raw=completion)  # gitleaks:allow
-            self.state = CallerState.FINISHED
         except Exception as exc:
+            logger.exception(exc)
             self.response = ProviderResponse(text="", usage_tokens=None, raw=str(exc))
             self.state = CallerState.ERROR
         finally:

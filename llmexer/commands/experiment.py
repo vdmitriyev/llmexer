@@ -1391,9 +1391,7 @@ def try_one(
     # the try instead of throwing the response away afterwards.
     with ExperimentDAO(db_path) as dao:
         cprint(f"Trying [bold yellow]{row['code']}[/bold yellow] against [bold yellow]{provider_name}[/bold yellow]")
-
         experiment = run_experiment_row(row)
-
         responses_dir = os.path.join(experiment_subdir_path, DIR_RESPONSES)
         ensure_directory_exists(responses_dir)
         file_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
