@@ -46,11 +46,15 @@ class _StubProvider(LLMProviderBase):
 
 def test_caller_state_values():
     assert CallerState.STARTED == "started"
+    assert CallerState.INCOMPLETE == "incomplete"
+    assert CallerState.MAXTOKENREACHED == "maxtokenreached"
     assert CallerState.RUNNING == "running"
     assert CallerState.FINISHED == "finished"
     assert CallerState.ERROR == "error"
     assert set(CallerState) == {
         CallerState.STARTED,
+        CallerState.INCOMPLETE,
+        CallerState.MAXTOKENREACHED,
         CallerState.RUNNING,
         CallerState.FINISHED,
         CallerState.ERROR,
