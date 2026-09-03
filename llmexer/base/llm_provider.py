@@ -1,5 +1,6 @@
 """LLM provider abstractions, configuration, and concrete provider callers."""
 
+import math
 import os
 import time
 from abc import ABC, abstractmethod
@@ -8,7 +9,6 @@ from enum import Enum
 from typing import Any, Dict, Optional, Tuple
 
 from llmexer.base.experiment import FILE_LLM_PARAMS, FILE_LLMS_FOR_EXPERIMENT
-from llmexer.base.llm_core import LLMRunResult
 from llmexer.configs import logger
 from llmexer.exceptions import ProviderConfigException
 
@@ -105,6 +105,21 @@ def serialize_response(obj: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _is_set(value: Any) -> bool:
+    """Whether a row value should be sent to the provider.
+
+    A blank cell in ``llm-params.csv`` means "this profile does not set it", and
+    reaches here either as ``None`` (rows joined by the DAO) or as ``float("nan")``
+    (rows assembled by ``experiment try``). Both must be dropped rather than sent:
+    an explicit JSON ``null`` is rejected by some backends, and ``NaN`` is not
+    serializable by the SDK at all.
+    """
+
+    if value is None:
+        return False
+    return not (isinstance(value, float) and math.isnan(value))
+
+
 class CallerState(str, Enum):
     STARTED = "started"
     INCOMPLETE = "incomplete"
@@ -171,136 +186,67 @@ class LLMProviderBase(ABC):
         """Run the call; update self.state, self.response, self.stats; return ProviderResponse."""
 
 
-class LLMRequestsMapper:
-    """Translates generic CSV row parameters to provider-specific OpenAI SDK arguments."""
-
-    def __init__(self, provider: str, base_url: Optional[str] = None, api_key: str = "na"):
-        from openai import OpenAI  # lazy import — openai is an optional dependency
-
-        self.provider = provider.lower()
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
-
-    def _map_params(self, row: dict) -> tuple:
-        """Returns (standard_payload, extra_body) for the provider."""
-        payload: Dict[str, Any] = {
-            "temperature": row.get("temperature", 0.7),
-            "top_p": row.get("top_p", 1.0),
-        }
-        extra_body: Dict[str, Any] = {}
-
-        if self.provider == "openai":
-            if row.get("max_tokens") is not None:
-                payload["max_completion_tokens"] = row["max_tokens"]
-            if row.get("openai_seed") is not None:
-                payload["seed"] = row["openai_seed"]
-
-        elif self.provider == "ollama":
-            extra_body = {
-                k: v
-                for k, v in {
-                    "num_ctx": row.get("ollama_context_window"),
-                    "num_predict": row.get("max_tokens"),
-                    "repeat_penalty": row.get("ollama_repeat_penalty"),
-                }.items()
-                if v is not None
-            }
-
-        elif self.provider == "vllm":
-            if row.get("max_tokens") is not None:
-                payload["max_tokens"] = row["max_tokens"]
-            extra_body = {
-                k: v
-                for k, v in {
-                    "min_p": row.get("vllm_min_p"),
-                    "best_of": row.get("vllm_best_of"),
-                }.items()
-                if v is not None
-            }
-
-        elif self.provider == "litellm":
-            if row.get("max_tokens") is not None:
-                payload["max_tokens"] = row["max_tokens"]
-            extra_body = {
-                k: v
-                for k, v in {
-                    "min_p": row.get("litellm_min_p"),
-                    "best_of": row.get("litellm_best_of"),
-                }.items()
-                if v is not None
-            }
-
-        elif self.provider == "gemini":
-            if row.get("max_tokens") is not None:
-                payload["max_tokens"] = row["max_tokens"]
-            if row.get("gemini_thinking_level") is not None:
-                extra_body["thinking_level"] = row["gemini_thinking_level"]
-
-        # Remove None values from payload
-        payload = {k: v for k, v in payload.items() if v is not None}
-
-        return payload, extra_body
-
-    def execute(self, prompt: str, row: dict) -> LLMRunResult:
-        """Execute a single LLM call and return a standardised result."""
-        model = str(row.get("model_name", ""))
-        profile = str(row.get("profile_name", ""))
-        std_payload, extra = self._map_params(row)
-
-        try:
-            response = self.client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                extra_body=extra if extra else None,
-                **std_payload,
-            )
-            return LLMRunResult(
-                model=model,
-                provider=self.provider,
-                prompt=prompt,
-                profile=profile,
-                parameters=row,
-                response_text=response.choices[0].message.content or "",
-                usage_tokens=response.usage.total_tokens if response.usage else None,
-                raw=serialize_response(response),
-            )
-        except Exception as e:
-            logger.exception(e)
-            return LLMRunResult(
-                model=model,
-                provider=self.provider,
-                prompt=prompt,
-                profile=profile,
-                parameters=row,
-                response_text="",
-                status=f"Error: {e}",
-            )
+MAX_TOKENS_TEXT = "No answer. Max token reached"
 
 
 @dataclass
-class OllamaProvider(LLMProviderBase):
-    """Concrete LLM provider for Ollama using the OpenAI-compatible API."""
+class OpenAICompatibleProvider(LLMProviderBase):
+    """Shared caller for endpoints speaking the OpenAI chat-completions protocol.
 
-    base_url: str = URL_MAP["ollama"]
+    Every supported provider is reached through the OpenAI SDK, so the session
+    handling, the call itself, result extraction, error handling and the
+    :class:`CallerStats` bookkeeping live here once. Subclasses implement only
+    :meth:`build_request`, which is where the provider-specific knowledge sits:
+    which column of ``llm-params.csv`` feeds which SDK argument, and whether it
+    travels as a standard keyword or inside ``extra_body``.
+
+    Abstract on purpose. Without a ``build_request`` there is no such thing as a
+    generic provider, so a provider with no registered class fails at dispatch
+    instead of silently running with ``temperature`` / ``top_p`` alone.
+    """
+
+    # Redeclared by every subclass to change nothing but its default. Dataclass
+    # fields merge by name in reverse-MRO order and keep their original slot, so
+    # the generated ``__init__`` signature is identical for all of them.
+    base_url: Optional[str] = None
+
+    def validate_config(self) -> None:
+        """Check the configuration this provider cannot run without.
+
+        Called at dispatch time, outside the caller's own exception handling, so
+        a misconfiguration aborts the run instead of being recorded as a per-row
+        error. Providers reachable on their default URL need nothing.
+        """
 
     def build_session(self) -> None:
-        from openai import OpenAI
+        from openai import OpenAI  # lazy import — openai is an optional dependency
 
-        self.session = OpenAI(base_url=self.base_url, api_key=self.auth.api_key)
+        self.validate_config()
+        kwargs: Dict[str, Any] = {"base_url": self.base_url, "api_key": self.auth.api_key}
+        if self.timeout is not None:
+            # Passed only when set, so providers that configure no timeout keep
+            # getting the SDK's own default.
+            kwargs["timeout"] = self.timeout
+        self.session = OpenAI(**kwargs)
 
-    def build_request(self, prompt: str, row: dict) -> ProviderRequest:
-        extra_body: Dict[str, Any] = {
-            k: v
-            for k, v in {
-                "num_ctx": row.get("ollama_context_window"),
-                "num_predict": row.get("max_tokens"),
-                "repeat_penalty": row.get("ollama_repeat_penalty"),
-            }.items()
-            if v is not None
-        }
+    def _base_params(self, row: dict) -> Dict[str, Any]:
+        """The two parameters every provider takes, minus the ones left unset."""
+
         params: Dict[str, Any] = {
             "temperature": row.get("temperature", 0.7),
             "top_p": row.get("top_p", 1.0),
         }
+        return {k: v for k, v in params.items() if _is_set(v)}
+
+    def _make_request(
+        self,
+        prompt: str,
+        row: dict,
+        params: Dict[str, Any],
+        extra_body: Optional[Dict[str, Any]] = None,
+    ) -> ProviderRequest:
+        """Store and return the request, tunnelling ``extra_body`` when non-empty."""
+
         if extra_body:
             params["extra_body"] = extra_body
         self.request = ProviderRequest(
@@ -325,10 +271,17 @@ class OllamaProvider(LLMProviderBase):
                 extra_body=extra_body or None,
                 **req.params,
             )
-            text = completion.choices[0].message.content or ""
+            choice = completion.choices[0]
+            if getattr(choice, "finish_reason", None) == "length":
+                # Generation stopped at max_tokens: what came back is a fragment,
+                # not an answer, so it is flagged rather than stored as a result.
+                text = MAX_TOKENS_TEXT
+                self.state = CallerState.MAXTOKENREACHED
+            else:
+                text = choice.message.content or ""
+                self.state = CallerState.FINISHED
             tokens = getattr(completion.usage, "total_tokens", None)
             self.response = ProviderResponse(text=text, usage_tokens=tokens, raw=completion)  # gitleaks:allow
-            self.state = CallerState.FINISHED
         except Exception as exc:
             logger.exception(exc)
             self.response = ProviderResponse(text="", usage_tokens=None, raw=str(exc))
@@ -343,7 +296,80 @@ class OllamaProvider(LLMProviderBase):
 
 
 @dataclass
-class LiteLLMProvider(LLMProviderBase):
+class OpenAIProvider(OpenAICompatibleProvider):
+    """OpenAI's own API, which caps generation with ``max_completion_tokens``."""
+
+    base_url: Optional[str] = URL_MAP["openai"]  # None -> the SDK's default host
+
+    def build_request(self, prompt: str, row: dict) -> ProviderRequest:
+        params = self._base_params(row)
+        if _is_set(row.get("max_tokens")):
+            params["max_completion_tokens"] = row["max_tokens"]
+        if _is_set(row.get("openai_seed")):
+            params["seed"] = row["openai_seed"]
+        return self._make_request(prompt, row, params)
+
+
+@dataclass
+class OllamaProvider(OpenAICompatibleProvider):
+    """Concrete LLM provider for Ollama using the OpenAI-compatible API."""
+
+    base_url: Optional[str] = URL_MAP["ollama"]
+
+    def build_request(self, prompt: str, row: dict) -> ProviderRequest:
+        # ollama takes no standard ``max_tokens``: its cap is ``num_predict``,
+        # and all three of its knobs are options passed through ``extra_body``.
+        extra_body: Dict[str, Any] = {
+            k: v
+            for k, v in {
+                "num_ctx": row.get("ollama_context_window"),
+                "num_predict": row.get("max_tokens"),
+                "repeat_penalty": row.get("ollama_repeat_penalty"),
+            }.items()
+            if _is_set(v)
+        }
+        return self._make_request(prompt, row, self._base_params(row), extra_body)
+
+
+@dataclass
+class VLLMProvider(OpenAICompatibleProvider):
+    """A vLLM server reached over its OpenAI-compatible endpoint."""
+
+    base_url: Optional[str] = URL_MAP["vllm"]
+
+    def build_request(self, prompt: str, row: dict) -> ProviderRequest:
+        params = self._base_params(row)
+        if _is_set(row.get("max_tokens")):
+            params["max_tokens"] = row["max_tokens"]
+        extra_body: Dict[str, Any] = {
+            k: v
+            for k, v in {
+                "min_p": row.get("vllm_min_p"),
+                "best_of": row.get("vllm_best_of"),
+            }.items()
+            if _is_set(v)
+        }
+        return self._make_request(prompt, row, params, extra_body)
+
+
+@dataclass
+class GeminiProvider(OpenAICompatibleProvider):
+    """Gemini reached over its OpenAI-compatible endpoint."""
+
+    base_url: Optional[str] = URL_MAP["gemini"]
+
+    def build_request(self, prompt: str, row: dict) -> ProviderRequest:
+        params = self._base_params(row)
+        if _is_set(row.get("max_tokens")):
+            params["max_tokens"] = row["max_tokens"]
+        extra_body: Dict[str, Any] = {}
+        if _is_set(row.get("gemini_thinking_level")):
+            extra_body["thinking_level"] = row["gemini_thinking_level"]
+        return self._make_request(prompt, row, params, extra_body)
+
+
+@dataclass
+class LiteLLMProvider(OpenAICompatibleProvider):
     """Concrete LLM provider for models served behind a LiteLLM proxy.
 
     The proxy exposes a single OpenAI-compatible endpoint in front of a vLLM
@@ -373,70 +399,16 @@ class LiteLLMProvider(LLMProviderBase):
                 f"Set PROVIDER_{self.provider.upper()}_KEY in your .env."
             )
 
-    def build_session(self) -> None:
-        from openai import OpenAI
-
-        self.validate_config()
-        self.session = OpenAI(base_url=self.base_url, api_key=self.auth.api_key)
-
     def build_request(self, prompt: str, row: dict) -> ProviderRequest:
+        params = self._base_params(row)
+        if _is_set(row.get("max_tokens")):
+            params["max_tokens"] = row["max_tokens"]
         extra_body: Dict[str, Any] = {
             k: v
             for k, v in {
                 "min_p": row.get("litellm_min_p"),
                 "best_of": row.get("litellm_best_of"),
             }.items()
-            if v is not None
+            if _is_set(v)
         }
-        params: Dict[str, Any] = {
-            "temperature": row.get("temperature", 0.7),
-            "top_p": row.get("top_p", 1.0),
-        }
-        if row.get("max_tokens") is not None:
-            params["max_tokens"] = row["max_tokens"]
-        if extra_body:
-            params["extra_body"] = extra_body
-        self.request = ProviderRequest(
-            model=str(row.get("model_name", "")),
-            prompt=prompt,
-            params=params,
-        )
-        return self.request
-
-    def execute(self, prompt: str, row: dict) -> ProviderResponse:
-        self.data = row
-        self.state = CallerState.RUNNING
-        t0 = time.monotonic()
-        try:
-            if self.session is None:
-                self.build_session()
-            req = self.build_request(prompt, row)
-            extra_body = req.params.pop("extra_body", None)
-            completion = self.session.chat.completions.create(
-                model=req.model,
-                messages=[{"role": "user", "content": req.prompt}],
-                extra_body=extra_body or None,
-                **req.params,
-            )
-            text = ""
-            if completion.choices[0].finish_reason == "length":
-                self.state = CallerState.MAXTOKENREACHED
-                text = "No answer. Max token reached"
-
-            if self.state != CallerState.MAXTOKENREACHED:
-                text = completion.choices[0].message.content or ""
-                self.state = CallerState.FINISHED
-
-            tokens = getattr(completion.usage, "total_tokens", None)
-            self.response = ProviderResponse(text=text, usage_tokens=tokens, raw=completion)  # gitleaks:allow
-        except Exception as exc:
-            logger.exception(exc)
-            self.response = ProviderResponse(text="", usage_tokens=None, raw=str(exc))
-            self.state = CallerState.ERROR
-        finally:
-            elapsed = time.monotonic() - t0
-            self.stats.call_count += 1
-            self.stats.elapsed_seconds += elapsed
-            if self.response and self.response.usage_tokens:
-                self.stats.total_tokens += self.response.usage_tokens
-        return self.response
+        return self._make_request(prompt, row, params, extra_body)

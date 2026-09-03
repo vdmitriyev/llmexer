@@ -318,8 +318,9 @@ def init(
     models_path = os.path.join(experiment_subdir_path, FILE_LLMS_FOR_EXPERIMENT)
     with open(models_path, "w", encoding="utf-8") as f:
         f.write("provider;model_name;profile_name;notes\n")
-        f.write("ollama;gemma4:31b;ollama-default;local model\n")
-        f.write("ollama;phi4:14b;ollama-creative;local model\n")
+        f.write("ollama;gemma4:31b;ollama-gemma4-default;local model\n")
+        f.write("ollama;phi4:14b;ollama-phi4-creative;local model\n")
+        f.write("litellm;gemma4:31b;litellm-gemma4-default;local model\n")
 
     # data.csv
     data_path = os.path.join(experiment_subdir_path, FILE_DATA)
@@ -352,12 +353,13 @@ def init(
             "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level;"
             "litellm_min_p;litellm_best_of\n"
         )
-        f.write("ollama;gemma4:31b;ollama-default;0.7;1.0;512;4096;1.1;;;;;;\n")
-        f.write("ollama;phi4:14b;ollama-creative;1.2;0.95;512;4096;1.0;;;;;;\n")
+        f.write("ollama;gemma4:31b;ollama-gemma4-default;0.7;1.0;512;4096;1.1;;;;;;\n")
+        f.write("ollama;phi4:14b;ollama-phi4-creative;1.2;0.95;512;4096;1.0;;;;;;\n")
         f.write("openai;gpt-4o;openai-default;0.7;1.0;512;;;;;42;;;\n")
         f.write("vllm;meta-llama/Llama-3-8b;vllm-default;0.7;0.9;512;;;0.05;1;;;;\n")
         f.write("gemini;gemini-2.0-flash;gemini-default;0.7;1.0;512;;;;;;standard;;\n")
-        f.write("litellm;gpt-oss:120b;litellm-default;0.7;0.9;512;;;;;;;0.05;1\n")
+        f.write("litellm;minimax-m2.7:229b;litellm-minimax-m2-default;0.7;0.9;4096;;;;;;;0.05;1\n")
+        f.write("litellm;gemma4:31b;litellm-gemma4-default;0.7;0.9;512;;;;;;;;1\n")
 
     cprint(f"Init project [bold yellow]{pid}[/bold yellow] with standard structure.")
 
@@ -1405,6 +1407,11 @@ def try_one(
         try_id = dao.append_try_row(provider_name, {**row, **result_values(experiment, provider_name)})
 
     _print_try_header(model_name, provider_name, experiment.usage_tokens)
+
+    # Printed for a failed try as well: the prompt that was sent is the first
+    # thing to look at when the answer is missing.
+    cprint("\nRendered prompt:\n")
+    cprint(f"[italic yellow]{row['prompt']}[/italic yellow]")
 
     if experiment.status == "success":
         cprint("\nResponse text:\n")

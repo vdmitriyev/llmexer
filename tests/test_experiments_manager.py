@@ -55,23 +55,15 @@ def projects_dir(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def mock_providers(monkeypatch):
-    """Replace LLMRequestsMapper / OllamaProvider with canned fakes."""
+    """Replace the provider classes with canned fakes."""
     import llmexer.base.llm_provider as llm_module
     from llmexer.base.llm_provider import CallerStats
 
-    class FakeResult:
-        response_text = "mocked response"
-        usage_tokens = 42
-        status = "success"
-        timestamp = "2024-01-01T00:00:00"
-        raw = {"id": "cmpl-1", "usage": {"prompt_tokens": 10, "total_tokens": 42}}
+    class FakeCompletion:
+        """Stands in for an SDK response: serialize_response() calls model_dump."""
 
-    class FakeMapper:
-        def __init__(self, provider, base_url=None, api_key="na"):
-            self.provider = provider
-
-        def execute(self, prompt, row):
-            return FakeResult()
+        def model_dump(self, mode=None):
+            return {"id": "cmpl-1", "usage": {"prompt_tokens": 10, "total_tokens": 42}}
 
     class FakeOllamaProvider:
         def __init__(self, provider, auth=None, base_url=None, **kwargs):
@@ -81,6 +73,13 @@ def mock_providers(monkeypatch):
         def execute(self, prompt, row):
             self.state = CallerState.FINISHED
             return ProviderResponse(text="mocked response", usage_tokens=42)
+
+    class FakeOpenAIProvider(FakeOllamaProvider):
+        """Same canned behaviour, but carries a raw response worth serialising."""
+
+        def execute(self, prompt, row):
+            self.state = CallerState.FINISHED
+            return ProviderResponse(text="mocked response", usage_tokens=42, raw=FakeCompletion())
 
     class FakeLiteLLMProvider(FakeOllamaProvider):
         """Same canned behaviour, but records that config was validated."""
@@ -99,8 +98,8 @@ def mock_providers(monkeypatch):
             self.state = CallerState.FINISHED
             return ProviderResponse(text="mocked litellm response", usage_tokens=42)
 
-    monkeypatch.setattr(llm_module, "LLMRequestsMapper", FakeMapper)
     monkeypatch.setattr(llm_module, "OllamaProvider", FakeOllamaProvider)
+    monkeypatch.setattr(llm_module, "OpenAIProvider", FakeOpenAIProvider)
     monkeypatch.setattr(llm_module, "LiteLLMProvider", FakeLiteLLMProvider)
     return FakeLiteLLMProvider
 

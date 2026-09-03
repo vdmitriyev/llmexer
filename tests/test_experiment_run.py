@@ -63,32 +63,16 @@ def experiment_with_db(projects_dir):
 
 
 @pytest.fixture()
-def mock_llm_mapper(monkeypatch):
-    """Replace LLMRequestsMapper and OllamaProvider with fakes that return canned results."""
+def mock_providers(monkeypatch):
+    """Replace the provider classes with fakes that return canned results."""
     import llmexer.base.llm_provider as llm_module
     from llmexer.base.llm_provider import CallerState, ProviderResponse
 
-    class FakeResult:
-        response_text = "mocked response"
-        usage_tokens = 42
-        status = "success"
-        timestamp = "2024-01-01T00:00:00"
-        raw = {"id": "cmpl-1", "usage": {"prompt_tokens": 10, "total_tokens": 42}}
+    class FakeCompletion:
+        """Stands in for an SDK response: serialize_response() calls model_dump."""
 
-        def model_dump(self):
-            return {
-                "response_text": self.response_text,
-                "usage_tokens": self.usage_tokens,
-                "status": self.status,
-                "timestamp": self.timestamp,
-            }
-
-    class FakeMapper:
-        def __init__(self, provider, base_url=None, api_key="na"):
-            self.provider = provider
-
-        def execute(self, prompt, row):
-            return FakeResult()
+        def model_dump(self, mode=None):
+            return {"id": "cmpl-1", "usage": {"prompt_tokens": 10, "total_tokens": 42}}
 
     class FakeOllamaProvider:
         def __init__(self, provider, auth=None, base_url=None, **kwargs):
@@ -98,9 +82,16 @@ def mock_llm_mapper(monkeypatch):
             self.state = CallerState.FINISHED
             return ProviderResponse(text="mocked response", usage_tokens=42)
 
-    monkeypatch.setattr(llm_module, "LLMRequestsMapper", FakeMapper)
+    class FakeOpenAIProvider(FakeOllamaProvider):
+        """Same canned behaviour, but carries a raw response worth serialising."""
+
+        def execute(self, prompt, row):
+            self.state = CallerState.FINISHED
+            return ProviderResponse(text="mocked response", usage_tokens=42, raw=FakeCompletion())
+
     monkeypatch.setattr(llm_module, "OllamaProvider", FakeOllamaProvider)
-    return FakeMapper
+    monkeypatch.setattr(llm_module, "OpenAIProvider", FakeOpenAIProvider)
+    return FakeOpenAIProvider
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +99,7 @@ def mock_llm_mapper(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_run_dry_run_no_files_written(experiment_with_db, mock_llm_mapper):
+def test_run_dry_run_no_files_written(experiment_with_db, mock_providers):
     """With --dry-run, no responses/ dir should be created and rows stay pending."""
     pid, exp_subdir = experiment_with_db
 
@@ -125,7 +116,7 @@ def test_run_dry_run_no_files_written(experiment_with_db, mock_llm_mapper):
     assert pd.isna(df.iloc[0]["status"])
 
 
-def test_run_dry_run_shows_row_count(experiment_with_db, mock_llm_mapper):
+def test_run_dry_run_shows_row_count(experiment_with_db, mock_providers):
     """Dry run output should mention the total number of rows to run."""
     pid, _ = experiment_with_db
 
@@ -143,7 +134,7 @@ def test_run_dry_run_shows_row_count(experiment_with_db, mock_llm_mapper):
 # ---------------------------------------------------------------------------
 
 
-def test_run_writes_results_into_db(experiment_with_db, mock_llm_mapper):
+def test_run_writes_results_into_db(experiment_with_db, mock_providers):
     """run should write results back into the same database row."""
     pid, exp_subdir = experiment_with_db
 
@@ -158,7 +149,7 @@ def test_run_writes_results_into_db(experiment_with_db, mock_llm_mapper):
     assert df.iloc[0]["response_text"] == "mocked response"
 
 
-def test_run_result_row_has_result_columns(experiment_with_db, mock_llm_mapper):
+def test_run_result_row_has_result_columns(experiment_with_db, mock_providers):
     """The run row should carry the result columns, including response_json."""
     pid, exp_subdir = experiment_with_db
 
@@ -182,7 +173,7 @@ def test_run_result_row_has_result_columns(experiment_with_db, mock_llm_mapper):
     assert payload["provider"] == "ollama"
 
 
-def test_run_results_row_count(experiment_with_db, mock_llm_mapper):
+def test_run_results_row_count(experiment_with_db, mock_providers):
     """Result row count equals the number of rows in the experiment database."""
     pid, exp_subdir = experiment_with_db
 
@@ -195,7 +186,7 @@ def test_run_results_row_count(experiment_with_db, mock_llm_mapper):
     assert len(df) == 1
 
 
-def test_run_creates_responses_directory(experiment_with_db, mock_llm_mapper):
+def test_run_creates_responses_directory(experiment_with_db, mock_providers):
     """run should create an experiment/responses/ directory."""
     pid, exp_subdir = experiment_with_db
 
@@ -208,7 +199,7 @@ def test_run_creates_responses_directory(experiment_with_db, mock_llm_mapper):
     assert (exp_subdir / "responses").is_dir()
 
 
-def test_run_creates_individual_json_files(experiment_with_db, mock_llm_mapper):
+def test_run_creates_individual_json_files(experiment_with_db, mock_providers):
     """run should save one JSON file per LLM call in responses/."""
     pid, exp_subdir = experiment_with_db
 
@@ -224,7 +215,7 @@ def test_run_creates_individual_json_files(experiment_with_db, mock_llm_mapper):
     assert "response_text" in data
 
 
-def test_run_uses_current_experiment_from_env(projects_dir, mock_no_dotenv, mock_llm_mapper, monkeypatch):
+def test_run_uses_current_experiment_from_env(projects_dir, mock_no_dotenv, mock_providers, monkeypatch):
     """When --pid is omitted, run should use PROJECT_ID from the environment."""
     pid = "env-run-exp"
     exp_subdir = projects_dir / pid / "experiment"
@@ -237,7 +228,7 @@ def test_run_uses_current_experiment_from_env(projects_dir, mock_no_dotenv, mock
     assert result.exit_code == 0
 
 
-def test_run_custom_experiment_db(experiment_with_db, mock_llm_mapper, tmp_path):
+def test_run_custom_experiment_db(experiment_with_db, mock_providers, tmp_path):
     """--file should override the auto-detected database."""
     pid, _ = experiment_with_db
     custom_db = tmp_path / "custom_experiment.db"
@@ -253,7 +244,7 @@ def test_run_custom_experiment_db(experiment_with_db, mock_llm_mapper, tmp_path)
     assert df.iloc[0]["status"] == "success"
 
 
-def test_run_defaults_to_newest_db(experiment_with_db, mock_llm_mapper):
+def test_run_defaults_to_newest_db(experiment_with_db, mock_providers):
     """With no --file, run uses the newest experiment database."""
     pid, exp_subdir = experiment_with_db
     # A second generation with a higher counter.
@@ -302,7 +293,7 @@ def test_run_failed_call_still_writes_row(experiment_with_db, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_run_skips_already_successful_row(projects_dir, mock_llm_mapper):
+def test_run_skips_already_successful_row(projects_dir, mock_providers):
     """A row already in 'success' state is skipped (no LLM call, result untouched)."""
     pid = "skip-success-exp"
     exp_subdir = projects_dir / pid / "experiment"
@@ -327,7 +318,7 @@ def test_run_skips_already_successful_row(projects_dir, mock_llm_mapper):
     assert not list((exp_subdir / "responses").glob("*.json"))
 
 
-def test_run_skips_success_runs_only_pending(projects_dir, mock_llm_mapper):
+def test_run_skips_success_runs_only_pending(projects_dir, mock_providers):
     """With one success and one pending row, only the pending row is executed."""
     pid = "skip-mixed-exp"
     exp_subdir = projects_dir / pid / "experiment"
@@ -601,7 +592,7 @@ def experiment_with_two_provider_rows(projects_dir):
     return pid, exp_subdir
 
 
-def test_run_filter_provider_runs_only_matching_rows(experiment_with_two_provider_rows, mock_llm_mapper):
+def test_run_filter_provider_runs_only_matching_rows(experiment_with_two_provider_rows, mock_providers):
     """--filter-provider ollama runs only ollama rows; openai stays pending."""
     pid, exp_subdir = experiment_with_two_provider_rows
 
@@ -629,7 +620,7 @@ def test_run_filter_provider_runs_only_matching_rows(experiment_with_two_provide
     assert pd.isna(openai_row["status"])
 
 
-def test_run_filter_provider_no_match_exits_cleanly(experiment_with_two_provider_rows, mock_llm_mapper):
+def test_run_filter_provider_no_match_exits_cleanly(experiment_with_two_provider_rows, mock_providers):
     """--filter-provider gemini on a DB with no gemini rows exits 0, runs nothing."""
     pid, exp_subdir = experiment_with_two_provider_rows
 
@@ -654,7 +645,7 @@ def test_run_filter_provider_no_match_exits_cleanly(experiment_with_two_provider
     assert df["status"].isna().all()
 
 
-def test_run_filter_provider_case_insensitive(experiment_with_two_provider_rows, mock_llm_mapper):
+def test_run_filter_provider_case_insensitive(experiment_with_two_provider_rows, mock_providers):
     """--filter-provider OLLAMA (upper-case) should match the ollama table."""
     pid, exp_subdir = experiment_with_two_provider_rows
 
@@ -679,7 +670,7 @@ def test_run_filter_provider_case_insensitive(experiment_with_two_provider_rows,
     assert ollama_row["status"] == "success"
 
 
-def test_run_filter_provider_dry_run_shows_filtered_count(experiment_with_two_provider_rows, mock_llm_mapper):
+def test_run_filter_provider_dry_run_shows_filtered_count(experiment_with_two_provider_rows, mock_providers):
     """Dry-run with --filter-provider should print the filtered row count (1)."""
     pid, _ = experiment_with_two_provider_rows
 
@@ -703,7 +694,7 @@ def test_run_filter_provider_dry_run_shows_filtered_count(experiment_with_two_pr
     assert "1" in result.output
 
 
-def test_run_sequential_filtered_runs_persist_into_one_db(experiment_with_two_provider_rows, mock_llm_mapper):
+def test_run_sequential_filtered_runs_persist_into_one_db(experiment_with_two_provider_rows, mock_providers):
     """Two filtered runs leave a single database with both providers' rows filled."""
     pid, exp_subdir = experiment_with_two_provider_rows
 
@@ -783,7 +774,7 @@ def _finished_ids(exp_subdir):
     return sorted(df[df["status"] == "success"]["ID"])
 
 
-def test_run_filter_model_runs_only_matching_rows(experiment_with_model_profile_matrix, mock_llm_mapper):
+def test_run_filter_model_runs_only_matching_rows(experiment_with_model_profile_matrix, mock_providers):
     """--filter-model runs both profiles of that model; the other model stays pending."""
     pid, exp_subdir = experiment_with_model_profile_matrix
 
@@ -793,7 +784,7 @@ def test_run_filter_model_runs_only_matching_rows(experiment_with_model_profile_
     assert _finished_ids(exp_subdir) == [1, 2]
 
 
-def test_run_filter_profile_runs_only_matching_rows(experiment_with_model_profile_matrix, mock_llm_mapper):
+def test_run_filter_profile_runs_only_matching_rows(experiment_with_model_profile_matrix, mock_providers):
     """--filter-profile runs that profile across every model."""
     pid, exp_subdir = experiment_with_model_profile_matrix
 
@@ -803,7 +794,7 @@ def test_run_filter_profile_runs_only_matching_rows(experiment_with_model_profil
     assert _finished_ids(exp_subdir) == [2, 4]
 
 
-def test_run_filter_model_and_profile_combine(experiment_with_model_profile_matrix, mock_llm_mapper):
+def test_run_filter_model_and_profile_combine(experiment_with_model_profile_matrix, mock_providers):
     """--filter-model and --filter-profile combine with AND (one row)."""
     pid, exp_subdir = experiment_with_model_profile_matrix
 
@@ -813,7 +804,7 @@ def test_run_filter_model_and_profile_combine(experiment_with_model_profile_matr
     assert _finished_ids(exp_subdir) == [3]
 
 
-def test_run_filter_model_is_case_sensitive(experiment_with_model_profile_matrix, mock_llm_mapper):
+def test_run_filter_model_is_case_sensitive(experiment_with_model_profile_matrix, mock_providers):
     """A model name in the wrong case matches nothing and runs nothing."""
     pid, exp_subdir = experiment_with_model_profile_matrix
 
@@ -824,7 +815,7 @@ def test_run_filter_model_is_case_sensitive(experiment_with_model_profile_matrix
     assert _finished_ids(exp_subdir) == []
 
 
-def test_run_filter_model_needs_the_full_name(experiment_with_model_profile_matrix, mock_llm_mapper):
+def test_run_filter_model_needs_the_full_name(experiment_with_model_profile_matrix, mock_providers):
     """A prefix of a model name is not a match — the filter is a full match."""
     pid, exp_subdir = experiment_with_model_profile_matrix
 
@@ -835,7 +826,7 @@ def test_run_filter_model_needs_the_full_name(experiment_with_model_profile_matr
     assert _finished_ids(exp_subdir) == []
 
 
-def test_run_filter_profile_needs_the_full_name(experiment_with_model_profile_matrix, mock_llm_mapper):
+def test_run_filter_profile_needs_the_full_name(experiment_with_model_profile_matrix, mock_providers):
     """A prefix of a profile name is not a match either."""
     pid, exp_subdir = experiment_with_model_profile_matrix
 
@@ -845,7 +836,7 @@ def test_run_filter_profile_needs_the_full_name(experiment_with_model_profile_ma
     assert _finished_ids(exp_subdir) == []
 
 
-def test_run_filter_no_match_names_the_filters(experiment_with_model_profile_matrix, mock_llm_mapper):
+def test_run_filter_no_match_names_the_filters(experiment_with_model_profile_matrix, mock_providers):
     """The 'nothing to run' warning names every filter that was applied."""
     pid, _exp_subdir = experiment_with_model_profile_matrix
 
@@ -857,7 +848,7 @@ def test_run_filter_no_match_names_the_filters(experiment_with_model_profile_mat
     assert "profile 'nope'" in output
 
 
-def test_run_filter_surrounding_whitespace_is_ignored(experiment_with_model_profile_matrix, mock_llm_mapper):
+def test_run_filter_surrounding_whitespace_is_ignored(experiment_with_model_profile_matrix, mock_providers):
     """A value padded with spaces still matches the stored, stripped value."""
     pid, exp_subdir = experiment_with_model_profile_matrix
 
@@ -867,7 +858,7 @@ def test_run_filter_surrounding_whitespace_is_ignored(experiment_with_model_prof
     assert _finished_ids(exp_subdir) == [1, 3]
 
 
-def test_run_filter_profile_dry_run_writes_nothing(experiment_with_model_profile_matrix, mock_llm_mapper):
+def test_run_filter_profile_dry_run_writes_nothing(experiment_with_model_profile_matrix, mock_providers):
     """--dry-run with a profile filter reports the filtered count and runs nothing."""
     pid, exp_subdir = experiment_with_model_profile_matrix
 
@@ -892,7 +883,7 @@ def test_run_filter_profile_dry_run_writes_nothing(experiment_with_model_profile
     assert _finished_ids(exp_subdir) == []
 
 
-def test_run_filter_provider_and_model_combine(experiment_with_two_provider_rows, mock_llm_mapper):
+def test_run_filter_provider_and_model_combine(experiment_with_two_provider_rows, mock_providers):
     """--filter-provider and --filter-model combine; a mismatch runs nothing."""
     pid, exp_subdir = experiment_with_two_provider_rows
 

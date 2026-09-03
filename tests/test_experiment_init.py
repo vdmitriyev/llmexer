@@ -7,6 +7,8 @@ import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
+from llmexer.base.experiment import PROVIDER_PARAM_COLUMNS
+from llmexer.base.llm_provider import URL_MAP
 from llmexer.cli import app
 from llmexer.exceptions import (
     LLMExerException,
@@ -84,7 +86,7 @@ def test_init_creates_models_csv(experiment, projects_dir):
     for line in lines[1:]:
         assert len(line.split(";")) == expected_fields, line
     # The provider column comes first and holds a provider, not a model name.
-    assert all(line.split(";")[0] == "ollama" for line in lines[1:])
+    assert all(line.split(";")[0] in URL_MAP for line in lines[1:]), lines[1:]
 
 
 def test_init_creates_data_csv(experiment, projects_dir):
@@ -261,15 +263,25 @@ def test_init_llm_params_values_land_in_their_own_columns(experiment, projects_d
     params_file = exp_path / "experiment" / "llm-params.csv"
     df = pd.read_csv(params_file, sep=";").set_index("profile_name")
 
-    assert df.loc["ollama-default", "ollama_context_window"] == 4096
+    assert df.loc["ollama-gemma4-default", "ollama_context_window"] == 4096
+    assert df.loc["ollama-phi4-creative", "ollama_repeat_penalty"] == 1.0
     assert df.loc["openai-default", "openai_seed"] == 42
     assert df.loc["vllm-default", "vllm_min_p"] == 0.05
     assert df.loc["gemini-default", "gemini_thinking_level"] == "standard"
-    assert df.loc["litellm-default", "litellm_min_p"] == 0.05
-    assert df.loc["litellm-default", "litellm_best_of"] == 1
-    # A provider's values must not bleed into another provider's columns.
-    assert pd.isna(df.loc["litellm-default", "vllm_min_p"])
-    assert pd.isna(df.loc["gemini-default", "openai_seed"])
+    assert df.loc["litellm-minimax-m2-default", "litellm_min_p"] == 0.05
+    assert df.loc["litellm-minimax-m2-default", "litellm_best_of"] == 1
+
+    # A provider's values must not bleed into another provider's columns: those
+    # are silently ignored at run time, so only this check catches a stray value
+    # or a row that is one field short.
+    for profile, row in df.iterrows():
+        foreign = [
+            column
+            for provider, columns in PROVIDER_PARAM_COLUMNS.items()
+            if provider != row["provider"]
+            for column in columns
+        ]
+        assert row[foreign].isna().all(), f"'{profile}' sets columns of another provider"
 
 
 def test_init_eid_overrides_env(projects_dir, mock_no_dotenv, monkeypatch):

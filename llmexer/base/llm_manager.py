@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional
 import llmexer.base.llm_provider as llm_module
 from llmexer.base.dao import ExperimentDAO
 from llmexer.base.llm_provider import CallerState, ProviderAuth, serialize_response
-from llmexer.exceptions import LLMExerException
+from llmexer.exceptions import LLMExerException, ProviderConfigException
 from llmexer.logger import get_logger
 
 logger = get_logger()
@@ -175,13 +175,16 @@ def result_values(experiment: Experiment, provider: str) -> Dict[str, Any]:
     }
 
 
-# Providers implemented as :class:`LLMProviderBase` subclasses, keyed by the
-# lower-cased provider name. Class *names* are stored (not the classes
+# The :class:`OpenAICompatibleProvider` subclass serving each provider, keyed by
+# the lower-cased provider name. Class *names* are stored (not the classes
 # themselves) so that the lookup goes through the module object and stays
-# monkeypatchable in tests. Providers absent from this map fall back to the
-# legacy ``LLMRequestsMapper``.
+# monkeypatchable in tests. This map is the authority on which providers can be
+# run: one without an entry has no parameter mapping and is rejected up front.
 PROVIDER_CLASS_NAMES: Dict[str, str] = {
     "ollama": "OllamaProvider",
+    "openai": "OpenAIProvider",
+    "vllm": "VLLMProvider",
+    "gemini": "GeminiProvider",
     "litellm": "LiteLLMProvider",
 }
 
@@ -210,11 +213,11 @@ def run_experiment_row(row: Dict[str, Any]) -> Experiment:
     :class:`Experiment`. Pure: it does not persist anything.
 
     Raises:
-        ProviderConfigException: if the provider name is unknown, or if the
-            provider is missing required configuration (e.g. the API token of a
-            proxied provider). Both are raised before any call is made, so a
-            misconfigured run aborts immediately instead of writing one error
-            row per combination.
+        ProviderConfigException: if the provider name is unknown, if it has no
+            registered provider class, or if the provider is missing required
+            configuration (e.g. the API token of a proxied provider). All are
+            raised before any call is made, so a misconfigured run aborts
+            immediately instead of writing one error row per combination.
     """
 
     experiment = Experiment.from_row(row)
@@ -222,32 +225,26 @@ def run_experiment_row(row: Dict[str, Any]) -> Experiment:
     base_url, api_key = llm_module.resolve_provider_config(provider)
 
     class_name = PROVIDER_CLASS_NAMES.get(provider)
-    if class_name is not None:
-        caller_class = getattr(llm_module, class_name)
-        caller = caller_class(
-            provider=provider,
-            auth=ProviderAuth(api_key=api_key),
-            base_url=base_url or llm_module.URL_MAP.get(provider),
+    if class_name is None:
+        raise ProviderConfigException(
+            f"No provider class is registered for '{provider}', so its "
+            f"hyperparameters cannot be mapped. Supported providers: "
+            f"{', '.join(sorted(PROVIDER_CLASS_NAMES))}."
         )
-        # Fail fast on missing credentials/URL, outside the caller's own
-        # exception handling, so the error is not swallowed into a row status.
-        validate = getattr(caller, "validate_config", None)
-        if callable(validate):
-            validate()
-        resp = caller.execute(experiment.prompt, row)
-        _apply_provider_result(experiment, caller, resp)
-    else:
-        mapper = llm_module.LLMRequestsMapper(provider=provider, base_url=base_url, api_key=api_key)
-        result = mapper.execute(experiment.prompt, row)
-        experiment.response_text = result.response_text
-        experiment.usage_tokens = result.usage_tokens
-        experiment.raw_response = result.raw
-        experiment.status = result.status
-        # LLMRequestsMapper has no CallerState/CallerStats; derive them.
-        experiment.state = CallerState.FINISHED.value if result.status == "success" else CallerState.ERROR.value
-        experiment.call_count = 1
-        experiment.total_tokens = result.usage_tokens or 0
-        experiment.timestamp = result.timestamp
+
+    caller_class = getattr(llm_module, class_name)
+    caller = caller_class(
+        provider=provider,
+        auth=ProviderAuth(api_key=api_key),
+        base_url=base_url or llm_module.URL_MAP.get(provider),
+    )
+    # Fail fast on missing credentials/URL, outside the caller's own
+    # exception handling, so the error is not swallowed into a row status.
+    validate = getattr(caller, "validate_config", None)
+    if callable(validate):
+        validate()
+    resp = caller.execute(experiment.prompt, row)
+    _apply_provider_result(experiment, caller, resp)
 
     return experiment
 

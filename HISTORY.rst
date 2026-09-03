@@ -2,6 +2,15 @@
 History
 =======
 
+0.3.8 (2026-09-03)
+-------------------
+
+* Remove the legacy ``LLMRequestsMapper``: every provider now has its own class, sharing one call path through ``OpenAICompatibleProvider``.
+* **Breaking:** a provider without a registered class is rejected up front, so custom ``PROVIDER_<NAME>_URL`` endpoints are no longer supported.
+* ``experiment run``: ``openai``, ``vllm`` and ``gemini`` rows now record ``elapsed_seconds``, ``call_count`` and ``state``, and ``timestamp`` is UTC for every provider.
+* ``experiment run``: a reply cut short at ``max_tokens`` is recorded as ``maxtokenreached`` on every provider, not just ``litellm``.
+* Hyperparameters left blank in ``llm-params.csv`` are omitted from the request instead of sent as ``null``.
+
 0.3.7 (2026-09-03)
 -------------------
 
