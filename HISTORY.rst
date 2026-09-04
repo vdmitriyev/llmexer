@@ -2,6 +2,11 @@
 History
 =======
 
+0.3.9 (2026-09-04)
+-------------------
+
+* ``experiment run``: add ``--parallel-calls`` to keep several LLM calls in flight at once, capped globally across providers. Results are still written one at a time. Defaults to ``1`` (sequential).
+
 0.3.8 (2026-09-03)
 -------------------
 

@@ -139,9 +139,7 @@ def test_extract_pdf_failure(projects_dir, mock_no_dotenv, experiment):
     bad_pdf = papers_path / "bad.pdf"
     bad_pdf.write_bytes(b"not a real pdf")
 
-    with patch(
-        "llmexer.commands.papers.pypdf.PdfReader", side_effect=Exception("corrupt")
-    ):
+    with patch("llmexer.commands.papers.pypdf.PdfReader", side_effect=Exception("corrupt")):
         result = runner.invoke(app, ["papers", "extract", "--pid", pid])
 
     assert result.exit_code == 0
@@ -241,9 +239,7 @@ def test_extract_skip_if_md_skips_pdf_with_md(projects_dir, mock_no_dotenv, expe
     assert not (papers_path / "paper.txt").exists()
 
 
-def test_extract_no_skip_if_md_extracts_when_flag_absent(
-    projects_dir, mock_no_dotenv, experiment
-):
+def test_extract_no_skip_if_md_extracts_when_flag_absent(projects_dir, mock_no_dotenv, experiment):
     """Without --skip-if-md, a PDF that has a .md file is still extracted to .txt (default behavior)."""
     pid, exp_path = experiment
     papers_path = exp_path / "papers"
@@ -278,9 +274,7 @@ def _make_docling_response(md_content: str) -> Mock:
     return mock_resp
 
 
-def test_extract_docling_happy_path(
-    projects_dir, mock_no_dotenv, experiment, monkeypatch
-):
+def test_extract_docling_happy_path(projects_dir, mock_no_dotenv, experiment, monkeypatch):
     """With --processor docling, valid PDF produces a .md file."""
     pid, exp_path = experiment
     papers_path = exp_path / "papers"
@@ -294,15 +288,11 @@ def test_extract_docling_happy_path(
     mock_session = MagicMock()
     mock_session.post.return_value = _make_docling_response("# Title\n\nBody text.")
     with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
-        result = runner.invoke(
-            app, ["papers", "extract", "--pid", pid, "--processor", "docling"]
-        )
+        result = runner.invoke(app, ["papers", "extract", "--pid", pid, "--processor", "docling"])
 
     assert result.exit_code == 0
     assert (papers_path / "paper.md").exists()
-    assert (papers_path / "paper.md").read_text(
-        encoding="utf-8"
-    ) == "# Title\n\nBody text."
+    assert (papers_path / "paper.md").read_text(encoding="utf-8") == "# Title\n\nBody text."
     assert "extracted:" in result.output
 
 
@@ -329,9 +319,7 @@ def test_extract_docling_dry_run(projects_dir, mock_no_dotenv, experiment, monke
     assert not (papers_path / "paper.md").exists()
 
 
-def test_extract_docling_server_error(
-    projects_dir, mock_no_dotenv, experiment, monkeypatch
-):
+def test_extract_docling_server_error(projects_dir, mock_no_dotenv, experiment, monkeypatch):
     """When docling server returns HTTP 500, the paper is reported as an error."""
     pid, exp_path = experiment
     papers_path = exp_path / "papers"
@@ -347,18 +335,14 @@ def test_extract_docling_server_error(
     mock_session = MagicMock()
     mock_session.post.return_value = mock_resp
     with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
-        result = runner.invoke(
-            app, ["papers", "extract", "--pid", pid, "--processor", "docling"]
-        )
+        result = runner.invoke(app, ["papers", "extract", "--pid", pid, "--processor", "docling"])
 
     assert result.exit_code == 0
     assert "error" in result.output
     assert not (papers_path / "paper.md").exists()
 
 
-def test_extract_docling_cli_url_override(
-    projects_dir, mock_no_dotenv, experiment, monkeypatch
-):
+def test_extract_docling_cli_url_override(projects_dir, mock_no_dotenv, experiment, monkeypatch):
     """--docling-url overrides the DOCLING_URL env var."""
     pid, exp_path = experiment
     papers_path = exp_path / "papers"
@@ -390,9 +374,7 @@ def test_extract_docling_cli_url_override(
     assert "env-server" not in call_url
 
 
-def test_extract_docling_default_url(
-    projects_dir, mock_no_dotenv, experiment, monkeypatch
-):
+def test_extract_docling_default_url(projects_dir, mock_no_dotenv, experiment, monkeypatch):
     """When no DOCLING_URL is set and no --docling-url given, uses http://localhost:5001/."""
     pid, exp_path = experiment
     papers_path = exp_path / "papers"
@@ -404,18 +386,14 @@ def test_extract_docling_default_url(
     mock_session = MagicMock()
     mock_session.post.return_value = _make_docling_response("# Default")
     with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
-        result = runner.invoke(
-            app, ["papers", "extract", "--pid", pid, "--processor", "docling"]
-        )
+        result = runner.invoke(app, ["papers", "extract", "--pid", pid, "--processor", "docling"])
 
     assert result.exit_code == 0
     call_url = mock_session.post.call_args[0][0]
     assert "localhost:5001" in call_url
 
 
-def test_extract_docling_skips_existing_md(
-    projects_dir, mock_no_dotenv, experiment, monkeypatch
-):
+def test_extract_docling_skips_existing_md(projects_dir, mock_no_dotenv, experiment, monkeypatch):
     """Without --rewrite, a pre-existing .md file is skipped (docling processor)."""
     pid, exp_path = experiment
     papers_path = exp_path / "papers"
@@ -431,18 +409,14 @@ def test_extract_docling_skips_existing_md(
     mock_session = MagicMock()
     mock_session.post.return_value = _make_docling_response("# New Content")
     with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
-        result = runner.invoke(
-            app, ["papers", "extract", "--pid", pid, "--processor", "docling"]
-        )
+        result = runner.invoke(app, ["papers", "extract", "--pid", pid, "--processor", "docling"])
 
     assert result.exit_code == 0
     assert "existing" in result.output
     assert md_file.read_text(encoding="utf-8") == "# Original"
 
 
-def test_extract_docling_rewrite_overwrites_md(
-    projects_dir, mock_no_dotenv, experiment, monkeypatch
-):
+def test_extract_docling_rewrite_overwrites_md(projects_dir, mock_no_dotenv, experiment, monkeypatch):
     """With --rewrite, a pre-existing .md file is overwritten (docling processor)."""
     pid, exp_path = experiment
     papers_path = exp_path / "papers"

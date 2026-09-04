@@ -69,9 +69,7 @@ def run_semantic_scholar_search(
     page = 0
 
     while True:
-        response = session.get(
-            _SEM_SCHOLAR_BULK_URL, params=params, timeout=SEARCH_HTTP_TIMEOUT
-        )
+        response = session.get(_SEM_SCHOLAR_BULK_URL, params=params, timeout=SEARCH_HTTP_TIMEOUT)
         response.raise_for_status()
         data = response.json()
         raw_json_results.append(data)
@@ -94,15 +92,11 @@ def run_semantic_scholar_search(
                     "search_engine_internal_id": paper.get("paperId"),
                     "year": paper.get("year"),
                     "title": paper.get("title"),
-                    "authors": "; ".join(
-                        a.get("name", "") for a in paper.get("authors", [])
-                    ),
+                    "authors": "; ".join(a.get("name", "") for a in paper.get("authors", [])),
                     "abstract": paper.get("abstract"),
                     "isOpenAccess": paper.get("isOpenAccess"),
                     "doi": ext_ids.get("DOI"),
-                    "language": detect_publication_lang(
-                        paper.get("title"), paper.get("abstract")
-                    ),
+                    "language": detect_publication_lang(paper.get("title"), paper.get("abstract")),
                     "referenceCount": paper.get("referenceCount"),
                     "citationCount": paper.get("citationCount"),
                     "entry_source": ENTRY_SOURCE_SEMANTIC_SCHOLAR,
@@ -114,14 +108,10 @@ def run_semantic_scholar_search(
             )
 
         logger.info("Retrieved %d paper(s) so far...", len(records))
-        logger.debug(
-            "Page retrieved: %d papers in page, %d total", len(papers), len(records)
-        )
+        logger.debug("Page retrieved: %d papers in page, %d total", len(papers), len(records))
         if on_progress is not None:
             if total is not None:
-                on_progress(
-                    f"Semantic Scholar: page {page} — {len(records)}/{total} fetched"
-                )
+                on_progress(f"Semantic Scholar: page {page} — {len(records)}/{total} fetched")
             else:
                 on_progress(f"Semantic Scholar: page {page} — {len(records)} fetched")
 

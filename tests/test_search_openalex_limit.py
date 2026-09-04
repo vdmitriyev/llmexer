@@ -106,9 +106,7 @@ def test_no_warning_when_under_cap(tmp_path, patch_session, monkeypatch):
     assert not any(_CAP_MESSAGE_MARKER in m for m in messages)
 
 
-def test_explicit_limit_smaller_than_cap_wins_without_cap_message(
-    tmp_path, patch_session, monkeypatch
-):
+def test_explicit_limit_smaller_than_cap_wins_without_cap_message(tmp_path, patch_session, monkeypatch):
     """An explicit --limit below the cap bounds the output and suppresses the cap warning."""
     monkeypatch.delenv("MAX_OPEN_ALEX_RESPONSES", raising=False)
     patch_session([_page([_work(i) for i in range(100)], total=1000, next_cursor="c1")])

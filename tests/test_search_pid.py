@@ -73,9 +73,7 @@ def mock_no_dotenv(monkeypatch):
     return mock_load
 
 
-def test_search_uses_current_experiment_as_default(
-    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
-):
+def test_search_uses_current_experiment_as_default(projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch):
     """When --pid is not provided, should use PROJECT_ID from environment."""
     os.makedirs(projects_dir / "test-exp")
     monkeypatch.setenv("PROJECT_ID", "test-exp")
@@ -85,9 +83,7 @@ def test_search_uses_current_experiment_as_default(
     assert "test-exp" in result.output
 
 
-def test_search_without_eid_and_no_env_raises(
-    projects_dir, mock_no_dotenv, monkeypatch
-):
+def test_search_without_eid_and_no_env_raises(projects_dir, mock_no_dotenv, monkeypatch):
     """When --pid is not provided and PROJECT_ID is not set, should raise error."""
     from llmexer.configs import settings
 
@@ -100,24 +96,18 @@ def test_search_without_eid_and_no_env_raises(
     assert "No project ID provided" in str(result.exception)
 
 
-def test_search_eid_overrides_env(
-    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
-):
+def test_search_eid_overrides_env(projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch):
     """When --pid is provided, it should override PROJECT_ID from environment."""
     os.makedirs(projects_dir / "env-exp")
     os.makedirs(projects_dir / "cli-exp")
     monkeypatch.setenv("PROJECT_ID", "env-exp")
 
-    result = runner.invoke(
-        app, ["search", "run", "--pid", "cli-exp", "--query", "test query"]
-    )
+    result = runner.invoke(app, ["search", "run", "--pid", "cli-exp", "--query", "test query"])
     assert result.exit_code == 0
     assert "cli-exp" in result.output
 
 
-def test_search_nonexistent_experiment_raises(
-    projects_dir, mock_no_dotenv, monkeypatch
-):
+def test_search_nonexistent_experiment_raises(projects_dir, mock_no_dotenv, monkeypatch):
     """When experiment does not exist, should raise ProjectNotExistsException."""
     monkeypatch.setenv("PROJECT_ID", "nonexistent-exp")
 

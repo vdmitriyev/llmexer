@@ -57,9 +57,7 @@ def _row(**overrides):
 
 def _write_csv(searches_path, filename, rows, columns=None):
     df = pd.DataFrame(rows, columns=columns or _PAPER_CSV_COLUMNS)
-    df.to_csv(
-        os.path.join(searches_path, filename), index=False, encoding="utf-8", sep=";"
-    )
+    df.to_csv(os.path.join(searches_path, filename), index=False, encoding="utf-8", sep=";")
 
 
 @pytest.fixture()
@@ -70,9 +68,7 @@ def project_with_search(projects_dir, monkeypatch):
     monkeypatch.setenv("PROJECT_ID", PID)
 
     (searches_path / f"{SEARCH_ID}.yaml").write_text(
-        yaml.dump(
-            {"query": "test query", "year": "2020-2025", "onlyOpenAccess": False}
-        ),
+        yaml.dump({"query": "test query", "year": "2020-2025", "onlyOpenAccess": False}),
         encoding="utf-8",
     )
 
@@ -110,9 +106,7 @@ def project_with_search(projects_dir, monkeypatch):
 
 def test_export_single_search(projects_dir, mock_no_dotenv, project_with_search):
     """`--file <id>.yaml` renders the results CSV as HTML with the same stem."""
-    result = runner.invoke(
-        app, ["search", "export", "--pid", PID, "--file", f"{SEARCH_ID}.yaml"]
-    )
+    result = runner.invoke(app, ["search", "export", "--pid", PID, "--file", f"{SEARCH_ID}.yaml"])
 
     assert result.exit_code == 0, result.output
     html_path = project_with_search / f"{SEARCH_ID}__results.html"
@@ -157,9 +151,7 @@ def test_export_csv_file(projects_dir, mock_no_dotenv, project_with_search):
         [_row(search_engine_internal_id="p1", title="Merged Paper")],
     )
 
-    result = runner.invoke(
-        app, ["search", "export", "--pid", PID, "--csv-file", merged_name]
-    )
+    result = runner.invoke(app, ["search", "export", "--pid", PID, "--csv-file", merged_name])
 
     assert result.exit_code == 0, result.output
     assert (project_with_search / f"{PID}{MERGED_RESULTS_SUFFIX[:-4]}.html").exists()
@@ -175,9 +167,7 @@ def test_export_file_rejects_csv(projects_dir, mock_no_dotenv, project_with_sear
     assert isinstance(result.exception, LLMExerException)
 
 
-def test_export_file_and_csv_file_are_exclusive(
-    projects_dir, mock_no_dotenv, project_with_search
-):
+def test_export_file_and_csv_file_are_exclusive(projects_dir, mock_no_dotenv, project_with_search):
     """Passing both `--file` and `--csv-file` is rejected."""
     result = runner.invoke(
         app,
@@ -211,22 +201,16 @@ def test_export_all_searches(projects_dir, mock_no_dotenv, project_with_search):
     assert (project_with_search / f"{PID}{MERGED_FILTERED_SUFFIX[:-4]}.html").exists()
 
 
-def test_export_dry_run_writes_nothing(
-    projects_dir, mock_no_dotenv, project_with_search
-):
+def test_export_dry_run_writes_nothing(projects_dir, mock_no_dotenv, project_with_search):
     """`--dry-run` announces the target file but writes nothing."""
-    result = runner.invoke(
-        app, ["--dry-run", "search", "export", "--pid", PID, "--file", SEARCH_ID]
-    )
+    result = runner.invoke(app, ["--dry-run", "search", "export", "--pid", PID, "--file", SEARCH_ID])
 
     assert result.exit_code == 0, result.output
     assert "Dry run" in result.output
     assert not (project_with_search / f"{SEARCH_ID}__results.html").exists()
 
 
-def test_export_does_not_overwrite_without_rewrite(
-    projects_dir, mock_no_dotenv, project_with_search
-):
+def test_export_does_not_overwrite_without_rewrite(projects_dir, mock_no_dotenv, project_with_search):
     """An existing HTML file is kept unless `--rewrite` is passed."""
     html_path = project_with_search / f"{SEARCH_ID}__results.html"
     html_path.write_text("existing", encoding="utf-8")
@@ -237,17 +221,13 @@ def test_export_does_not_overwrite_without_rewrite(
     assert "Warning" in result.output
     assert html_path.read_text(encoding="utf-8") == "existing"
 
-    result = runner.invoke(
-        app, ["search", "export", "--pid", PID, "--file", SEARCH_ID, "--rewrite"]
-    )
+    result = runner.invoke(app, ["search", "export", "--pid", PID, "--file", SEARCH_ID, "--rewrite"])
 
     assert result.exit_code == 0, result.output
     assert html_path.read_text(encoding="utf-8") != "existing"
 
 
-def test_export_strips_markup_from_values(
-    projects_dir, mock_no_dotenv, project_with_search
-):
+def test_export_strips_markup_from_values(projects_dir, mock_no_dotenv, project_with_search):
     """Markup is stripped out of values, never injected and never shown as tags."""
     _write_csv(
         str(project_with_search),
@@ -264,9 +244,7 @@ def test_export_strips_markup_from_values(
     result = runner.invoke(app, ["search", "export", "--pid", PID, "--file", SEARCH_ID])
 
     assert result.exit_code == 0, result.output
-    html = (project_with_search / f"{SEARCH_ID}__results.html").read_text(
-        encoding="utf-8"
-    )
+    html = (project_with_search / f"{SEARCH_ID}__results.html").read_text(encoding="utf-8")
     assert ">alert(1)<" in html
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;" not in html
@@ -275,9 +253,7 @@ def test_export_strips_markup_from_values(
 
 def test_export_missing_csv_raises(projects_dir, mock_no_dotenv, project_with_search):
     """Passing a CSV filename that does not exist raises."""
-    result = runner.invoke(
-        app, ["search", "export", "--pid", PID, "--csv-file", "nope.csv"]
-    )
+    result = runner.invoke(app, ["search", "export", "--pid", PID, "--csv-file", "nope.csv"])
 
     assert isinstance(result.exception, LLMExerException)
 
@@ -319,9 +295,7 @@ def _export_html(project_with_search):
     """Export the sample search and return the rendered HTML."""
     result = runner.invoke(app, ["search", "export", "--pid", PID, "--file", SEARCH_ID])
     assert result.exit_code == 0, result.output
-    return (project_with_search / f"{SEARCH_ID}__results.html").read_text(
-        encoding="utf-8"
-    )
+    return (project_with_search / f"{SEARCH_ID}__results.html").read_text(encoding="utf-8")
 
 
 def test_export_links_doi(projects_dir, mock_no_dotenv, project_with_search):
@@ -367,9 +341,7 @@ def test_export_has_no_sticky_header(projects_dir, mock_no_dotenv, project_with_
     assert "max-height" not in html
 
 
-def test_export_renames_column_labels(
-    projects_dir, mock_no_dotenv, project_with_search
-):
+def test_export_renames_column_labels(projects_dir, mock_no_dotenv, project_with_search):
     """Verbose column headers are shown under shorter labels."""
     html = _export_html(project_with_search)
 

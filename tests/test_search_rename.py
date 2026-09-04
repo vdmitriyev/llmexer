@@ -54,9 +54,7 @@ def test_search_rename_renames_yaml(searches_dir, mock_no_dotenv):
     """Renaming should move the YAML file from old-id to new-id."""
     _make_yaml(searches_dir, "old-search")
 
-    result = runner.invoke(
-        app, ["search", "rename", "--old-id", "old-search", "--new-id", "new-search"]
-    )
+    result = runner.invoke(app, ["search", "rename", "--old-id", "old-search", "--new-id", "new-search"])
     assert result.exit_code == 0
     assert not (searches_dir / "old-search.yaml").exists()
     assert (searches_dir / "new-search.yaml").exists()
@@ -82,9 +80,7 @@ def test_search_rename_renames_all_associated_files(searches_dir, mock_no_dotenv
     logs_dir.mkdir()
     (logs_dir / "old-search__results_download_failed.csv").write_text("data")
 
-    result = runner.invoke(
-        app, ["search", "rename", "--old-id", "old-search", "--new-id", "new-search"]
-    )
+    result = runner.invoke(app, ["search", "rename", "--old-id", "old-search", "--new-id", "new-search"])
     assert result.exit_code == 0
     for suffix in suffixes:
         assert not (searches_dir / f"old-search{suffix}").exists()
@@ -99,9 +95,7 @@ def test_search_rename_skips_missing_optional_files(searches_dir, mock_no_dotenv
     """Rename should succeed even when only the YAML is present."""
     _make_yaml(searches_dir, "old-search")
 
-    result = runner.invoke(
-        app, ["search", "rename", "--old-id", "old-search", "--new-id", "new-search"]
-    )
+    result = runner.invoke(app, ["search", "rename", "--old-id", "old-search", "--new-id", "new-search"])
     assert result.exit_code == 0
     assert (searches_dir / "new-search.yaml").exists()
 
@@ -163,9 +157,7 @@ def test_search_rename_without_eid_raises(projects_dir, mock_no_dotenv, monkeypa
     assert isinstance(result.exception, ProjectIDRequiredException)
 
 
-def test_search_rename_nonexistent_experiment_raises(
-    projects_dir, mock_no_dotenv, monkeypatch
-):
+def test_search_rename_nonexistent_experiment_raises(projects_dir, mock_no_dotenv, monkeypatch):
     """Providing a non-existent experiment ID should raise ProjectNotExistsException."""
     monkeypatch.setenv("PROJECT_ID", "nonexistent")
 

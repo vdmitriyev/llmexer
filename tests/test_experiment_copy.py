@@ -83,9 +83,7 @@ def test_copy_papers_content_with_special_chars_roundtrips(projects_dir):
 def test_copy_papers_backs_up_existing_data_csv(projects_dir):
     pid = "papers-backup"
     exp_subdir, papers_dir, _ = _project(projects_dir, pid)
-    (exp_subdir / "data.csv").write_text(
-        "ID;Title;Abstract\nD01;old;old\n", encoding="utf-8"
-    )
+    (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;old;old\n", encoding="utf-8")
     (papers_dir / "a.md").write_text("Body of A", encoding="utf-8")
 
     result = runner.invoke(app, ["experiment", "copy-papers", "--pid", pid])
@@ -154,9 +152,7 @@ def test_copy_search_writes_rows_in_order(projects_dir):
         ],
     )
 
-    result = runner.invoke(
-        app, ["experiment", "copy-search", "--pid", pid, "--file", "s1__results.csv"]
-    )
+    result = runner.invoke(app, ["experiment", "copy-search", "--pid", pid, "--file", "s1__results.csv"])
 
     assert result.exit_code == 0, result.exception
     df = pd.read_csv(exp_subdir / "data.csv", sep=";", encoding="utf-8").fillna("")
@@ -172,17 +168,13 @@ def test_copy_search_writes_rows_in_order(projects_dir):
 def test_copy_search_backs_up_existing_data_csv(projects_dir):
     pid = "search-backup"
     exp_subdir, _, searches_dir = _project(projects_dir, pid)
-    (exp_subdir / "data.csv").write_text(
-        "ID;Title;Abstract\nD01;old;old\n", encoding="utf-8"
-    )
+    (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;old;old\n", encoding="utf-8")
     _write_search_csv(
         searches_dir / "s1__results.csv",
         [{"title": "T", "authors": "A", "abstract": "Ab", "doi": "10.1/x"}],
     )
 
-    result = runner.invoke(
-        app, ["experiment", "copy-search", "--pid", pid, "--file", "s1__results.csv"]
-    )
+    result = runner.invoke(app, ["experiment", "copy-search", "--pid", pid, "--file", "s1__results.csv"])
 
     assert result.exit_code == 0, result.exception
     backups = list(exp_subdir.glob("data_backup_*.csv"))
@@ -194,9 +186,7 @@ def test_copy_search_missing_file_raises(projects_dir):
     pid = "search-missing"
     _project(projects_dir, pid)
 
-    result = runner.invoke(
-        app, ["experiment", "copy-search", "--pid", pid, "--file", "nope.csv"]
-    )
+    result = runner.invoke(app, ["experiment", "copy-search", "--pid", pid, "--file", "nope.csv"])
 
     assert result.exit_code != 0
     assert isinstance(result.exception, LLMExerException)
@@ -211,9 +201,7 @@ def test_copy_search_missing_column_raises(projects_dir):
         [{"title": "T", "abstract": "Ab", "doi": "10.1/x"}],
     )
 
-    result = runner.invoke(
-        app, ["experiment", "copy-search", "--pid", pid, "--file", "s1__results.csv"]
-    )
+    result = runner.invoke(app, ["experiment", "copy-search", "--pid", pid, "--file", "s1__results.csv"])
 
     assert result.exit_code != 0
     assert isinstance(result.exception, LLMExerException)

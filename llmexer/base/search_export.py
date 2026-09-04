@@ -199,9 +199,7 @@ def _order_columns(names: list) -> list:
     return ordered
 
 
-def build_export_context(
-    df: pd.DataFrame, title: str, project_id: str, source_csv: str, generated_at: str
-) -> dict:
+def build_export_context(df: pd.DataFrame, title: str, project_id: str, source_csv: str, generated_at: str) -> dict:
     """Build the full rendering context for the HTML export template."""
 
     columns = []
@@ -253,9 +251,7 @@ def render_search_export_html(context: dict) -> str:
     return env.get_template(TEMPLATE_NAME).render(**context)
 
 
-def export_csv_to_html(
-    csv_path: str, html_path: str, project_id: str, generated_at: str
-) -> int:
+def export_csv_to_html(csv_path: str, html_path: str, project_id: str, generated_at: str) -> int:
     """Render a search result CSV to an HTML file. Returns the number of exported rows.
 
     Dry-run handling belongs to the caller; this always writes.

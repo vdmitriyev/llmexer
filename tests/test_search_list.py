@@ -109,9 +109,7 @@ def test_search_list_without_eid_raises(projects_dir, mock_no_dotenv, monkeypatc
     assert isinstance(result.exception, ProjectIDRequiredException)
 
 
-def test_search_list_nonexistent_experiment_raises(
-    projects_dir, mock_no_dotenv, monkeypatch
-):
+def test_search_list_nonexistent_experiment_raises(projects_dir, mock_no_dotenv, monkeypatch):
     """Providing a non-existent experiment ID should raise ProjectNotExistsException."""
     monkeypatch.setenv("PROJECT_ID", "nonexistent")
 

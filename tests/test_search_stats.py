@@ -84,9 +84,7 @@ def _sample_rows():
 # ---------------------------------------------------------------------------
 
 
-def test_stats_uses_merged_results_when_no_file(
-    projects_dir, mock_no_dotenv, experiment
-):
+def test_stats_uses_merged_results_when_no_file(projects_dir, mock_no_dotenv, experiment):
     """With no --file and a merged results file present, stats reads it."""
     pid, exp_path = experiment
     _write_merged(exp_path, pid, _sample_rows(), MERGED_RESULTS_SUFFIX)

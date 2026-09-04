@@ -55,9 +55,7 @@ def test_add_no_params_raises(projects_dir, mock_no_dotenv, experiment, monkeypa
     assert isinstance(result.exception, UnexpectedCLIParamsException)
 
 
-def test_add_two_params_raises(
-    projects_dir, mock_no_dotenv, experiment, tmp_path, monkeypatch
-):
+def test_add_two_params_raises(projects_dir, mock_no_dotenv, experiment, tmp_path, monkeypatch):
     """Two input params → UnexpectedCLIParamsException."""
     pid, _ = experiment
     pdf = tmp_path / "paper.pdf"
@@ -96,9 +94,7 @@ def test_add_missing_eid_raises(projects_dir, mock_no_dotenv, monkeypatch, tmp_p
     assert isinstance(result.exception, ProjectIDRequiredException)
 
 
-def test_add_nonexistent_experiment_raises(
-    projects_dir, mock_no_dotenv, monkeypatch, tmp_path
-):
+def test_add_nonexistent_experiment_raises(projects_dir, mock_no_dotenv, monkeypatch, tmp_path):
     """Non-existent experiment → ProjectNotExistsException."""
     monkeypatch.setenv("PROJECT_ID", "no-such-exp")
     pdf = tmp_path / "paper.pdf"
@@ -147,14 +143,10 @@ def test_add_file_not_pdf_raises(projects_dir, mock_no_dotenv, experiment, tmp_p
     assert isinstance(result.exception, PaperAddException)
 
 
-def test_add_file_nonexistent_raises(
-    projects_dir, mock_no_dotenv, experiment, tmp_path
-):
+def test_add_file_nonexistent_raises(projects_dir, mock_no_dotenv, experiment, tmp_path):
     """--file raises PaperAddException if path does not exist."""
     pid, _ = experiment
-    result = runner.invoke(
-        app, ["papers", "add", "--pid", pid, "--file", str(tmp_path / "ghost.pdf")]
-    )
+    result = runner.invoke(app, ["papers", "add", "--pid", pid, "--file", str(tmp_path / "ghost.pdf")])
     assert result.exit_code != 0
     assert isinstance(result.exception, PaperAddException)
 
@@ -171,18 +163,14 @@ def test_add_directory_happy_path(projects_dir, mock_no_dotenv, experiment, tmp_
     (subdir / "b.pdf").write_bytes(b"%PDF-1.4")
     (tmp_path / "readme.txt").write_text("ignore me")
 
-    result = runner.invoke(
-        app, ["papers", "add", "--pid", pid, "--directory", str(tmp_path)]
-    )
+    result = runner.invoke(app, ["papers", "add", "--pid", pid, "--directory", str(tmp_path)])
     assert result.exit_code == 0
     assert (exp_path / "papers" / "a.pdf").exists()
     assert (exp_path / "papers" / "b.pdf").exists()
     assert not (exp_path / "papers" / "readme.txt").exists()
 
 
-def test_add_directory_duplicate_skips(
-    projects_dir, mock_no_dotenv, experiment, tmp_path
-):
+def test_add_directory_duplicate_skips(projects_dir, mock_no_dotenv, experiment, tmp_path):
     """--directory skips duplicates and exits 0 on collision."""
     pid, exp_path = experiment
     papers_path = exp_path / "papers"
@@ -191,15 +179,11 @@ def test_add_directory_duplicate_skips(
 
     (tmp_path / "a.pdf").write_bytes(b"%PDF-1.4")
 
-    result = runner.invoke(
-        app, ["papers", "add", "--pid", pid, "--directory", str(tmp_path)]
-    )
+    result = runner.invoke(app, ["papers", "add", "--pid", pid, "--directory", str(tmp_path)])
     assert result.exit_code == 0
 
 
-def test_add_directory_invalid_raises(
-    projects_dir, mock_no_dotenv, experiment, tmp_path
-):
+def test_add_directory_invalid_raises(projects_dir, mock_no_dotenv, experiment, tmp_path):
     """--directory raises PaperAddException if path is not a directory."""
     pid, _ = experiment
     result = runner.invoke(
@@ -270,9 +254,7 @@ def test_add_url_resolved_via_final_url(projects_dir, mock_no_dotenv, experiment
     assert (exp_path / "papers" / "mypaper.pdf").exists()
 
 
-def test_add_url_resolved_via_content_disposition(
-    projects_dir, mock_no_dotenv, experiment
-):
+def test_add_url_resolved_via_content_disposition(projects_dir, mock_no_dotenv, experiment):
     """--url resolves filename from Content-Disposition header when URL path has no .pdf."""
     pid, exp_path = experiment
     mock_response = _make_mock_response(
@@ -326,9 +308,7 @@ def test_add_url_not_pdf_raises(projects_dir, mock_no_dotenv, experiment):
     mock_session = MagicMock()
     mock_session.get.return_value = mock_response
     with patch("llmexer.base.papers.make_http_session", return_value=mock_session):
-        result = runner.invoke(
-            app, ["papers", "add", "--pid", pid, "--url", "http://example.com/file.zip"]
-        )
+        result = runner.invoke(app, ["papers", "add", "--pid", pid, "--url", "http://example.com/file.zip"])
     assert result.exit_code != 0
     assert isinstance(result.exception, PaperAddException)
 

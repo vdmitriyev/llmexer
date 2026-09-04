@@ -3,15 +3,18 @@
 An experiment is generated into a per-provider SQLite database (see
 :mod:`llmexer.base.dao`). ``run_experiment_row`` executes a single generated
 row (a plain dict from the DAO) against the right LLM provider and returns an
-:class:`Experiment` carrying the result and provider state. ``ExperimentsManager``
-is a thin DAO-backed convenience wrapper that runs a row by id and reports
-aggregate statistics.
+:class:`Experiment` carrying the result and provider state. ``run_experiment_rows``
+wraps it in a bounded thread pool for callers that want several calls in flight.
+``ExperimentsManager`` is a thin DAO-backed convenience wrapper that runs a row
+by id and reports aggregate statistics.
 """
 
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Sequence
 
 import llmexer.base.llm_provider as llm_module
 from llmexer.base.dao import ExperimentDAO
@@ -247,6 +250,92 @@ def run_experiment_row(row: Dict[str, Any]) -> Experiment:
     _apply_provider_result(experiment, caller, resp)
 
     return experiment
+
+
+# Type of the callback invoked once per completed row, under the write lock.
+PersistCallback = Callable[[int, Dict[str, Any], Experiment], None]
+# Type of the callback invoked just before a row's call, off the write lock.
+StartCallback = Callable[[int, Dict[str, Any]], None]
+
+
+def _run_rows_sequentially(
+    rows: Sequence[Dict[str, Any]],
+    persist: PersistCallback,
+    on_start: Optional[StartCallback],
+) -> int:
+    """Run every row in order on the calling thread. No pool, no lock."""
+
+    persisted = 0
+    for position, row in enumerate(rows):
+        if on_start is not None:
+            on_start(position, row)
+        persist(position, row, run_experiment_row(row))
+        persisted += 1
+    return persisted
+
+
+def run_experiment_rows(
+    rows: Sequence[Dict[str, Any]],
+    persist: PersistCallback,
+    parallel_calls: int = 1,
+    on_start: Optional[StartCallback] = None,
+) -> int:
+    """Run generated rows through :func:`run_experiment_row`, at most N at a time.
+
+    A thin wrapper around the existing single-row call path: the LLM calls are
+    the only part that overlaps. ``persist`` is invoked once per completed row
+    while an internal lock is held, so writing a result never overlaps another
+    write even when two calls finish together.
+
+    Args:
+        rows: the generated rows to run, as returned by ``ExperimentDAO.fetch_rows``.
+        persist: ``persist(position, row, experiment)``, called once per completed
+            row under the write lock. ``position`` is the row's index into ``rows``,
+            so the caller can keep its own labelling.
+        parallel_calls: maximum number of LLM calls in flight. ``1`` or less runs
+            the rows sequentially on the calling thread, with no pool and no lock.
+        on_start: optional ``on_start(position, row)``, called just before a row's
+            call and *not* under the lock.
+
+    Returns:
+        int: the number of rows whose result was persisted.
+
+    Raises:
+        Exception: the first exception raised by a row is re-raised after the
+            queued rows have been cancelled. In practice this is a
+            :class:`ProviderConfigException`, since per-call API errors are
+            recorded on the row rather than raised — so a misconfigured run
+            still aborts instead of writing one error row per combination.
+            Calls already in flight are left to finish.
+    """
+
+    if parallel_calls <= 1:
+        return _run_rows_sequentially(rows, persist, on_start)
+
+    write_lock = threading.Lock()
+    persisted = 0
+
+    def work(position: int, row: Dict[str, Any]) -> None:
+        if on_start is not None:
+            on_start(position, row)
+        experiment = run_experiment_row(row)
+        # Serialised on purpose: the calls overlap, the result writing does not.
+        with write_lock:
+            persist(position, row, experiment)
+
+    executor = ThreadPoolExecutor(max_workers=parallel_calls)
+    try:
+        futures = [executor.submit(work, position, row) for position, row in enumerate(rows)]
+        for future in as_completed(futures):
+            # Re-raises the row's exception here, on the calling thread.
+            future.result()
+            persisted += 1
+    finally:
+        # On the way out -- normally or through an exception -- drop whatever has
+        # not started yet. Calls already in flight are paid for and left to finish.
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    return persisted
 
 
 class ExperimentsManager:

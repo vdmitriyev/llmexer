@@ -189,18 +189,14 @@ def run_openalex_search(
 
     # Hard ceiling on processed works: the configurable cap, tightened by an explicit --limit.
     max_responses = _max_openalex_responses()
-    effective_limit = (
-        max_responses if limit_size is None else min(limit_size, max_responses)
-    )
+    effective_limit = max_responses if limit_size is None else min(limit_size, max_responses)
 
     raw_json_results: list[dict] = []
     records: list[dict] = []
     page = 0
     capped_notified = False
     while True:
-        response = session.get(
-            _OPENALEX_WORKS_URL, params=params, timeout=SEARCH_HTTP_TIMEOUT
-        )
+        response = session.get(_OPENALEX_WORKS_URL, params=params, timeout=SEARCH_HTTP_TIMEOUT)
         response.raise_for_status()
         data = response.json()
         raw_json_results.append(data)
@@ -215,9 +211,7 @@ def run_openalex_search(
             abstract = _reconstruct_abstract(work.get("abstract_inverted_index"))
             doi = _strip_doi_prefix(work.get("doi"))
             author_names = _author_names(work)
-            first_author_last_name = (
-                author_names[0].split()[-1] if author_names else None
-            )
+            first_author_last_name = author_names[0].split()[-1] if author_names else None
             pdf_filename = make_structured_filename(
                 work.get("publication_year"),
                 first_author_last_name,
@@ -228,9 +222,7 @@ def run_openalex_search(
             referenced_works = work.get("referenced_works") or []
             records.append(
                 {
-                    "search_engine_internal_id": _strip_openalex_id_prefix(
-                        work.get("id")
-                    ),
+                    "search_engine_internal_id": _strip_openalex_id_prefix(work.get("id")),
                     "year": work.get("publication_year"),
                     "title": title,
                     "authors": "; ".join(author_names),
@@ -261,12 +253,7 @@ def run_openalex_search(
                 on_progress(f"OpenAlex: page {page} — {len(records)} fetched")
 
         # Warn once when the configurable cap (not an explicit --limit) truncates the output.
-        if (
-            total is not None
-            and effective_limit == max_responses
-            and total > max_responses
-            and not capped_notified
-        ):
+        if total is not None and effective_limit == max_responses and total > max_responses and not capped_notified:
             capped_notified = True
             message = (
                 f"The max output processed is capped by configs to {max_responses}. "

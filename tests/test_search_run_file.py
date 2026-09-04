@@ -95,9 +95,7 @@ def mock_no_dotenv(monkeypatch):
     return mock_load
 
 
-def test_search_run_with_query(
-    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
-):
+def test_search_run_with_query(projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch):
     """Running search with --query should work."""
     os.makedirs(projects_dir / "test-exp")
     monkeypatch.setenv("PROJECT_ID", "test-exp")
@@ -112,9 +110,7 @@ def test_search_run_with_query(
     assert "False" in result.output
 
 
-def test_search_run_with_file_file(
-    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
-):
+def test_search_run_with_file_file(projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch):
     """Running search with --file should load parameters from YAML."""
     os.makedirs(projects_dir / "test-exp")
     monkeypatch.setenv("PROJECT_ID", "test-exp")
@@ -145,17 +141,13 @@ def test_search_run_nonexistent_file_raises(projects_dir, mock_no_dotenv, monkey
     os.makedirs(projects_dir / "test-exp")
     monkeypatch.setenv("PROJECT_ID", "test-exp")
 
-    result = runner.invoke(
-        app, ["search", "run", "--file", "/nonexistent/search_file.yaml"]
-    )
+    result = runner.invoke(app, ["search", "run", "--file", "/nonexistent/search_file.yaml"])
     assert result.exit_code != 0
     assert isinstance(result.exception, LLMExerException)
     assert "does not exist" in str(result.exception)
 
 
-def test_search_run_without_query_or_file_raises(
-    projects_dir, mock_no_dotenv, monkeypatch
-):
+def test_search_run_without_query_or_file_raises(projects_dir, mock_no_dotenv, monkeypatch):
     """Running search without query or config should raise error."""
     os.makedirs(projects_dir / "test-exp")
     monkeypatch.setenv("PROJECT_ID", "test-exp")
@@ -166,9 +158,7 @@ def test_search_run_without_query_or_file_raises(
     assert "No query provided" in str(result.exception)
 
 
-def test_search_run_file_with_missing_fields(
-    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
-):
+def test_search_run_file_with_missing_fields(projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch):
     """search file with missing fields should use defaults."""
     os.makedirs(projects_dir / "test-exp")
     monkeypatch.setenv("PROJECT_ID", "test-exp")
@@ -189,16 +179,12 @@ def test_search_run_file_with_missing_fields(
     assert "False" in result.output  # Default
 
 
-def test_search_run_creates_output_files(
-    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
-):
+def test_search_run_creates_output_files(projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch):
     """Happy path: running search creates JSON and CSV result files."""
     os.makedirs(projects_dir / "test-exp")
     monkeypatch.setenv("PROJECT_ID", "test-exp")
 
-    result = runner.invoke(
-        app, ["search", "run", "--query", "test query", "--limit", "10"]
-    )
+    result = runner.invoke(app, ["search", "run", "--query", "test query", "--limit", "10"])
 
     assert result.exit_code == 0
     assert "File with results" in result.output
@@ -223,9 +209,7 @@ def test_search_run_creates_output_files(
     assert df.iloc[0]["language"] == "en"
 
 
-def test_search_run_fails_if_files_exist(
-    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
-):
+def test_search_run_fails_if_files_exist(projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch):
     """If result files already exist, raises SearchResultsAlreadyExistException."""
     os.makedirs(projects_dir / "test-exp" / "searches", exist_ok=True)
     monkeypatch.setenv("PROJECT_ID", "test-exp")
@@ -245,9 +229,7 @@ def test_search_run_fails_if_files_exist(
     assert isinstance(result2.exception, SearchResultsAlreadyExistException)
 
 
-def test_search_run_rewrite_overwrites(
-    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
-):
+def test_search_run_rewrite_overwrites(projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch):
     """--rewrite allows overwriting existing result files."""
     os.makedirs(projects_dir / "test-exp" / "searches", exist_ok=True)
     monkeypatch.setenv("PROJECT_ID", "test-exp")
@@ -267,9 +249,7 @@ def test_search_run_rewrite_overwrites(
     assert "File with results" in result2.output
 
 
-def test_search_run_language_unknown_on_empty(
-    projects_dir, mock_no_dotenv, mock_openalex_session, monkeypatch
-):
+def test_search_run_language_unknown_on_empty(projects_dir, mock_no_dotenv, mock_openalex_session, monkeypatch):
     """Paper with no title and no abstract gets language='unknown'."""
     os.makedirs(projects_dir / "test-exp")
     monkeypatch.setenv("PROJECT_ID", "test-exp")

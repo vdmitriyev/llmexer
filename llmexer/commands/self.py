@@ -49,10 +49,6 @@ def envs():
         )
         table.add_row(
             key,
-            (
-                Text(str(display), style=style)
-                if (style and not secret and value)
-                else display
-            ),
+            (Text(str(display), style=style) if (style and not secret and value) else display),
         )
     console.print(table)

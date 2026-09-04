@@ -28,9 +28,7 @@ def _mock_client(text="hello", total_tokens=42, side_effect=None):
     if side_effect is not None:
         client.chat.completions.create.side_effect = side_effect
     else:
-        client.chat.completions.create.return_value = _make_completion(
-            text, total_tokens
-        )
+        client.chat.completions.create.return_value = _make_completion(text, total_tokens)
     return client
 
 
@@ -91,9 +89,7 @@ def test_build_session_creates_openai_client():
         caller.build_session()
 
     assert caller.session is mock_client
-    mock_openai_module.OpenAI.assert_called_once_with(
-        base_url=caller.base_url, api_key=caller.auth.api_key
-    )
+    mock_openai_module.OpenAI.assert_called_once_with(base_url=caller.base_url, api_key=caller.auth.api_key)
 
 
 # ---------------------------------------------------------------------------

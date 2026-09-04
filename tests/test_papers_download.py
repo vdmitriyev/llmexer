@@ -42,9 +42,7 @@ def experiment(projects_dir):
     return pid, exp_path
 
 
-def _make_unpaywall_response(
-    pdf_url="http://example.com/paper.pdf", has_oa=True, pdf_url_null=False
-):
+def _make_unpaywall_response(pdf_url="http://example.com/paper.pdf", has_oa=True, pdf_url_null=False):
     mock = MagicMock()
     mock.raise_for_status = Mock()
     if has_oa and not pdf_url_null:
@@ -71,9 +69,7 @@ def _make_pdf_response(url="http://example.com/paper.pdf", filename=None):
 def _mock_session(*get_side_effects):
     """Return a mock session whose .get() returns the given side effects in order."""
     mock_session = MagicMock()
-    if len(get_side_effects) == 1 and not isinstance(
-        get_side_effects[0], (list, Exception)
-    ):
+    if len(get_side_effects) == 1 and not isinstance(get_side_effects[0], (list, Exception)):
         mock_session.get.return_value = get_side_effects[0]
     else:
         mock_session.get.side_effect = list(get_side_effects)
@@ -129,9 +125,7 @@ def test_download_email_from_env(projects_dir, mock_no_dotenv, experiment, monke
         "llmexer.base.papers.make_http_session",
         side_effect=[_mock_session(unpaywall_mock), _mock_session(pdf_mock)],
     ):
-        result = runner.invoke(
-            app, ["papers", "download", "--pid", pid, "--doi", "10.1000/xyz"]
-        )
+        result = runner.invoke(app, ["papers", "download", "--pid", pid, "--doi", "10.1000/xyz"])
 
     assert result.exit_code == 0
     assert (exp_path / "papers" / "paper.pdf").exists()
@@ -265,9 +259,7 @@ def test_download_no_pdf_url_skips(projects_dir, mock_no_dotenv, experiment):
     assert "skipped" in result.output
 
 
-def test_download_unpaywall_request_failure_skips(
-    projects_dir, mock_no_dotenv, experiment
-):
+def test_download_unpaywall_request_failure_skips(projects_dir, mock_no_dotenv, experiment):
     """When the Unpaywall API call raises a network error, the DOI is skipped."""
     import requests as req
 
@@ -332,9 +324,7 @@ def test_download_pdf_request_failure_skips(projects_dir, mock_no_dotenv, experi
     assert "failed" in result.output
 
 
-def test_download_search_file_failed_csv_saved_to_logs(
-    projects_dir, mock_no_dotenv, experiment
-):
+def test_download_search_file_failed_csv_saved_to_logs(projects_dir, mock_no_dotenv, experiment):
     """A --search-file run with a failing download writes the failed CSV into searches/logs/."""
     import pandas as pd
     import requests as req
@@ -343,9 +333,9 @@ def test_download_search_file_failed_csv_saved_to_logs(
     searches_path = exp_path / "searches"
     os.makedirs(searches_path)
     search_file = "20260101-aaaaaaaa__results.csv"
-    pd.DataFrame(
-        [{"doi": "10.1000/xyz", "title": "T", "pdf_filename": "T.pdf"}]
-    ).to_csv(searches_path / search_file, index=False, sep=";", encoding="utf-8")
+    pd.DataFrame([{"doi": "10.1000/xyz", "title": "T", "pdf_filename": "T.pdf"}]).to_csv(
+        searches_path / search_file, index=False, sep=";", encoding="utf-8"
+    )
 
     unpaywall_mock = _make_unpaywall_response("http://example.com/paper.pdf")
     pdf_session = MagicMock()
@@ -370,9 +360,7 @@ def test_download_search_file_failed_csv_saved_to_logs(
         )
 
     assert result.exit_code == 0, result.output
-    failed_csv = (
-        searches_path / "logs" / "20260101-aaaaaaaa__results_download_failed.csv"
-    )
+    failed_csv = searches_path / "logs" / "20260101-aaaaaaaa__results_download_failed.csv"
     assert failed_csv.exists()
 
 
@@ -430,9 +418,7 @@ def test_download_search_file_triggers_sync(projects_dir, mock_no_dotenv, experi
     assert bool(df.iloc[0]["pdf_downloaded"]) is True
 
 
-def test_download_search_file_sync_does_not_add_new_rows(
-    projects_dir, mock_no_dotenv, experiment
-):
+def test_download_search_file_sync_does_not_add_new_rows(projects_dir, mock_no_dotenv, experiment):
     """The post-download sync does not append unlisted PDFs: unrelated PDFs are not appended."""
     import pandas as pd
 

@@ -50,9 +50,7 @@ def _write_search_yaml(exp_path, search_id):
     yaml_filename = f"{search_id}.yaml"
     yaml_path = exp_path / "searches" / yaml_filename
     with open(yaml_path, "w") as f:
-        yaml.dump(
-            {"query": "test query", "year": "2020-2025", "onlyOpenAccess": False}, f
-        )
+        yaml.dump({"query": "test query", "year": "2020-2025", "onlyOpenAccess": False}, f)
     return yaml_filename
 
 
@@ -86,9 +84,7 @@ def test_sync_updates_pdf_downloaded(projects_dir, mock_no_dotenv, experiment):
     yaml_filename = _write_search_yaml(exp_path, SEARCH_ID)
 
     pdf_name = "2023_Smith_Test_Paper_10.1234_test.pdf"
-    _write_results_csv(
-        exp_path, SEARCH_ID, [_blank_row(pdf_filename=pdf_name, pdf_downloaded=False)]
-    )
+    _write_results_csv(exp_path, SEARCH_ID, [_blank_row(pdf_filename=pdf_name, pdf_downloaded=False)])
 
     # Create the PDF in papers/
     (exp_path / "papers" / pdf_name).write_bytes(b"%PDF-1.4")
@@ -143,17 +139,13 @@ def test_sync_adds_new_pdf(projects_dir, mock_no_dotenv, experiment):
     pid, exp_path = experiment
     yaml_filename = _write_search_yaml(exp_path, SEARCH_ID)
 
-    _write_results_csv(
-        exp_path, SEARCH_ID, [_blank_row(pdf_filename="existing_paper.pdf")]
-    )
+    _write_results_csv(exp_path, SEARCH_ID, [_blank_row(pdf_filename="existing_paper.pdf")])
     (exp_path / "papers" / "existing_paper.pdf").write_bytes(b"%PDF-1.4")
 
     new_pdf = "2024_Jones_New_Paper_NO_doi.pdf"
     (exp_path / "papers" / new_pdf).write_bytes(b"%PDF-1.4")
 
-    result = runner.invoke(
-        app, ["search", "sync", "--file", yaml_filename, "--add-local-extra-pdfs"]
-    )
+    result = runner.invoke(app, ["search", "sync", "--file", yaml_filename, "--add-local-extra-pdfs"])
 
     assert result.exit_code == 0, result.output
     df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}__results.csv", sep=";")
@@ -203,9 +195,7 @@ def test_sync_new_pdf_with_txt_and_md(projects_dir, mock_no_dotenv, experiment):
     (exp_path / "papers" / f"{stem}.txt").write_text("text content")
     (exp_path / "papers" / f"{stem}.md").write_text("# md content")
 
-    result = runner.invoke(
-        app, ["search", "sync", "--file", yaml_filename, "--add-local-extra-pdfs"]
-    )
+    result = runner.invoke(app, ["search", "sync", "--file", yaml_filename, "--add-local-extra-pdfs"])
 
     assert result.exit_code == 0, result.output
     df = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}__results.csv", sep=";")
@@ -234,9 +224,7 @@ def test_sync_updates_filtered_csv(projects_dir, mock_no_dotenv, experiment):
 
     assert result.exit_code == 0, result.output
 
-    df_results = pd.read_csv(
-        exp_path / "searches" / f"{SEARCH_ID}__results.csv", sep=";"
-    )
+    df_results = pd.read_csv(exp_path / "searches" / f"{SEARCH_ID}__results.csv", sep=";")
     assert df_results.iloc[0]["pdf_downloaded"] == True
 
     df_filtered_after = pd.read_csv(filtered_path, sep=";")
@@ -254,12 +242,8 @@ def test_sync_all_searches_when_no_file(projects_dir, mock_no_dotenv, experiment
 
     pdf_a = "paper_a.pdf"
     pdf_b = "paper_b.pdf"
-    _write_results_csv(
-        exp_path, search_a, [_blank_row(pdf_filename=pdf_a, pdf_downloaded=False)]
-    )
-    _write_results_csv(
-        exp_path, search_b, [_blank_row(pdf_filename=pdf_b, pdf_downloaded=False)]
-    )
+    _write_results_csv(exp_path, search_a, [_blank_row(pdf_filename=pdf_a, pdf_downloaded=False)])
+    _write_results_csv(exp_path, search_b, [_blank_row(pdf_filename=pdf_b, pdf_downloaded=False)])
     (exp_path / "papers" / pdf_a).write_bytes(b"%PDF-1.4")
     (exp_path / "papers" / pdf_b).write_bytes(b"%PDF-1.4")
     # An unlisted extra PDF that must NOT be appended to any search in bulk mode.
@@ -281,17 +265,13 @@ def test_sync_dry_run_no_writes(projects_dir, mock_no_dotenv, experiment):
     yaml_filename = _write_search_yaml(exp_path, SEARCH_ID)
 
     pdf_name = "2023_Smith_Test_Paper_10.1234_test.pdf"
-    _write_results_csv(
-        exp_path, SEARCH_ID, [_blank_row(pdf_filename=pdf_name, pdf_downloaded=False)]
-    )
+    _write_results_csv(exp_path, SEARCH_ID, [_blank_row(pdf_filename=pdf_name, pdf_downloaded=False)])
     (exp_path / "papers" / pdf_name).write_bytes(b"%PDF-1.4")
 
     results_path = exp_path / "searches" / f"{SEARCH_ID}__results.csv"
     mtime_before = results_path.stat().st_mtime
 
-    result = runner.invoke(
-        app, ["--dry-run", "search", "sync", "--file", yaml_filename]
-    )
+    result = runner.invoke(app, ["--dry-run", "search", "sync", "--file", yaml_filename])
 
     assert result.exit_code == 0, result.output
     assert "Dry run" in result.output

@@ -86,9 +86,7 @@ def test_search_create_without_eid_raises(projects_dir, mock_no_dotenv, monkeypa
     assert isinstance(result.exception, ProjectIDRequiredException)
 
 
-def test_search_create_nonexistent_experiment_raises(
-    projects_dir, mock_no_dotenv, monkeypatch
-):
+def test_search_create_nonexistent_experiment_raises(projects_dir, mock_no_dotenv, monkeypatch):
     """Creating search config for nonexistent experiment should raise error."""
     monkeypatch.setenv("PROJECT_ID", "nonexistent")
 

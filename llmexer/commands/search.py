@@ -70,9 +70,7 @@ _SEARCH_FILE_SUFFIXES = [
 
 def _build_stats_grid(df):
     """Build the 2-column stats grid (Publications per Year + Open Access) for a dataframe."""
-    year_counts = (
-        df["year"].dropna().astype(int).value_counts().sort_index(ascending=False)
-    )
+    year_counts = df["year"].dropna().astype(int).value_counts().sort_index(ascending=False)
     year_df = year_counts.rename("count").to_frame()
     year_df["pct"] = (year_df["count"] / year_df["count"].sum() * 100).round(1)
     table1 = Table(title="Papers by Year", expand=True)
@@ -135,9 +133,7 @@ def _build_stats_grid(df):
         )
 
     if "txt_filename" in df.columns:
-        txt_existing = int(
-            df["txt_filename"].fillna("").astype(str).str.strip().ne("").sum()
-        )
+        txt_existing = int(df["txt_filename"].fillna("").astype(str).str.strip().ne("").sum())
         txt_missing = total - txt_existing
         table2.add_row(
             "[white]TXT:[/white] [bold green]existing[/bold green]",
@@ -151,9 +147,7 @@ def _build_stats_grid(df):
         )
 
     if "markdown_filename" in df.columns:
-        md_existing = int(
-            df["markdown_filename"].fillna("").astype(str).str.strip().ne("").sum()
-        )
+        md_existing = int(df["markdown_filename"].fillna("").astype(str).str.strip().ne("").sum())
         md_missing = total - md_existing
         table2.add_row(
             "[white]Markdown:[/white] [bold green]existing[/bold green]",
@@ -182,9 +176,7 @@ def print_search_header(pid, search_id, query, year, only_open_access):
     header.add_row("Search ID:", f"[bold yellow]{search_id}[/bold yellow]")
     header.add_row("Query:", f"[bold green]{query}[/bold green]")
     header.add_row("Year:", f"[bold cyan]{year}[/bold cyan]")
-    header.add_row(
-        "Only Open Access:", f"[bold magenta]{only_open_access}[/bold magenta]"
-    )
+    header.add_row("Only Open Access:", f"[bold magenta]{only_open_access}[/bold magenta]")
     console.print(header)
 
 
@@ -215,11 +207,7 @@ def _collect_export_csvs(file, csv_file, pid, experiment_path, searches_path):
     """Resolve ``--file`` / ``--csv-file`` into the list of search CSVs to export."""
 
     if csv_file is not None:
-        csv_path = (
-            csv_file
-            if os.path.isabs(csv_file)
-            else os.path.join(searches_path, csv_file)
-        )
+        csv_path = csv_file if os.path.isabs(csv_file) else os.path.join(searches_path, csv_file)
         if not os.path.exists(csv_path):
             raise LLMExerException(f"Search results CSV does not exist: '{csv_file}'")
         return [csv_path]
@@ -230,8 +218,7 @@ def _collect_export_csvs(file, csv_file, pid, experiment_path, searches_path):
         )
         print_search_header(pid, search_id, query, year, only_open_access)
         csv_paths = [
-            os.path.join(searches_path, f"{search_id}{suffix}")
-            for suffix in ("__results.csv", "__filtered.csv")
+            os.path.join(searches_path, f"{search_id}{suffix}") for suffix in ("__results.csv", "__filtered.csv")
         ]
         return [p for p in csv_paths if os.path.exists(p)]
 
@@ -314,15 +301,9 @@ def list_searches(
             params = yaml.safe_load(f)
         query = params.get("query", "")
         year = params.get("year", DEFAULT_SEARCH_YEAR_PARAM)
-        ctime = datetime.fromtimestamp(
-            yaml_path.stat().st_ctime, tz=timezone.utc
-        ).strftime("%Y-%m-%d %H:%M:%S")
+        ctime = datetime.fromtimestamp(yaml_path.stat().st_ctime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         results_csv = os.path.join(searches_path, f"{search_id}__results.csv")
-        results_display = (
-            "[bold green]Yes[/bold green]"
-            if os.path.exists(results_csv)
-            else "[dim]No[/dim]"
-        )
+        results_display = "[bold green]Yes[/bold green]" if os.path.exists(results_csv) else "[dim]No[/dim]"
         table.add_row(str(i), yaml_path.name, query, year, ctime, results_display)
 
     console.print(table)
@@ -332,9 +313,7 @@ def list_searches(
 
 
 def print_info_not_search_file(file, results_csv):
-    cprint(
-        f"\n[bold yellow]Warning![/bold yellow] Results file not found:\n[cyan]{results_csv}[/cyan]"
-    )
+    cprint(f"\n[bold yellow]Warning![/bold yellow] Results file not found:\n[cyan]{results_csv}[/cyan]")
     cprint(f"\nRun search command first:")
     cprint(f"[bold yellow]search run --file {file}[/bold yellow]")
 
@@ -396,9 +375,7 @@ def rename_search(
     if os.path.exists(failed_src):
         os.rename(failed_src, failed_dst)
 
-    cprint(
-        f"Renamed search: [bold yellow]{old_id}[/bold yellow] → [bold yellow]{new_id}[/bold yellow]"
-    )
+    cprint(f"Renamed search: [bold yellow]{old_id}[/bold yellow] → [bold yellow]{new_id}[/bold yellow]")
 
 
 @app.command()
@@ -450,14 +427,10 @@ def run(
         )
         cprint(f"Query saved to: [bold blue]{yaml_filename}[/bold blue]")
     if file:
-        search_id, query, year, only_open_access = read_search_params(
-            file, experiment_path, query
-        )
+        search_id, query, year, only_open_access = read_search_params(file, experiment_path, query)
         cprint(f"Loaded config from: [bold blue]{file}[/bold blue]")
     elif not query:
-        raise LLMExerException(
-            "No query provided. Use --query or --file with a YAML file."
-        )
+        raise LLMExerException("No query provided. Use --query or --file with a YAML file.")
 
     cprint(f"Limit: [bold blue]{limit}[/bold blue]")
 
@@ -483,16 +456,12 @@ def run(
 
     print_search_header(pid, search_id, query, year, only_open_access)
 
-    records = run_semantic_scholar_search(
-        query, year, only_open_access, batch, limit, json_path, csv_path, cprint
-    )
+    records = run_semantic_scholar_search(query, year, only_open_access, batch, limit, json_path, csv_path, cprint)
     cprint(f"[bold green]Semantic Scholar:[/bold green] {len(records)} paper(s)")
 
     openalex_key = os.getenv("OPENALEX_API_KEY")
     if openalex_key:
-        oa_json_path = os.path.join(
-            jsons_path, f"{search_id}__openalex_results_raw.json"
-        )
+        oa_json_path = os.path.join(jsons_path, f"{search_id}__openalex_results_raw.json")
         oa_records = run_openalex_search(
             query,
             year,
@@ -506,13 +475,8 @@ def run(
         before = len(records)
         records = combine_new_records(records, oa_records)
         write_records_to_csv(records, csv_path)
-        cprint(
-            f"[bold green]OpenAlex:[/bold green] {len(oa_records)} found, "
-            f"{len(records) - before} new added"
-        )
-        cprint(
-            f"File with OpenAlex raw responses ([magenta]JSON[/magenta]):\n  {oa_json_path}"
-        )
+        cprint(f"[bold green]OpenAlex:[/bold green] {len(oa_records)} found, " f"{len(records) - before} new added")
+        cprint(f"File with OpenAlex raw responses ([magenta]JSON[/magenta]):\n  {oa_json_path}")
     else:
         cprint("[yellow]OpenAlex skipped[/yellow] (OPENALEX_API_KEY not set)")
 
@@ -550,9 +514,7 @@ def merge(
 
     results_csvs, filtered_csvs = gather_search_csvs(searches_path)
     if not results_csvs and not filtered_csvs:
-        raise LLMExerException(
-            f"No search result files found in '{searches_path}'. Run `search run` first."
-        )
+        raise LLMExerException(f"No search result files found in '{searches_path}'. Run `search run` first.")
 
     # (source csvs, stem suffix to strip, output path, label)
     jobs = []
@@ -622,30 +584,21 @@ def stats(
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
 
     if file is None:
-        merged_results_path = os.path.join(
-            searches_path, f"{pid}{MERGED_RESULTS_SUFFIX}"
-        )
-        merged_filtered_path = os.path.join(
-            searches_path, f"{pid}{MERGED_FILTERED_SUFFIX}"
-        )
+        merged_results_path = os.path.join(searches_path, f"{pid}{MERGED_RESULTS_SUFFIX}")
+        merged_filtered_path = os.path.join(searches_path, f"{pid}{MERGED_FILTERED_SUFFIX}")
         merged_paths = [
             (merged_results_path, "Merged results"),
             (merged_filtered_path, "Merged filtered"),
         ]
         if not any(os.path.exists(p) for p, _ in merged_paths):
-            raise UnexpectedCLIParamsException(
-                "--file is required (or run `search merge` first)."
-            )
+            raise UnexpectedCLIParamsException("--file is required (or run `search merge` first).")
         cprint(f"[bold]Project:[/bold] [cyan]{pid}[/cyan]")
         for merged_path, label in merged_paths:
             if not os.path.exists(merged_path):
                 continue
             cprint()
             merged_df = pd.read_csv(merged_path, sep=";")
-            cprint(
-                f"[bold]{label}:[/bold] [yellow]{Path(merged_path).name}[/yellow] "
-                f"({len(merged_df)} papers)"
-            )
+            cprint(f"[bold]{label}:[/bold] [yellow]{Path(merged_path).name}[/yellow] " f"({len(merged_df)} papers)")
             console.print(_build_stats_grid(merged_df))
         return
 
@@ -661,9 +614,7 @@ def stats(
     cprint()
     df = pd.read_csv(csv_path, sep=";")
     tbl_original = _build_stats_grid(df)
-    cprint(
-        f"[bold]Results:[/bold] [yellow]{Path(csv_path).name}[/yellow] ({len(df)} papers)"
-    )
+    cprint(f"[bold]Results:[/bold] [yellow]{Path(csv_path).name}[/yellow] ({len(df)} papers)")
     console.print(tbl_original)
 
     filtered_path = os.path.join(searches_path, f"{search_id}__filtered.csv")
@@ -674,9 +625,7 @@ def stats(
 
     if tbl_filtered is not None:
         cprint()
-        cprint(
-            f"[bold]Filtered:[/bold] [green]{Path(filtered_path).name}[/green] ({len(filtered_df)} papers)"
-        )
+        cprint(f"[bold]Filtered:[/bold] [green]{Path(filtered_path).name}[/green] ({len(filtered_df)} papers)")
         console.print(tbl_filtered)
 
 
@@ -724,9 +673,7 @@ def _filter_search(search_id, experiment_path, filters):
             f"[bold white]{input_n}[/bold white] → [bold green]{output_n}[/bold green]"
         )
         if not settings.dry_run:
-            _log_filter_applied(
-                logs_path, Path(filtered_path).name, desc, input_n, output_n
-            )
+            _log_filter_applied(logs_path, Path(filtered_path).name, desc, input_n, output_n)
 
     if not settings.dry_run:
         current.to_csv(filtered_path, index=False, encoding="utf-8", sep=";")
@@ -788,11 +735,7 @@ def filter_results(
         filters.append(
             (
                 "downloaded",
-                lambda d: d["pdf_downloaded"]
-                .astype(str)
-                .str.strip()
-                .str.lower()
-                .isin({"true", "1"}),
+                lambda d: d["pdf_downloaded"].astype(str).str.strip().str.lower().isin({"true", "1"}),
             )
         )
 
@@ -814,9 +757,7 @@ def filter_results(
             return
 
     for search_id in search_ids:
-        _, query, year, only_open_access = read_search_params(
-            f"{search_id}.yaml", experiment_path
-        )
+        _, query, year, only_open_access = read_search_params(f"{search_id}.yaml", experiment_path)
         print_search_header(pid, search_id, query, year, only_open_access)
         _filter_search(search_id, experiment_path, filters)
 
@@ -861,9 +802,7 @@ def _sync_search(search_id, experiment_path, add_new_rows=True):
             filtered_df, papers_path, add_new_rows=add_new_rows
         )
         if not settings.dry_run:
-            updated_filtered_df.to_csv(
-                filtered_csv, index=False, encoding="utf-8", sep=";"
-            )
+            updated_filtered_df.to_csv(filtered_csv, index=False, encoding="utf-8", sep=";")
             logger.debug("Synced filtered CSV: '%s'", filtered_csv)
         else:
             cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{filtered_csv}'")
@@ -914,9 +853,7 @@ def sync(
         add_new_rows = False  # bulk sync never appends local extra PDFs
 
     for search_id in search_ids:
-        _, query, year, only_open_access = read_search_params(
-            f"{search_id}.yaml", experiment_path
-        )
+        _, query, year, only_open_access = read_search_params(f"{search_id}.yaml", experiment_path)
         print_search_header(pid, search_id, query, year, only_open_access)
         _sync_search(search_id, experiment_path, add_new_rows=add_new_rows)
 
@@ -962,15 +899,11 @@ def export(
     experiment_path = get_project_directory_path(pid)
     searches_path = os.path.join(experiment_path, SEARCHES_DIR)
 
-    csv_paths = _collect_export_csvs(
-        file, csv_file, pid, experiment_path, searches_path
-    )
+    csv_paths = _collect_export_csvs(file, csv_file, pid, experiment_path, searches_path)
 
     if not csv_paths:
         if file is not None:
-            print_info_not_search_file(
-                file, os.path.join(searches_path, f"{file}__results.csv")
-            )
+            print_info_not_search_file(file, os.path.join(searches_path, f"{file}__results.csv"))
         else:
             cprint("No searches found.")
         return

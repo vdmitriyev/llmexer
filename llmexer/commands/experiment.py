@@ -48,7 +48,7 @@ from llmexer.common import (
 )
 from llmexer.configs import console, cprint, settings
 from llmexer.constants import PAPERS_DIR, PROJECTS_PATH, SEARCHES_DIR
-from llmexer.exceptions import LLMExerException
+from llmexer.exceptions import LLMExerException, UnexpectedCLIParamsException
 
 
 class SortBy(str, Enum):
@@ -1081,6 +1081,40 @@ def _report_no_rows_to_run(active_filters: list[str], code: str | None) -> None:
     cprint("[bold yellow]Warning:[/bold yellow] Experiment database is empty — " "nothing to run.")
 
 
+def _partition_rows_to_run(rows: list[dict], total_runs: int) -> tuple[list[dict], list[str]]:
+    """Split fetched rows into the ones ``run`` still has to call, and their labels.
+
+    Done on the calling thread, in row order, so the ``skipped`` lines keep coming
+    out in order however the remaining rows are then executed. Under ``--dry-run``
+    every pending row is reported as running and nothing is returned to execute.
+
+    Returns:
+        tuple[list[dict], list[str]]: the rows to run and their ``[i/N][code]``
+            console prefixes, index-aligned.
+    """
+
+    pending: list[dict] = []
+    prefixes: list[str] = []
+    for index, row in enumerate(rows):
+        current_run_info = f"[[green]{index+1}[/green]/[cyan]{total_runs}[/cyan]]"
+        experiment_info = f"[[yellow]{row['code']}[/yellow]]"
+        run_info_prefix = f"{current_run_info}{experiment_info}"
+
+        # Skip rows that already completed successfully on an earlier run.
+        if row.get("status") == "success":
+            cprint(f"{run_info_prefix} [bold yellow]skipped[/bold yellow] (already success)")
+            continue
+
+        if settings.dry_run:
+            cprint(f"{run_info_prefix} running")
+            continue
+
+        pending.append(row)
+        prefixes.append(run_info_prefix)
+
+    return pending, prefixes
+
+
 @app.command()
 def run(
     pid: str = typer.Option(
@@ -1116,8 +1150,18 @@ def run(
         "--code",
         help="Run only a single combination by its `code` (or numeric ID) instead of all rows.",
     ),
+    parallel_calls: int = typer.Option(
+        1,
+        "--parallel-calls",
+        help="Maximum number of LLM calls to run at the same time, across all providers. "
+        "Results are still written one at a time. Defaults to 1 (sequential). "
+        "E.g. --parallel-calls 4",
+    ),
 ) -> None:
     """Run rows from the generated experiment database and save results"""
+
+    if parallel_calls < 1:
+        raise UnexpectedCLIParamsException("--parallel-calls must be 1 or greater.")
 
     pid = get_proper_pid(pid)
     db_path, experiment_subdir_path = _resolve_experiment_db(pid, file)
@@ -1142,7 +1186,7 @@ def run(
         from llmexer.base.llm_manager import (
             build_response_payload,
             result_values,
-            run_experiment_row,
+            run_experiment_rows,
         )
     except ImportError as exc:
         raise LLMExerException(
@@ -1174,41 +1218,43 @@ def run(
         total_runs = len(rows)
         cprint(f"Total experiments to run: [bold green]{total_runs}[/bold green]")
 
-        ran = 0
-        for index, row in enumerate(rows):
-            current_run_info = f"[[green]{index+1}[/green]/[cyan]{total_runs}[/cyan]]"
-            experiment_info = f"[[yellow]{row['code']}[/yellow]]"
-            run_info_prefix = f"{current_run_info}{experiment_info}"
+        if parallel_calls > 1:
+            cprint(f"Parallel LLM calls: [bold yellow]{parallel_calls}[/bold yellow]")
 
-            # Skip rows that already completed successfully on an earlier run.
-            if row.get("status") == "success":
-                cprint(f"{run_info_prefix} [bold yellow]skipped[/bold yellow] (already success)")
-                continue
+        pending, prefixes = _partition_rows_to_run(rows, total_runs)
 
-            cprint(f"{run_info_prefix} running")
+        def on_start(position: int, _row: dict) -> None:
+            cprint(f"{prefixes[position]} running")
+
+        def persist(position: int, row: dict, experiment) -> None:
+            """Write one row's result. Called under the runner's write lock."""
+
             provider = row.get("_provider") or str(row["provider_name"]).lower()
-
-            if settings.dry_run:
-                continue
-
-            experiment = run_experiment_row(row)
-            status = experiment.status
-
             json_payload = build_response_payload(experiment, provider)
 
-            # Save individual JSON response (kept alongside the DB row).
+            # Save individual JSON response (kept alongside the DB row). The row
+            # ID is part of the name: two calls finishing in the same microsecond
+            # would otherwise land on the same file.
             file_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
             safe_model = str(row["model_name"]).replace("/", "-").replace(":", "-")
-            json_path = os.path.join(responses_dir, f"{file_ts}_{safe_model}_{provider}.json")
+            json_name = f"{file_ts}_{row['ID']}_{safe_model}_{provider}.json"
+            json_path = os.path.join(responses_dir, json_name)
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(json_payload, f, indent=2, ensure_ascii=False)
 
             dao.update_result(provider, row["ID"], result_values(experiment, provider))
-            ran += 1
 
+            status = experiment.status
             status_color = "green" if status == "success" else "red"
             run_status_info = f"[bold {status_color}]{status} [/bold {status_color}]"
-            cprint(f"{run_info_prefix} finished {run_status_info}")
+            cprint(f"{prefixes[position]} finished {run_status_info}")
+
+        ran = run_experiment_rows(
+            pending,
+            persist=persist,
+            parallel_calls=parallel_calls,
+            on_start=on_start,
+        )
 
         if not settings.dry_run:
             cprint(
