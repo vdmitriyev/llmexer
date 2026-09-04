@@ -26,6 +26,7 @@ from llmexer.base.llm_provider import (
     VLLMProvider,
     _is_set,
 )
+from llmexer.common import get_user_agent
 from llmexer.exceptions import ProviderConfigException
 
 
@@ -350,7 +351,33 @@ def test_provider_auth_is_used_for_the_client(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "openai", fake_openai)
 
     caller.build_session()
-    fake_openai.OpenAI.assert_called_once_with(base_url=None, api_key="sk-test")  # gitleaks:allow
+    fake_openai.OpenAI.assert_called_once_with(
+        base_url=None,
+        api_key="sk-test",  # gitleaks:allow
+        default_headers={"User-Agent": get_user_agent()},
+    )
+
+
+@pytest.mark.parametrize(
+    "provider_class, provider",
+    [
+        (OpenAIProvider, "openai"),
+        (OllamaProvider, "ollama"),
+        (VLLMProvider, "vllm"),
+        (GeminiProvider, "gemini"),
+    ],
+)
+def test_user_agent_header_is_sent_by_every_provider(monkeypatch, provider_class, provider):
+    """Every provider identifies llmexer to the backend via a User-Agent header."""
+    fake_openai = MagicMock()
+    monkeypatch.setitem(__import__("sys").modules, "openai", fake_openai)
+
+    provider_class(provider=provider).build_session()
+
+    headers = fake_openai.OpenAI.call_args.kwargs["default_headers"]
+    assert headers["User-Agent"] == get_user_agent()
+    # Named and versioned, e.g. "llmexer/0.3.10 (...)" -- not a bare SDK default.
+    assert headers["User-Agent"].startswith("llmexer/")
 
 
 def test_timeout_is_forwarded_only_when_set(monkeypatch):

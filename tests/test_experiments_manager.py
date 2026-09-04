@@ -481,6 +481,18 @@ def test_run_error_state_recorded(db_file, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def _model_keys(data):
+    """The (model_name, provider) pair of every per-model aggregate."""
+    return {(agg["model_name"], agg["provider"]) for agg in data["models"]}
+
+
+def _agg_for(data, model_name, provider):
+    """The single per-model aggregate for one (model, provider) pair."""
+    matches = [agg for agg in data["models"] if agg["model_name"] == model_name and agg["provider"] == provider]
+    assert len(matches) == 1, f"expected exactly one aggregate for {model_name}/{provider}, got {len(matches)}"
+    return matches[0]
+
+
 def test_stats_before_run(db_file):
     mgr = ExperimentsManager(db_file)
     data = mgr.stats()
@@ -488,15 +500,26 @@ def test_stats_before_run(db_file):
     assert data["finished"] == 0
     assert "pending" not in data
     assert data["providers"] == {"ollama": 1, "openai": 1, "litellm": 1}
-    assert set(data["models"]) == {"llama3.3:latest", "gpt-4o", "gpt-oss:120b"}
+    assert _model_keys(data) == {
+        ("llama3.3:latest", "ollama"),
+        ("gpt-4o", "openai"),
+        ("gpt-oss:120b", "litellm"),
+    }
     # Each model is an aggregate dict: nothing run yet -> all open, no finished.
-    for agg in data["models"].values():
+    for agg in data["models"]:
         assert agg["requests"] == 1
         assert agg["finished"] == 0
         assert agg["open"] == 1
         assert agg["tokens"] == 0
         assert agg["elapsed_seconds"] == 0.0
         assert agg["avg_elapsed_seconds"] == 0.0
+
+
+def test_stats_models_sorted_by_model_then_provider(db_file):
+    """The per-model aggregates come out in a deterministic render order."""
+    data = ExperimentsManager(db_file).stats()
+    keys = [(agg["model_name"], agg["provider"]) for agg in data["models"]]
+    assert keys == sorted(keys)
 
 
 def test_stats_after_run(db_file, mock_providers):
@@ -508,12 +531,32 @@ def test_stats_after_run(db_file, mock_providers):
     assert data["errors"] == 0
     assert data["total_tokens"] == 84
     # Per-model aggregates reflect the finished run (mock yields 42 tokens each).
-    ollama = data["models"]["llama3.3:latest"]
+    ollama = _agg_for(data, "llama3.3:latest", "ollama")
     assert ollama["finished"] == 1
     assert ollama["open"] == 0
     assert ollama["tokens"] == 42
     # One finished request → average elapsed equals the total elapsed.
     assert ollama["avg_elapsed_seconds"] == ollama["elapsed_seconds"]
+
+
+def test_stats_splits_one_model_served_by_two_providers(tmp_path):
+    """The same model_name under two providers is two rows, not one merged one."""
+    path = tmp_path / "experiment_shared_model.db"
+    seed_db(
+        path,
+        {
+            "ollama": [dict(OLLAMA_ROW, ID=1, model_name="gpt-oss:120b")],
+            "litellm": [dict(LITELLM_ROW, ID=2, model_name="gpt-oss:120b")],
+        },
+    )
+
+    data = ExperimentsManager(str(path)).stats()
+
+    assert _model_keys(data) == {("gpt-oss:120b", "litellm"), ("gpt-oss:120b", "ollama")}
+    # Each carries only its own provider's request, rather than the sum of both.
+    assert _agg_for(data, "gpt-oss:120b", "ollama")["requests"] == 1
+    assert _agg_for(data, "gpt-oss:120b", "litellm")["requests"] == 1
+    assert data["total"] == 2
 
 
 def test_stats_counts_errors(db_file, monkeypatch):
@@ -556,10 +599,33 @@ def test_cli_stats_command(projects_dir):
     assert "total" in result.output
     assert "ollama" in result.output
     # The Models table now carries per-model aggregate columns.
-    for header in ("Model", "finished", "open", "time total", "tokens"):
+    for header in ("Model", "Provider", "finished", "open", "time total", "tokens"):
         assert header in result.output
     # The average-time column header is present (single token, robust to wrapping).
     assert "average" in result.output
+
+
+def test_cli_stats_models_table_names_the_provider(projects_dir):
+    """One model served by two providers is listed once per provider."""
+    pid = "stats-shared-model"
+    exp_subdir = projects_dir / pid / "experiment"
+    os.makedirs(exp_subdir)
+    seed_db(
+        exp_subdir / _DB_NAME,
+        {
+            "ollama": [dict(OLLAMA_ROW, ID=1, model_name="gpt-oss:120b")],
+            "litellm": [dict(LITELLM_ROW, ID=2, model_name="gpt-oss:120b")],
+        },
+    )
+
+    result = runner.invoke(app, ["experiment", "stats", "--pid", pid, "--file", _DB_NAME])
+
+    assert result.exit_code == 0, result.exception
+    assert "Provider" in result.output
+    # Each provider is named twice: once in the Providers table, and once again on
+    # its own row of the Models table -- which is what tells the two rows apart.
+    assert result.output.count("ollama") >= 2
+    assert result.output.count("litellm") >= 2
 
 
 def test_cli_stats_defaults_to_single_db(projects_dir, mock_providers):

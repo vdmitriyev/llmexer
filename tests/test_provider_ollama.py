@@ -12,6 +12,7 @@ from llmexer.base.llm_provider import (
     ProviderRequest,
     ProviderResponse,
 )
+from llmexer.common import get_user_agent
 
 
 def _make_completion(text="hello", total_tokens=42):
@@ -89,7 +90,11 @@ def test_build_session_creates_openai_client():
         caller.build_session()
 
     assert caller.session is mock_client
-    mock_openai_module.OpenAI.assert_called_once_with(base_url=caller.base_url, api_key=caller.auth.api_key)
+    mock_openai_module.OpenAI.assert_called_once_with(
+        base_url=caller.base_url,
+        api_key=caller.auth.api_key,
+        default_headers={"User-Agent": get_user_agent()},
+    )
 
 
 # ---------------------------------------------------------------------------

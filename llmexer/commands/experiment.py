@@ -40,6 +40,7 @@ from llmexer.base.experiment import (
     _get_generated_experiment_files,
     _is_experiment_initialized,
 )
+from llmexer.base.experiment_export import export_db_to_html
 from llmexer.common import (
     ensure_directory_exists,
     get_experiment_subdir_path,
@@ -1532,15 +1533,22 @@ def stats(
     if models:
         table = Table(title="Models")
         table.add_column("Model", style="cyan")
+        # The same model served by two providers is two rows: name it on each.
+        # ``no_wrap`` here and on the two HH:MM:SS columns keeps those fixed-width
+        # values whole where an eighth column no longer fits an 80-column terminal
+        # -- without it Rich ellipsises them to 'ollama…' / '00:00:…'. Everything
+        # is shown in full from ~100 columns on.
+        table.add_column("Provider", style="cyan", no_wrap=True)
         table.add_column("requests", justify="right", style="green")
         table.add_column("finished", justify="right", style="green")
         table.add_column("open", justify="right", style="green")
-        table.add_column("time total", justify="right", style="green")
-        table.add_column("average time", justify="right", style="green")
+        table.add_column("time total", justify="right", style="green", no_wrap=True)
+        table.add_column("average time", justify="right", style="green", no_wrap=True)
         table.add_column("tokens", justify="right", style="green")
-        for name, agg in models.items():
+        for agg in models:
             table.add_row(
-                name,
+                agg["model_name"],
+                agg["provider"],
                 str(agg["requests"]),
                 str(agg["finished"]),
                 str(agg["open"]),
@@ -1549,6 +1557,53 @@ def stats(
                 str(agg["tokens"]),
             )
         console.print(table)
+
+
+@app.command()
+def export(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    file: str = typer.Option(
+        None,
+        "--file",
+        help="Experiment database to export. Defaults to the newest experiment_*.db.",
+    ),
+    rewrite: bool = typer.Option(
+        False,
+        "--rewrite",
+        help="Overwrite the HTML file if it already exists.",
+    ),
+) -> None:
+    """Export a generated experiment database as a sortable, filterable HTML page
+
+    The page is written next to the database with the same name and an ``.html``
+    extension. Every generated row is exported, run or not: an unrun row simply
+    carries an empty response and no status.
+    """
+
+    pid = get_proper_pid(pid)
+    db_path, _ = _resolve_experiment_db(pid, file)
+
+    html_path = f"{os.path.splitext(db_path)[0]}.html"
+
+    if os.path.exists(html_path) and not rewrite:
+        cprint(
+            f"[bold yellow]Warning:[/bold yellow] '{Path(html_path).name}' already exists. "
+            "Use --rewrite to overwrite."
+        )
+        return
+
+    if settings.dry_run:
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{html_path}'")
+        return
+
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    rows = export_db_to_html(db_path, html_path, pid, generated_at)
+
+    cprint(f"File with export ([magenta]HTML[/magenta]) — {rows} rows:\n  {html_path}")
 
 
 @app.command(name="list")

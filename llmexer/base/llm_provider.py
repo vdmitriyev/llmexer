@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any, Dict, Optional, Tuple
 
 from llmexer.base.experiment import FILE_LLM_PARAMS, FILE_LLMS_FOR_EXPERIMENT
+from llmexer.common import get_user_agent
 from llmexer.configs import logger
 from llmexer.exceptions import ProviderConfigException
 
@@ -17,8 +18,6 @@ URL_MAP: Dict[str, Optional[str]] = {
     "vllm": "http://localhost:8000/v1",
     "openai": None,
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
-    # A LiteLLM proxy is always remote and site-specific: there is no sensible
-    # default, so PROVIDER_LITELLM_URL must be set explicitly.
     "litellm": None,
 }
 
@@ -222,7 +221,11 @@ class OpenAICompatibleProvider(LLMProviderBase):
         from openai import OpenAI  # lazy import — openai is an optional dependency
 
         self.validate_config()
-        kwargs: Dict[str, Any] = {"base_url": self.base_url, "api_key": self.auth.api_key}
+        kwargs: Dict[str, Any] = {
+            "base_url": self.base_url,
+            "api_key": self.auth.api_key,
+            "default_headers": {"User-Agent": get_user_agent()},
+        }
         if self.timeout is not None:
             # Passed only when set, so providers that configure no timeout keep
             # getting the SDK's own default.

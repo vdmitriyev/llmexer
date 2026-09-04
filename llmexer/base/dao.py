@@ -27,7 +27,7 @@ providers are present.
 import math
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import (
     Column,
@@ -735,11 +735,17 @@ class ExperimentDAO:
         """Aggregate statistics across every provider table in the database.
 
         Reads only identity and result columns, so no params join is needed.
+
+        ``models`` is a list of per-(model, provider) aggregates sorted by model
+        then provider: the same ``model_name`` served by two providers is reported
+        once for each, never summed into a single row.
         """
 
         total = finished = running = errors = total_tokens = 0
         providers: Dict[str, int] = {}
-        models: Dict[str, Dict[str, Any]] = {}
+        # Keyed by (model_name, provider): one model served by two providers is two
+        # distinct aggregates, not one merged row.
+        models: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
         with self.engine.connect() as conn:
             for prov, table in self._tables.items():
@@ -793,8 +799,10 @@ class ExperimentDAO:
                     ).group_by(table.c.model_name)
                 ):
                     agg = models.setdefault(
-                        str(name),
+                        (str(name), prov),
                         {
+                            "model_name": str(name),
+                            "provider": prov,
                             "requests": 0,
                             "finished": 0,
                             "open": 0,
@@ -808,8 +816,12 @@ class ExperimentDAO:
                     agg["tokens"] += int(toks or 0)
                     agg["elapsed_seconds"] += float(secs or 0.0)
 
-        # Mean elapsed time per finished request (over the cross-table totals).
-        for agg in models.values():
+        # Sorted by (model_name, provider), so the rows of one model served by
+        # several providers come out next to each other.
+        model_rows = [dict(agg) for _, agg in sorted(models.items())]
+
+        # Mean elapsed time per finished request.
+        for agg in model_rows:
             agg["avg_elapsed_seconds"] = agg["elapsed_seconds"] / agg["finished"] if agg["finished"] else 0.0
 
         return {
@@ -819,7 +831,7 @@ class ExperimentDAO:
             "errors": errors,
             "total_tokens": total_tokens,
             "providers": providers,
-            "models": models,
+            "models": model_rows,
         }
 
     # ----------------------------------------------------------------- cleanup

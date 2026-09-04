@@ -2,6 +2,14 @@
 History
 =======
 
+0.3.10 (2026-09-04)
+-------------------
+
+* ``experiment stats``: the Models table gains a ``Provider`` column and is grouped by (model, provider), sorted by model then provider. A model served by several providers was previously merged into one row that belonged to neither.
+* **Breaking:** ``ExperimentDAO.stats()`` now returns ``models`` as a list of per-(model, provider) aggregates carrying ``model_name`` and ``provider``, instead of a dict keyed by model name; ``providers`` and the totals are unchanged.
+* Add `user-agent` name and version to the LLM calls
+* Add ``experiment export``: render a generated experiment database as an HTML page next to it. Sortable columns, per-column filters, row counters, dark mode and a copy button on every cell. Exports ``provider``, ``model``, ``profile``, ``code``, ``response_text``, ``tokens``, ``status``, ``seconds``, ``timestamp`` and ``try`` for every row, run or not.
+
 0.3.9 (2026-09-04)
 -------------------
 

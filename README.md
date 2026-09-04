@@ -98,14 +98,13 @@ llmexer experiment init --pid llm-survey-2026
 
 Initialization of the project creates following files (inside <PROJECT_NAME> folder):
 
-* *`experiment/llms-for-experiment.csv` - list of models to use (provider, model_name, profile_name, notes); pre-filled with `gemma4:31b`, `phi4:14b`. Each row is one model run under one `llm-params.csv` profile — list a model twice to run it under two profiles
-* `experiment/data.csv` - input data rows (ID, Title, Abstract)
-* `experiment/mapping.csv` - maps data IDs to prompt IDs; pre-filled with `D01;prompt01` and `D02;prompt01`
-* `experiment/prompts/prompt01.txt` - a starter Jinja2 prompt template using `{{title}}` and `{{abstract}}`
-* `experiment/llm-params.csv` - LLM hyperparameter profiles;
-    - identity columns: `provider`, `model_name`, `profile_name`;
-    - universal columns: `temperature`, `top_p`, `max_tokens`;
-    - provider-grouped columns: `ollama_context_window`, `ollama_repeat_penalty` (ollama), `vllm_min_p`, `vllm_best_of` (vllm), `openai_seed` (openai), `gemini_thinking_level` (gemini), `litellm_min_p`, `litellm_best_of` (litellm); pre-filled with example profiles for `ollama`, `openai`, `vllm`, `gemini`, and `litellm`
+| File | Description |
+| :-------- | :---------- |
+| `experiment/llms-for-experiment.csv` | List of models to use (`provider`, `model_name`, `profile_name`, `notes`); pre-filled with `gemma4:31b`, `phi4:14b`. Each row is one model run under one `llm-params.csv` profile — list a model twice to run it under two profiles. |
+| `experiment/data.csv` | Input data rows (`ID`, `Title`, `Abstract`). |
+| `experiment/mapping.csv` | Maps data IDs to prompt IDs; pre-filled with `D01;prompt01` and `D02;prompt01`. |
+| `experiment/prompts/prompt01.txt` | A starter Jinja2 prompt template using `{{title}}` and `{{abstract}}`. |
+| `experiment/llm-params.csv` | LLM hyperparameter profiles. Identity columns: `provider`, `model_name`, `profile_name`; universal columns: `temperature`, `top_p`, `max_tokens`; provider-grouped columns: `ollama_context_window`, `ollama_repeat_penalty` (ollama), `vllm_min_p`, `vllm_best_of` (vllm), `openai_seed` (openai), `gemini_thinking_level` (gemini), `litellm_min_p`, `litellm_best_of` (litellm). Pre-filled with example profiles for `ollama`, `openai`, `vllm`, `gemini`, and `litellm`. |
 
 </details>
 
@@ -192,7 +191,7 @@ Every option of `experiment run` — previewing a run, restricting it to one pro
 
 **8. Inspect experiment statistics**
 
-Get aggregate statistics (total, finished, running, errors, total tokens, and per-provider / per-model breakdowns). The per-model table reports, for each model, `requests`, `finished`, `open` (pending/unrun), `time total` (HH:MM:SS elapsed over finished requests), `average time` (HH:MM:SS mean elapsed per finished request), and `tokens` (summed over finished requests). With no `--file` it reads the project's single `experiment_*.db` (pass `--file` if several exist):
+Get aggregate statistics (total, finished, running, errors, total tokens, and per-provider / per-model breakdowns). The per-model table reports, for each model, the `provider` serving it, `requests`, `finished`, `open` (pending/unrun), `time total` (HH:MM:SS elapsed over finished requests), `average time` (HH:MM:SS mean elapsed per finished request), and `tokens` (summed over finished requests). With no `--file` it reads the project's single `experiment_*.db` (pass `--file` if several exist):
 ```bash
 llmexer experiment stats --pid llm-survey-2026
 ```
@@ -200,6 +199,29 @@ Pass `--file` to inspect a specific database instead:
 ```bash
 llmexer experiment stats --pid llm-survey-2026 --file experiment_<SAMPLE>.db
 ```
+
+**9. Export the results as HTML (optional)**
+
+Render the finished experiment as a single, self-contained page for screening or sharing:
+```bash
+llmexer experiment export --pid llm-survey-2026 --file experiment_<SAMPLE>.db
+```
+
+<details markdown="1">
+
+Writes `experiment_<SAMPLE>.html` next to the database: sortable columns, per-column filters,
+row counters, dark mode and a copy button on every cell. Ten columns are exported —
+`provider`, `model`, `profile`, `code`, `response_text`, `tokens`, `status`, `seconds`,
+`timestamp`, `try`.
+
+The `try` column holds a ready-to-run command that re-runs that one combination — copy the
+cell and paste it into a shell:
+```bash
+llmexer experiment try --pid llm-survey-2026 --file experiment_<SAMPLE>.db \
+  --data-id D01 --prompt prompt01 --profile ollama-default \
+  --model llama3.3:latest --provider ollama
+```
+</details>
 
 The API key is read from `.env` (pattern -> `PROVIDER_<PROVIDER_UPPER>_KEY`).
 
@@ -403,8 +425,9 @@ The `experiment` (alias: `exp`) category provides commands for initialising, gen
 | `update` | Add combinations added to the input CSVs into an already generated database, instead of generating a new one. The CSVs are re-read and cross-joined exactly as `generate` does, then compared with the database: combinations it does not hold yet are appended after the highest existing `ID`, while stored rows and the results `run` collected for them are left untouched (a provider new to the database gets its `experiment_<provider>` / `params_<provider>` pair created). A profile of `llm-params.csv` whose values changed under an unchanged `profile_name` aborts the command with the differing columns reported as `db=` vs `csv=` and nothing written — rename the profile and re-run. Stored rows whose prompt template or `data.csv` text has since changed are reported as a warning and left as they are. Supports `--dry-run` and `--file` (choose a specific `.db`, defaults to the newest). | `llmexer experiment update --pid my-project` |
 | `try` | Render and run **one** `data.csv` row × prompt × profile combination and print the response — `generate` and `run` at once, for a single try. Takes `--prompt` (a template from `prompts/`, `.txt` optional), `--profile` (a profile name from `llm-params.csv`, matched in full and case-sensitively) and `--data-id` (an `ID` from `data.csv`); all three are validated up front and an unknown name aborts before any LLM call, listing what is available. The model and provider come from the profile's row; `--model` / `--provider` disambiguate a profile name shared by several models. The response is printed under a `model` / `provider` / `usage tokens` header, saved as JSON under `experiment/responses/`, and appended to the `try_experiment_<provider>` / `try_param_<provider>` tables of the database (`--file`, newest by default) — one row per try in each, so every try keeps the parameters it ran with. Generated rows and `stats` are unaffected. Supports `--dry-run`. | `llmexer experiment try --pid my-project --prompt prompt01 --profile ollama-default --data-id D01` |
 | `run` | Execute every row in the generated database `experiment_*.db` (no separate params file needed — all columns are embedded). Calls each LLM via the OpenAI SDK (supports ollama, vllm, litellm, openai, gemini) and writes results **back into the same database in place** (response, status, token usage, timestamps, plus the complete raw backend response under `raw_response`); re-runs skip rows that already finished successfully and update the rest. Individual JSON responses are saved under `experiment/responses/`. Supports `--dry-run`, `--file` (choose a specific `.db`, defaults to the newest), `--filter-provider` (only run rows for a specific provider, case-insensitive), `--filter-model` / `--filter-profile` (only run rows whose `model_name` / `profile_name` matches in full, case-sensitively), `--code` (run a single combination by its `code` or numeric `ID`), `--parallel-calls` (how many LLM calls may be in flight at once across all providers, default `1`; results are still written one at a time). The filters combine with AND; when none of the filtered rows exist the command reports it and exits cleanly. API key read from the `PROVIDER_<PROVIDER_UPPER>_KEY` env var; URL from `PROVIDER_<PROVIDER_UPPER>_URL` or built-in defaults (`litellm` requires both to be set explicitly). Requires `openai` package (`pip install openai`). | `llmexer experiment run --pid my-project --filter-provider ollama` |
-| `stats` | Show aggregate statistics from a project's experiment database: totals (total, finished, running, errors), total tokens, and per-provider / per-model breakdowns rendered as Rich tables. The Models table has per-model columns `requests`, `finished`, `open` (pending/unrun), `time total` (HH:MM:SS over finished requests), `average time` (HH:MM:SS mean per finished request), and `tokens` (summed over finished requests). With no `--file` it reads the project's single `experiment_*.db` (pass `--file` to choose one when several exist). | `llmexer experiment stats --pid my-project` |
+| `stats` | Show aggregate statistics from a project's experiment database: totals (total, finished, running, errors), total tokens, and per-provider / per-model breakdowns rendered as Rich tables. The Models table has columns `Model`, `Provider`, `requests`, `finished`, `open` (pending/unrun), `time total` (HH:MM:SS over finished requests), `average time` (HH:MM:SS mean per finished request), and `tokens` (summed over finished requests); it is grouped by (model, provider) and sorted by model then provider, so the same model served by two providers is reported once per provider rather than merged into one row. With no `--file` it reads the project's single `experiment_*.db` (pass `--file` to choose one when several exist). | `llmexer experiment stats --pid my-project` |
 | `list` | List all projects with their initialization state and generated experiment databases, with optional sorting by name or date. | `llmexer experiment list --sort-by date --desc` |
+| `export` | Render a generated experiment database as an HTML page next to it (same name, `.html`). Exports `provider`, `model`, `profile`, `code`, `response_text`, `tokens`, `status`, `seconds`, `timestamp` and `try` for every row, run or not. Sortable columns, per-column filters, row counters, dark mode and a copy button on every cell. `code` is collapsed to 5 characters behind a `more` toggle; `response_text` is pretty-printed as JSON when it parses (a ```json fence is stripped first) and kept as plain text when it does not; `tokens` is `total_tokens` falling back to `usage_tokens`; `seconds` is rounded to one decimal and `timestamp` trimmed to whole seconds; `try` is a ready-to-run `experiment try` command that re-runs that single combination. `--file` chooses a database (newest by default), `--rewrite` overwrites; respects `--dry-run`. | `llmexer experiment export --pid my-project` |
 
 ## 📑 CLI category: **papers**
 

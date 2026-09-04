@@ -11,6 +11,7 @@ from llmexer.base.llm_provider import (
     LiteLLMProvider,
     ProviderAuth,
 )
+from llmexer.common import get_user_agent
 from llmexer.exceptions import ProviderConfigException
 
 _URL = "https://proxy.example.org/v1"
@@ -142,7 +143,11 @@ def test_build_session_creates_openai_client():
         caller.build_session()
 
     assert caller.session is mock_client
-    mock_openai_module.OpenAI.assert_called_once_with(base_url=_URL, api_key=_TOKEN)
+    mock_openai_module.OpenAI.assert_called_once_with(
+        base_url=_URL,
+        api_key=_TOKEN,
+        default_headers={"User-Agent": get_user_agent()},
+    )
 
 
 def test_build_session_validates_before_creating_client():
