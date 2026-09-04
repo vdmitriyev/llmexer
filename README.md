@@ -165,7 +165,7 @@ Hyperparameters are never rewritten. If a profile of `llm-params.csv` still carr
 
 </details>
 
-**6. Try a single combination (optional)**
+**6. Try a single experiment combination (optional)**
 
 Before running the whole cross join, check what one prompt actually returns for one data row under one profile:
 ```bash
@@ -188,45 +188,7 @@ Once `experiment generate` has produced the database, run all combinations:
 llmexer experiment run --pid llm-survey-2026 --file experiment_<SAMPLE>.db
 ```
 
-<details markdown="1">
-
-This reads every row from the generated database (`experiment_*.db`, joining each row with its provider's `params_<provider>` table) and calls the appropriate LLM. With no `--file` it uses the newest `experiment_*.db`. Results are written **back into the same database in place** — each row's response, status, token usage, and timestamps are updated on its provider table, so the database stays the single source of truth (no separate results file). Re-running skips rows that already finished successfully and updates the rest. Each individual call is also saved as a JSON file under `experiment/responses/`. Both the per-call JSON and the database `response_json` column include the **complete raw backend response** under `raw_response` (all provider fields — e.g. `finish_reason`, per-token `usage`, and ollama extras like `eval_count` / `*_duration`), not just the response text and total token count.
-
-Use `--dry-run` to preview the row count without making any LLM calls:
-```bash
-llmexer --dry-run experiment run --pid llm-survey-2026
-```
-
-Run only a specific provider's rows (e.g. when only ollama is available):
-```bash
-llmexer experiment run --pid llm-survey-2026 --filter-provider ollama
-```
-
-Narrow the run to one model or one hyperparameter profile — both match the name in full and case-sensitively, and all three filters combine:
-```bash
-llmexer experiment run --pid llm-survey-2026 --filter-model gemma4:31b
-llmexer experiment run --pid llm-survey-2026 --filter-profile ollama-creative
-llmexer experiment run --pid llm-survey-2026 \
-  --filter-provider ollama --filter-profile ollama-default
-```
-
-Run a single combination by its `code` (or numeric `ID`):
-```bash
-llmexer experiment run --pid llm-survey-2026 \
-  --file experiment_<SAMPLE>.db --code 1
-```
-
-Most of a run is spent waiting on the LLM backend, so `--parallel-calls` lets several calls
-be in flight at once. The cap is global (never more than N calls in total, whatever mix of
-providers the rows use) and defaults to `1`, i.e. the sequential behaviour. Results are
-still written **one at a time**: calls that finish together queue up behind each other, so
-the database and the `responses/` files are never written concurrently. Pick a value your
-backend can actually serve - a local ollama will not thank you for 32:
-```bash
-llmexer experiment run --pid llm-survey-2026 --parallel-calls 4
-```
-
-</details>
+Every option of `experiment run` — previewing a run, restricting it to one provider, model or profile, running a single combination, and running several calls at once — is covered in [Scenario 4](#-scenario-4-advanced-usage-of-the-experiment-cli-commands).
 
 **8. Inspect experiment statistics**
 
@@ -344,6 +306,60 @@ llmexer papers extract --pid llm-survey-2026 --processor docling \
 By default, papers that already have an extracted file are skipped. Use `--rewrite` to force re-extraction:
 ```bash
 llmexer papers extract --pid llm-survey-2026 --rewrite
+```
+
+## 📢 Scenario 4: Advanced usage of the experiment CLI commands
+
+<details>
+<summary>Details about how does the `experiment run` CLI command works</summary>
+`experiment run` reads every row from the generated database (`experiment_*.db`, joining each row with its provider's `params_<provider>` table) and calls the appropriate LLM. With no `--file` it uses the newest `experiment_*.db`. Results are written **back into the same database in place** — each row's response, status, token usage, and timestamps are updated on its provider table, so the database stays the single source of truth (no separate results file). Re-running skips rows that already finished successfully and updates the rest. Each individual call is also saved as a JSON file under `experiment/responses/`. Both the per-call JSON and the database `response_json` column include the **complete raw backend response** under `raw_response` (all provider fields — e.g. `finish_reason`, per-token `usage`, and ollama extras like `eval_count` / `*_duration`), not just the response text and total token count.
+</details>
+
+**1. Preview a run without calling any LLM**
+
+Use `--dry-run` to see the row count first:
+```bash
+llmexer --dry-run experiment run --pid llm-survey-2026
+```
+
+**2. Run only a specific provider's rows by applying filter**
+
+Useful when only one backend is available (e.g. a local ollama):
+```bash
+llmexer experiment run --pid llm-survey-2026 --filter-provider ollama
+```
+
+**3. Narrow the run to one model or one hyperparameter profile**
+
+Both match the name in full and case-sensitively, and all three filters combine:
+```bash
+llmexer experiment run --pid llm-survey-2026 --filter-model gemma4:31b
+llmexer experiment run --pid llm-survey-2026 --filter-profile ollama-creative
+llmexer experiment run --pid llm-survey-2026 \
+  --filter-provider ollama --filter-profile ollama-default
+```
+
+**4. Run a single experiment out of the set of experiments**
+
+By its `code` (or numeric `ID`):
+```bash
+llmexer experiment run --pid llm-survey-2026 \
+  --file experiment_<SAMPLE>.db --code 1
+```
+
+**5. Run several LLM calls at once**
+
+Most of a run is spent waiting on the LLM backend, so `--parallel-calls` lets several calls be in flight at once. The N limit is global to all (never more than N calls in total, whatever mix of providers the rows use). Default is `1` (i.e. the sequential runs). Results are still written **one at a time**.
+```bash
+llmexer experiment run --pid llm-survey-2026 --parallel-calls 4
+```
+
+**6. Try a single experiment combination (optional)**
+
+Before running the whole cross join, check what one prompt actually returns for one data row under one profile:
+```bash
+llmexer experiment try --pid llm-survey-2026 \
+  --prompt prompt01 --profile ollama-default --data-id D01
 ```
 
 #### Using Current Project ID
