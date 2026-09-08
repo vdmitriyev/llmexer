@@ -1,5 +1,9 @@
 ## 🔰About
 
+![PyPI Version](https://img.shields.io/pypi/v/llmexer?style=flat)
+![PyPI License](https://img.shields.io/pypi/l/llmexer?style=flat)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/llmexer?style=flat)
+
 `llmexer` is a framework and CLI utility to create and curate datasets (e.g., publications, metadata, LLM prompts, etc.) and orchestrate (design, run, evaluate) various LLM experiments on them
 
 > 🪄 The philosophy of the tool is: `everything` is a `file`. Projects, experiments, searches, configs, and further items will be saved as files. The CLI helps you to modify most of the files, but the same files could be modified manually (e.g., adding a new LLM model, modification of search search or paper as PDFs could be manually added, further more, a SQLite database with generated experiments could be inspected and edited etc.).
