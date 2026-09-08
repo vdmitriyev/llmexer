@@ -2,6 +2,12 @@
 History
 =======
 
+0.3.11 (2026-09-08)
+-------------------
+
+* ``experiment try``: ``--dry-run`` is now an option of the command itself (``-d``), next to the global flag.
+* ``experiment try``: the rendered prompt is printed before the call, with a spinner while the provider answers.
+
 0.3.10 (2026-09-04)
 -------------------
 

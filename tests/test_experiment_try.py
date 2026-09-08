@@ -279,6 +279,31 @@ def test_try_dry_run_writes_nothing(generated_experiment, mock_ollama):
     assert not (exp_subdir / "responses").exists()
 
 
+def test_try_local_dry_run_writes_nothing(generated_experiment, mock_ollama):
+    """`try --dry-run` behaves like the global flag: prompt only, nothing written."""
+    pid, exp_subdir, db_path = generated_experiment
+
+    result = _try(pid, "--dry-run")
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert "Dry run:" in output
+    assert "Sample Paper Title One" in output
+    assert "try_experiment_ollama" not in try_table_names(db_path)
+    assert not (exp_subdir / "responses").exists()
+
+
+def test_try_prints_the_prompt_once_before_the_response(generated_experiment, mock_ollama):
+    """The rendered prompt is printed before the call and not repeated after it."""
+    pid, _exp_subdir, _db_path = generated_experiment
+
+    result = _try(pid)
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Rendered prompt:") == 1
+    assert result.output.index("Rendered prompt:") < result.output.index("mocked response")
+
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------

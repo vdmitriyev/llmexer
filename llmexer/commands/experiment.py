@@ -1338,9 +1338,9 @@ def _print_try_header(model_name: str, provider: str, usage_tokens: Any = None) 
     header = Table(show_header=False, box=None, padding=(0, 1))
     header.add_column(style="bold white", no_wrap=True)
     header.add_column()
-    header.add_row("Model:", f"[bold yellow]{model_name}[/bold yellow]")
-    header.add_row("Provider:", f"[bold yellow]{provider}[/bold yellow]")
-    header.add_row("Usage tokens:", f"[bold green]{usage_tokens if usage_tokens is not None else '-'}[/bold green]")
+    header.add_row("Model:", f"[bold blue]{model_name}[/bold blue]")
+    header.add_row("Provider:", f"[bold blue]{provider}[/bold blue]")
+    header.add_row("Usage tokens:", f"[bold blue]{usage_tokens if usage_tokens is not None else '-'}[/bold blue]")
     console.print(header)
 
 
@@ -1381,6 +1381,12 @@ def try_one(
         "--file",
         help="Experiment database to record the try in. Defaults to the newest one.",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-d",
+        help="Only render and print the prompt; nothing is sent to the LLM provider.",
+    ),
 ) -> None:
     """Performs a single experiment `try` run, where custom data x prompt x profile combination is tested once
 
@@ -1388,6 +1394,9 @@ def try_one(
     validated first, the combination is then put together, executed against its
     provider, and then appended to the ``try_experiment_<provider>`` and
     ``try_param_<provider>`` tables of the database.
+
+    Under ``--dry-run`` (either as this option or as the global flag) the prompt
+    is rendered and printed and nothing is called, written or appended.
     """
 
     pid = get_proper_pid(pid)
@@ -1399,10 +1408,13 @@ def try_one(
     model = model.strip() if model is not None else None
     provider = provider.strip() if provider is not None else None
 
+    # Accepted both as `llmexer --dry-run experiment try` and as
+    # `llmexer experiment try --dry-run`; neither spelling can switch the other off.
+    dry_run = dry_run or settings.dry_run
+
     _models_df, data_df, _mapping_df, params_df, prompts_subdir = _load_experiment_inputs(pid, experiment_subdir_path)
 
-    # Everything is resolved before a single token is sent: a typo in any of the
-    # three names must fail immediately, not after an LLM call.
+    # Everything is resolved before a single token is sent
     prompt_id = _resolve_prompt_ids(prompts_subdir, [prompt])[0]
     data_row = _resolve_try_data_row(data_df, data_id, pid)
     key, param_row = _resolve_try_profile(params_df, profile, model, provider)
@@ -1414,7 +1426,7 @@ def try_one(
     rendered = _render_prompt(template_str, data_id, data_row)
     row = _combination_row(data_id, prompt_id, key, param_row, rendered)
 
-    if settings.dry_run:
+    if dry_run:
         _print_try_header(model_name, provider_name)
         cprint(
             f"[bold yellow]Dry run:[/bold yellow] would run [bold yellow]{row['code']}[/bold yellow] "
@@ -1437,28 +1449,29 @@ def try_one(
         ) from exc
 
     # Opened before the call so a database this version cannot write to aborts
-    # the try instead of throwing the response away afterwards.
     with ExperimentDAO(db_path) as dao:
         cprint(f"Trying [bold yellow]{row['code']}[/bold yellow] against [bold yellow]{provider_name}[/bold yellow]")
-        experiment = run_experiment_row(row)
+
+        cprint("\nRendered prompt:\n")
+        cprint(f"[italic yellow]{row['prompt']}[/italic yellow]\n")
+
+        # Nothing is printed inside the status context: a live spinner and
+        with console.status("[bold blue]Waiting for LLM provider to answer ...[/bold blue]", spinner="dots"):
+            experiment = run_experiment_row(row)
+
         responses_dir = os.path.join(experiment_subdir_path, DIR_RESPONSES)
         ensure_directory_exists(responses_dir)
         file_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
         safe_model = str(model_name).replace("/", "-").replace(":", "-")
         json_path = os.path.join(responses_dir, f"{file_ts}_{safe_model}_{provider_name}.json")
+
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(build_response_payload(experiment, provider_name), f, indent=2, ensure_ascii=False)
 
-        # A failed try is still a try: it is appended with its error status, so
-        # the table stays the full history of what was attempted.
         try_id = dao.append_try_row(provider_name, {**row, **result_values(experiment, provider_name)})
 
+    cprint("")
     _print_try_header(model_name, provider_name, experiment.usage_tokens)
-
-    # Printed for a failed try as well: the prompt that was sent is the first
-    # thing to look at when the answer is missing.
-    cprint("\nRendered prompt:\n")
-    cprint(f"[italic yellow]{row['prompt']}[/italic yellow]")
 
     if experiment.status == "success":
         cprint("\nResponse text:\n")
