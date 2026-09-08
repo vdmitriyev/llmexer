@@ -22,6 +22,7 @@ from llmexer.base.html_export import (
     render_template,
     sanitize_multiline,
 )
+from llmexer.common import strip_code_fence
 from llmexer.logger import get_logger
 
 logger = get_logger()
@@ -174,27 +175,6 @@ def row_tokens(row: dict) -> int:
     return 0
 
 
-def _strip_code_fence(text: str) -> str:
-    """Drop a Markdown code fence wrapping a response, if there is one.
-
-    Models routinely answer with their JSON inside ```` ```json ... ``` ````. Left
-    in place that prefix makes every such answer unparseable, so the fence is
-    peeled off before parsing - the text itself is never modified otherwise.
-    """
-
-    stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
-
-    lines = stripped.splitlines()
-    # First line is the fence, optionally carrying a language tag ("```json").
-    lines = lines[1:]
-    if lines and lines[-1].strip().startswith("```"):
-        lines = lines[:-1]
-
-    return "\n".join(lines).strip()
-
-
 def format_response_text(text: str) -> tuple:
     """Pretty-print a response as JSON, falling back to the text as it stands.
 
@@ -206,7 +186,7 @@ def format_response_text(text: str) -> tuple:
     if not text or not text.strip():
         return "", False
 
-    candidate = _strip_code_fence(text)
+    candidate = strip_code_fence(text)
     if not candidate:
         return text, False
 

@@ -46,6 +46,7 @@ from llmexer.common import (
     get_experiment_subdir_path,
     get_project_directory_path,
     get_proper_pid,
+    next_backup_name,
 )
 from llmexer.configs import console, cprint, settings
 from llmexer.constants import PAPERS_DIR, PROJECTS_PATH, SEARCHES_DIR
@@ -190,27 +191,6 @@ def _resolve_experiment_db(pid: str, file: str) -> tuple[str, str]:
     return db_path, experiment_subdir_path
 
 
-def _next_backup_name(folder: str, stem: str) -> str:
-    """Return the next ``<stem>_backup_<YYYYMMDD>_<NN>.csv`` name for ``folder``.
-
-    ``<NN>`` is a zero-padded counter, one greater than the highest counter among
-    today's existing ``<stem>_backup_<today>_*.csv`` files (starts at ``01``).
-    """
-
-    date = datetime.now(timezone.utc).strftime("%Y%m%d")
-    prefix = f"{stem}_backup_{date}_"
-    counter = 0
-    if os.path.isdir(folder):
-        for fname in os.listdir(folder):
-            if fname.startswith(prefix) and fname.endswith(".csv"):
-                token = fname[len(prefix) : -len(".csv")]
-                try:
-                    counter = max(counter, int(token))
-                except ValueError:
-                    continue
-    return f"{prefix}{counter + 1:02d}.csv"
-
-
 def _write_csv_with_backup(folder: str, filename: str, df: pd.DataFrame) -> tuple[str, str]:
     """Write ``df`` to ``folder/filename``, backing up any existing file first.
 
@@ -224,7 +204,7 @@ def _write_csv_with_backup(folder: str, filename: str, df: pd.DataFrame) -> tupl
     path = os.path.join(folder, filename)
     backup_name = ""
     if os.path.exists(path):
-        backup_name = _next_backup_name(folder, os.path.splitext(filename)[0])
+        backup_name = next_backup_name(folder, os.path.splitext(filename)[0])
         shutil.copy2(path, os.path.join(folder, backup_name))
     df.to_csv(path, index=False, sep=";", encoding="utf-8")
     return path, backup_name

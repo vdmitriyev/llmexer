@@ -37,7 +37,7 @@ from llmexer.exceptions import (
     UnexpectedCLIParamsException,
 )
 
-app = typer.Typer(help="Work with papers.")
+app = typer.Typer(help="Manages the papers.")
 
 
 @app.command()

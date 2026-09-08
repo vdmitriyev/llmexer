@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llmexer"
 description = "Framework and CLI utility to create and curate datasets (e.g., publications, metadata, LLM prompts, etc.) and orchestrate (design, run, evaluate) various LLM experiments on them"
-version = "0.3.11"
+version = "0.4.0"
 readme = "README.md"
 authors = [
   {name = "vdmitriyev"},
@@ -29,6 +29,7 @@ dependencies = [
     "openai>=2.30.0",
     "PyYAML>=6.0",
     "SQLAlchemy>=2.0.36",
+    "nbformat>=5.10.4",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -64,13 +65,23 @@ include = ["llmexer*"]
 llmexer = ["data/*.j2"]
 
 [dependency-groups]
+# Everything needed to *run* a scaffolded analysis notebook. `analysis init`
+# itself only needs `nbformat`, which is a core dependency.
+analysis = [
+    "matplotlib>=3.9",
+    "seaborn>=0.13",
+    "ipykernel>=6.29",
+    "jupyterlab>=4.2",
+]
 dev = [
     "black>=26.3.1",
     "isort>=8.0.1",
     "pre-commit>=4.5.1",
     "bandit>=1.9.4",
     "pylint>=4.0.5",
-    "pytest>=9.0.3"
+    "pytest>=9.0.3",
+    # pytest imports the plotting module, so the analysis stack must be present.
+    {include-group = "analysis"},
 ]
 
 [tool.black]

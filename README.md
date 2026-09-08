@@ -227,6 +227,32 @@ llmexer experiment try --pid llm-survey-2026 --file experiment_<SAMPLE>.db \
 ```
 </details>
 
+**10. Analyse the results in a notebook (optional)**
+
+Scaffold a Jupyter workspace for the project and open it:
+```bash
+llmexer analysis init --pid llm-survey-2026
+```
+
+<details markdown="1">
+
+Creates `analysis/` next to `experiment/`, `papers/` and `searches/`, containing
+`analyse_experiment.ipynb`, `analyse_searches.ipynb` and the `transform.py` / `stats.py` /
+`plots.py` modules they call. Open `analysis/analyse_experiment.ipynb` and run all cells: it
+loads the experiment database named in `DB_FILE`, parses each model answer from JSON into its
+own columns, writes just those answers to a CSV next to the notebook, counts the distinct values
+of every answer column and charts the yes/no and countable ones, then prints the statistics and
+renders the rest of the charts inline. `analyse_searches.ipynb` does the same for one search — set
+`SEARCH_INDEX` to pick which.
+
+The modules are copies, so a project can grow its own analysis — `%autoreload` picks up every
+edit without a kernel restart. The notebooks import only those copies, never `llmexer`, so the
+folder is self-contained. `llmexer analysis init --rewrite` puts the shipped versions back,
+moving your copies into `analysis/.backup/` first. Running the notebooks needs the optional packages:
+`uv pip install -e . --group analysis`.
+
+</details>
+
 The API key is read from `.env` (pattern -> `PROVIDER_<PROVIDER_UPPER>_KEY`).
 
 P.S.: CLI interfaces could become very complex with the time, thus refer to the `--help` to get options and parameters of the utility:
@@ -441,6 +467,16 @@ The `experiment` (alias: `exp`) category provides commands for initialising, gen
 | `list` | List all projects with their initialization state and generated experiment databases, with optional sorting by name or date. | `llmexer experiment list --sort-by date --desc` |
 | `export` | Render a generated experiment database as an HTML page next to it (same name, `.html`). Exports `provider`, `model`, `profile`, `code`, `response_text`, `tokens`, `status`, `seconds`, `timestamp` and `try` for every row, run or not. Sortable columns, per-column filters, row counters, dark mode and a copy button on every cell. `code` is collapsed to 5 characters behind a `more` toggle; `response_text` is pretty-printed as JSON when it parses (a ```json fence is stripped first) and kept as plain text when it does not; `tokens` is `total_tokens` falling back to `usage_tokens`; `seconds` is rounded to one decimal and `timestamp` trimmed to whole seconds; `try` is a ready-to-run `experiment try` command that re-runs that single combination. `--file` chooses a database (newest by default), `--rewrite` overwrites; respects `--dry-run`. | `llmexer experiment export --pid my-project` |
 
+## 📊 CLI category: **analysis**
+
+The `analysis` (aliases: `analyse`, `analyze`) category scaffolds a ready-to-run Jupyter workspace for analysing a project. It creates `analysis/` next to `experiment/`, `papers/` and `searches/`, holding two notebooks and the Python modules they call. The notebooks contain no logic — the cells configure paths, call functions and display the result — so the analysis itself stays testable code. The modules are **copies** and the notebooks import only them, never `llmexer`, so a scaffolded `analysis/` folder is self-contained and can be tweaked per project.
+
+| Command   | Description | Command Example |
+|-----------|-------------|-----------------|
+| `init` | Create `<project>/analysis/` with `analyse_experiment.ipynb` (loads the experiment database, flattens each `response_text` from JSON into columns, exports **only those parsed answers** as a CSV, then profiles them — how many distinct values each answer column took and whether it is yes/no, a countable rating or a small set of labels, with a bar chart per chartable column — before printing the summary, per-model responses, response times, token usage and failures, and rendering four more charts) and `analyse_searches.ipynb` (loads **one** search plus the `papers/` inventory, then breaks it down by search engine, year, open access and language). Alongside them it copies `transform.py`, `stats.py` and `plots.py` — edit them freely, the notebooks pick the changes up via `%autoreload`. What each notebook reads is set by literals written in at scaffold time and editable by hand: `DB_FILE` (the newest `experiment_*.db`) and `SEARCHES` (one entry per search, naming its YAML and the `results` / `filter` CSVs written from it) with `SEARCH_INDEX` choosing which one to analyse — searches are never combined, since two queries are two different populations. Neither literal updates itself: after another `experiment generate` or `search run`, edit the value or re-scaffold. Every notebook is validated with `nbformat` before it is written. Existing files are **never** overwritten without `--rewrite`, which first copies each one to `analysis/.backup/<stem>_backup_<YYYYMMDD>_<NN><ext>`, so the analysis folder keeps showing only the files meant to be opened. Works on a project with no experiment or searches yet — the notebooks report an empty project rather than failing. Respects `--dry-run`. | `llmexer analysis init --pid my-project` |
+
+Running the notebooks needs the optional analysis packages: `uv pip install -e . --group analysis`.
+
 ## 📑 CLI category: **papers**
 
 The `papers` category provides commands for managing PDF papers within a project:
@@ -556,6 +592,12 @@ This guide walks through setting up the project for local development using `uv`
     Installing the package in **editable mode** (`-e`) is the key to development. It links the `llmexer` command in your environment directly to your source code.
     ```bash
     uv pip install -e . --group dev
+    ```
+    The `dev` group already pulls in the `analysis` group (matplotlib, seaborn, ipykernel,
+    jupyterlab), so the scaffolded notebooks run and their tests import cleanly. To install
+    only what is needed to *run* the notebooks:
+    ```bash
+    uv pip install -e . --group analysis
     ```
 
 ## License

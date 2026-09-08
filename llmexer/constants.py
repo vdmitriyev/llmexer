@@ -15,6 +15,9 @@ TEMP_DIR = "temp"
 SEARCHES_DIR = "searches"
 PAPERS_DIR = "papers"
 SEARCHES_LOGS_DIR = "logs"
+ANALYSIS_DIR = "analysis"
+# Replaced notebooks/modules are kept here rather than beside the live ones.
+ANALYSIS_BACKUP_DIR = ".backup"
 
 # Package-relative paths. Unlike ``BASEDIR`` (which follows the current working
 # directory), these point inside the installed package, where bundled assets such as the

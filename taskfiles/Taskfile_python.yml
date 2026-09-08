@@ -125,7 +125,7 @@ tasks:
     silent: true
     cmds:
       - echo "running bandit (static code analysis)"
-      - bandit -x "./.venv,./.dvenv,./.tox,./tests" -r .
+      - bandit -x "./.venv,./.dvenv,./.tox,./tests,./.projects" -r .
 
   pylint:
     desc: runs pylint

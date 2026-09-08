@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 
@@ -126,3 +126,52 @@ def get_experiment_subdir_path(pid: str) -> str:
             f"Project '{pid}' has not been initialised. " f"Run `experiment init --pid {pid}` first."
         )
     return experiment_subdir_path
+
+
+def strip_code_fence(text: str) -> str:
+    """Drop a Markdown code fence wrapping a value, if there is one.
+
+    Models routinely answer with their JSON inside ```` ```json ... ``` ````.
+    Left in place that prefix makes every such answer unparseable, so the fence
+    is peeled off before parsing - the text itself is never modified otherwise.
+
+    NB: ``llmexer/base/analysis/transform.py`` carries a verbatim copy of this
+    function on purpose. That module is copied into a project's ``analysis/``
+    folder and imported as a top-level module, so it cannot import from
+    ``llmexer``; ``tests/test_analysis_transform.py`` asserts the two stay in
+    step.
+    """
+
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+
+    lines = stripped.splitlines()
+    # First line is the fence, optionally carrying a language tag ("```json").
+    lines = lines[1:]
+    if lines and lines[-1].strip().startswith("```"):
+        lines = lines[:-1]
+
+    return "\n".join(lines).strip()
+
+
+def next_backup_name(folder: str, stem: str, suffix: str = ".csv") -> str:
+    """Return the next ``<stem>_backup_<YYYYMMDD>_<NN><suffix>`` name for ``folder``.
+
+    ``<NN>`` is a zero-padded counter, one greater than the highest counter among
+    today's existing ``<stem>_backup_<today>_*<suffix>`` files (starts at ``01``),
+    so repeated runs on the same day never overwrite each other.
+    """
+
+    date = datetime.now(timezone.utc).strftime("%Y%m%d")
+    prefix = f"{stem}_backup_{date}_"
+    counter = 0
+    if os.path.isdir(folder):
+        for fname in os.listdir(folder):
+            if fname.startswith(prefix) and fname.endswith(suffix):
+                token = fname[len(prefix) : -len(suffix)]
+                try:
+                    counter = max(counter, int(token))
+                except ValueError:
+                    continue
+    return f"{prefix}{counter + 1:02d}{suffix}"

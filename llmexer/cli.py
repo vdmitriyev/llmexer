@@ -7,7 +7,7 @@ from rich.table import Table
 from rich.text import Text
 from typing_extensions import Annotated
 
-from llmexer.commands import experiment, papers, project, search
+from llmexer.commands import analysis, experiment, papers, project, search
 from llmexer.commands import self as self_module
 from llmexer.common import ensure_directory_exists
 from llmexer.configs import console, cprint, settings
@@ -22,6 +22,10 @@ app.add_typer(project.app, name="proj", hidden=True)
 
 app.add_typer(experiment.app, name="experiment")
 app.add_typer(experiment.app, name="exp", hidden=True)
+
+app.add_typer(analysis.app, name="analysis")
+app.add_typer(analysis.app, name="analyse", hidden=True)
+app.add_typer(analysis.app, name="analyze", hidden=True)
 
 app.add_typer(search.app, name="search")
 app.add_typer(papers.app, name="papers")
