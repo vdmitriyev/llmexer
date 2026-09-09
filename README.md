@@ -4,73 +4,81 @@
 ![PyPI License](https://img.shields.io/pypi/l/llmexer?style=flat)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/llmexer?style=flat)
 
-`llmexer` is a framework and CLI utility to create and curate datasets (e.g., publications, metadata, LLM prompts, etc.) and orchestrate (design, run, evaluate) various LLM experiments on them
+`llmexer` is a CLI tool for LLM experiments. Use it to build datasets (publications, metadata, prompts) and to design, run and evaluate experiments on them.
 
-> 🪄 The philosophy of the tool is: `everything` is a `file`. Projects, experiments, searches, configs, and further items will be saved as files. The CLI helps you to modify most of the files, but the same files could be modified manually (e.g., adding a new LLM model, modification of search search or paper as PDFs could be manually added, further more, a SQLite database with generated experiments could be inspected and edited etc.).
+> 🪄 The idea behind the tool: `everything` is a `file`. Projects, experiments, searches and configs are all stored as files. The CLI edits them for you, but you can also edit them by hand — add a model, change a search, drop in a PDF, or open the generated SQLite database and inspect it yourself.
 
 ## ✨ Early `beta` warning
 
-The package is still in its early beta stage, so breaking changes may be introduced at short notice.
+The package is in early beta. Breaking changes may arrive at short notice.
 
 ## 📦 Installation
 
-* Install using `pip`
-    ```
-    pip install --upgrade llmexer
-    ```
-* Install using `uv`
-    ```
-    uv pip install --upgrade llmexer
-    ```
-* Check `configuration` section afterward
+Install with `pip`:
+```bash
+pip install --upgrade llmexer
+```
+
+Or with `uv`:
+```bash
+uv pip install --upgrade llmexer
+```
+
+Then set up your configuration, as described below.
 
 ## ⚙️ Configuration
 
-This tool requires access to local or remote running LLMs. It uses a `.env` file to securely load your API credentials, and also set the current project.
+`llmexer` needs access to a local or remote LLM. It reads your credentials and your current project from a `.env` file.
 
-1.  Create a `.env` file in the root of the project
-2.  Set the current project ID (optional):
-    ```env
-    PROJECT_ID=20260330-3a9adf70
-    ```
-3.  Configure the docling backend (optional, used by `papers extract --processor docling`):
-    ```env
-    DOCLING_URL=http://localhost:5001/
-    DOCLING_USER=myuser
-    DOCLING_PASSWORD=mypassword
-    ```
-4.  Set the API key for LLM providers (optional, used by `experiment run` for ollama, vllm, litellm, OpenAI, Gemini):
-    ```env
-    # Base URL for a specific provider
-    PROVIDER_OLLAMA_URL=http://localhost:11434/v1
-    PROVIDER_VLLM_URL=http://localhost:8000/v1
+Create a `.env` file in the project root and add the settings you need. All of them are optional.
 
-    # The API key for a specific provider
-    PROVIDER_OPENAI_KEY=sk-...
-    ```
-     The pattern is `PROVIDER_<PROVIDER_UPPER>_URL` and `PROVIDER_<PROVIDER_UPPER>_KEY` where `<PROVIDER_UPPER>` is the provider name in uppercase (e.g. `OLLAMA`, `VLLM`, `LITELLM`, `OPENAI`, `GEMINI`).
+**Current project**
+```env
+PROJECT_ID=20260330-3a9adf70
+```
 
-     The `litellm` provider talks to a [LiteLLM](https://docs.litellm.ai/) proxy sitting in front of a vLLM backend. Unlike the local providers it has **no default URL** and **requires an API token** - both must be set, otherwise `experiment run` aborts immediately with a clear error instead of failing later with an opaque `401`:
-    ```env
-    PROVIDER_LITELLM_URL=https://your-litellm-proxy.example.org/v1
-    PROVIDER_LITELLM_KEY=sk-...
-    ```
-5.  Enable the OpenAlex search engine (optional, used by `search run` as a second source after Semantic Scholar; skipped if unset):
-    ```env
-    OPENALEX_API_KEY=...
-    # Optional: cap on OpenAlex results processed per query (default 5000)
-    MAX_OPEN_ALEX_RESPONSES=5000
-    # Optional: used for DOI downloads via Unpaywall and also as the OpenAlex polite-pool mailto
-    UNPAYWALL_EMAIL=you@example.com
-    ```
-6. If you would like to change the envs based on the project run (e.g., just test a LLM provider for a particular project, via stats of a search, etc.), you could also pass a custom file as `.env` to the CLI:
-    ```
-    llmexer --env-file custom.env
-    ```
-7. By default CLI will work with current directory to save files, but it could be redefined
-    ```
-    LLMEXER_BASEDIR=my-projects
-    ```
+**LLM providers** — used by `experiment run` and `experiment try`:
+```env
+# Base URL of a provider
+PROVIDER_OLLAMA_URL=http://localhost:11434/v1
+PROVIDER_VLLM_URL=http://localhost:8000/v1
+
+# API key of a provider
+PROVIDER_OPENAI_KEY=sk-...
+```
+Name each variable `PROVIDER_<PROVIDER>_URL` or `PROVIDER_<PROVIDER>_KEY`, where `<PROVIDER>` is the provider name in uppercase: `OLLAMA`, `VLLM`, `LITELLM`, `OPENAI` or `GEMINI`.
+
+The `litellm` provider talks to a [LiteLLM](https://docs.litellm.ai/) proxy. It has no default URL and always needs a token, so set both. If either is missing, `experiment run` stops straight away with a clear message instead of failing later with an opaque `401`:
+```env
+PROVIDER_LITELLM_URL=https://your-litellm-proxy.example.org/v1
+PROVIDER_LITELLM_KEY=sk-...
+```
+
+**Literature search** — `search run` queries Semantic Scholar first, then OpenAlex if you set a key:
+```env
+OPENALEX_API_KEY=...
+# Cap on OpenAlex results per query (default 5000)
+MAX_OPEN_ALEX_RESPONSES=5000
+# Used for DOI downloads via Unpaywall, and as the OpenAlex polite-pool address
+UNPAYWALL_EMAIL=you@example.com
+```
+
+**PDF text extraction** — used by `papers extract --processor docling`:
+```env
+DOCLING_URL=http://localhost:5001/
+DOCLING_USER=myuser
+DOCLING_PASSWORD=mypassword
+```
+
+**Where files are stored** — by default the CLI writes into the current directory:
+```env
+LLMEXER_BASEDIR=my-projects
+```
+
+To use a different set of variables for one run, pass your own file:
+```bash
+llmexer --env-file custom.env
+```
 
 ## Documentation
 
@@ -78,12 +86,11 @@ This tool requires access to local or remote running LLMs. It uses a `.env` file
 
 ## 🚀 Getting Started
 
-A typical end-to-end workflow for collecting and processing papers inside a project:
+This is the usual path from an empty project to analysed results.
 
-**1. Create a new project**
+**1. Create a project**
 ```bash
 llmexer project create
-# Output: created project '20260402-a1b2c3d4'
 ```
 
 **2. Give it a meaningful name**
@@ -91,61 +98,43 @@ llmexer project create
 llmexer project rename --old-id 20260402-a1b2c3d4 --new-id llm-survey-2026
 ```
 
-**3. Initialise the project structure**
+**3. Set up the project structure**
 
-Scaffold a standard `experiment/` subfolder with template CSVs and a prompt file:
+This creates an `experiment/` folder with template CSVs and a starter prompt:
 ```bash
 llmexer experiment init --pid llm-survey-2026
 ```
 
-<details markdown="1">
-
-Initialization of the project creates following files (inside <PROJECT_NAME> folder):
-
-| File | Description |
+| File | What it holds |
 | :-------- | :---------- |
-| `experiment/llms-for-experiment.csv` | List of models to use (`provider`, `model_name`, `profile_name`, `notes`); pre-filled with `gemma4:31b`, `phi4:14b`. Each row is one model run under one `llm-params.csv` profile — list a model twice to run it under two profiles. |
-| `experiment/data.csv` | Input data rows (`ID`, `Title`, `Abstract`). |
-| `experiment/mapping.csv` | Maps data IDs to prompt IDs; pre-filled with `D01;prompt01` and `D02;prompt01`. |
+| `experiment/llms-for-experiment.csv` | The models to test. One row is one model run under one profile, so list a model twice to run it under two profiles. |
+| `experiment/data.csv` | Your input rows. |
+| `experiment/mapping.csv` | Which prompt each data row uses. |
+| `experiment/llm-params.csv` | Hyperparameter profiles, keyed by provider, model and profile name. |
 | `experiment/prompts/prompt01.txt` | A starter Jinja2 prompt template using `{{title}}` and `{{abstract}}`. |
-| `experiment/llm-params.csv` | LLM hyperparameter profiles. Identity columns: `provider`, `model_name`, `profile_name`; universal columns: `temperature`, `top_p`, `max_tokens`; provider-grouped columns: `ollama_context_window`, `ollama_repeat_penalty` (ollama), `vllm_min_p`, `vllm_best_of` (vllm), `openai_seed` (openai), `gemini_thinking_level` (gemini), `litellm_min_p`, `litellm_best_of` (litellm). Pre-filled with example profiles for `ollama`, `openai`, `vllm`, `gemini`, and `litellm`. |
 
-</details>
+**4. Build the experiment database**
 
-**4. Generate the full experiment database**
-
-After filling in `experiment/llms-for-experiment.csv`, `experiment/data.csv`, `experiment/mapping.csv`, `experiment/llm-params.csv`, and your Jinja2 prompt templates and use `map` to bring all together. The two CSVs are matched on `provider`, `model_name` and `profile_name`; that combination must be unique in each file, or `generate` reports it and stops.
-
-<details>
-* `experiment/mapping.csv` can be built for you rather than written by hand — handy after
-`experiment copy-papers` or `experiment copy-search` has replaced `data.csv` with `P01`/`S01`-style IDs.
-* `map` pairs every data row with every selected prompt and backs up any existing `mapping.csv`
-</details>
-
+First fill in the CSVs and write your prompt templates. Then pair the data rows with the prompts you want:
 ```bash
 llmexer experiment map --pid llm-survey-2026 --prompt prompt01,prompt02
 ```
 
-At the end, generate database file with experiments:
+`map` is optional, and most useful after `experiment copy-papers` or `experiment copy-search` has replaced your `data.csv`. It pairs every data row with every prompt you select and backs up the old `mapping.csv`.
+
+Now generate the experiments:
 ```bash
 llmexer experiment generate --pid llm-survey-2026
 ```
 
-<details markdown="1">
+`generate` renders every combination of data row, prompt, model and parameter profile, then writes them to a SQLite database in `experiment/`. Models and profiles are matched on provider, model name and profile name. Each of those combinations must be unique in each CSV; if one is repeated, `generate` reports it and stops. A model with no matching profile is reported and skipped.
 
-This renders every (data row × prompt × LLM models × LLM parameters) combination and writes a self-contained SQLite database `experiment/experiment_<YYYYMMDD>_<NN>.db` (`<NN>` is a zero-padded counter starting at `01`). Each LLM provider gets **two** tables. `experiment_<provider>` (e.g. `experiment_ollama`) holds the rendered prompt, model identity and the SHA-256 hashes — plus the result columns that `experiment run` fills in later. `params_<provider>` (e.g. `params_ollama`) holds one row per hyperparameter set, so a profile is stored once instead of being repeated on every row of the cross join. The two are joined on `params_code` (built as `MODELNAME_PROVIDER`) together with `profile_name`. The `code` field encodes each combination as `DATAID_PROMPTID_MODELNAME_PROFILENAME`.
-
-Profiles are matched to models on **both** `provider` and `model_name` (stripped, case-sensitive), so a profile only applies to the provider it was written for. A model with no matching profile is reported and skipped. Use `--dry-run` to preview the row count without writing:
+Add `--dry-run` to see how many rows you would get, without writing anything:
 ```bash
 llmexer --dry-run experiment generate --pid llm-survey-2026
 ```
 
-</details>
-
-> 💡 **Hint — external tools:** the generated experiment store is a SQLite database
-> (`experiment/experiment_*.db`). Beyond the CLI, you can open and edit it directly with any
-> external SQLite tool — for example [DBeaver](https://dbeaver.io/). To see each row next to the
-> hyperparameters it was run with, join the two tables:
+> 💡 **Hint:** the experiment store is a plain SQLite database (`experiment/experiment_*.db`), so you can also open and edit it in a tool such as [DBeaver](https://dbeaver.io/). Each provider has an `experiment_<provider>` table for the rows and a `params_<provider>` table for the hyperparameters. Join them to see each row next to the parameters it ran with:
 >
 > ```sql
 > SELECT e.*, p.* FROM experiment_ollama e
@@ -153,201 +142,159 @@ llmexer --dry-run experiment generate --pid llm-survey-2026
 >   ON e.params_code = p.params_code AND e.profile_name = p.profile_name;
 > ```
 
-**5. Extend an existing experiment database (optional)**
+**5. Add later combinations to the database (optional)**
 
-Added a model, a profile or a few mapping rows after generating? `update` appends the missing combinations to an existing database instead of starting a new one:
+If you add a model, a profile or a few mapping rows after generating, `update` appends what is missing instead of starting a new database:
 ```bash
 llmexer experiment update --pid llm-survey-2026
 ```
 
-<details markdown="1">
+Stored rows and the results already collected for them are never touched.
 
-The input CSVs are re-read and cross-joined exactly as `generate` does, then compared with the database: combinations it does not hold yet are appended after the highest existing `ID`, and everything already stored — including the results `run` has collected — is left untouched. With no `--file` the newest `experiment_*.db` is updated; `--dry-run` reports the row count without writing.
+Hyperparameters are never rewritten either. If a profile keeps its name but has different values, `update` reports the differences and stops — otherwise you could not tell rows generated before the change from rows generated after it. Give the changed parameters a new profile name, point the model row at it, and run `update` again. A changed prompt or data cell is only reported as a warning, and the stored rows keep the text they were generated with.
 
-Hyperparameters are never rewritten. If a profile of `llm-params.csv` still carries its old name but different values, `update` prints the differing columns (`db=` vs `csv=`) and stops without writing anything — otherwise rows generated before and after the change would be indistinguishable. Give the changed parameters a new `profile_name`, point the matching `llms-for-experiment.csv` row at it, and run `update` again. An edited prompt template or `data.csv` cell is reported the same way, as a warning; the stored rows keep the text they were generated with.
+**6. Try one combination (optional)**
 
-</details>
-
-**6. Try a single experiment combination (optional)**
-
-Before running the whole cross join, check what one prompt actually returns for one data row under one profile:
+Before running everything, check what one prompt returns for one data row under one profile:
 ```bash
 llmexer experiment try --pid llm-survey-2026 \
   --prompt prompt01 --profile ollama-default --data-id D01
 ```
 
-<details markdown="1">
+`try` is `generate` and `run` for a single combination. It checks all three names first, so a typo stops the command before any LLM call. The model and provider come from the profile; if one profile name covers several models, `try` lists them and asks you to add `--model` or `--provider`. Every try is kept as history in the database, together with the parameters it used, and leaves your generated rows and their results alone. Add `--dry-run` to print the rendered prompt without calling anything.
 
-`try` is `generate` and `run` for a single combination. The three params are validated first (if prompt is known, `--data-id` exists and  profile available), otherwise a call is aborted before any LLM call. The model and provider must come from the profile's row in `llm-params.csv` (when one profile name covers several models, `try` lists the candidates and asks for `--model`/ `--provider`).
+**7. Run the experiment**
 
-Every try is appended to `try_experiment_<provider>` and `try_param_<provider>` in the experiment database (`--file`, newest by default), so a series of tries is kept as a history and each one records the parameters it actually ran with. The generated experiment rows, their results and `experiment stats` are untouched. Option `--dry-run` prints the rendered prompt without calling anything; it is accepted both as the global flag (`llmexer --dry-run experiment try ...`) and as an option of `try` itself (`llmexer experiment try ... --dry-run`).
-
-</details>
-
-**7. Run the experiment - call LLMs and collect results**
-
-Once `experiment generate` has produced the database, run all combinations:
+Call the LLMs and collect the results:
 ```bash
 llmexer experiment run --pid llm-survey-2026 --file experiment_<SAMPLE>.db
 ```
 
-Every option of `experiment run` — previewing a run, restricting it to one provider, model or profile, running a single combination, and running several calls at once — is covered in [Scenario 4](#-scenario-4-advanced-usage-of-the-experiment-cli-commands).
+Results are written back into the same database, so it stays your single source of truth. Each call is also saved as a JSON file in `experiment/responses/`. If you run the command again, rows that already finished successfully are skipped.
 
-**8. Inspect experiment statistics**
+[Scenario 4](#-scenario-4-more-ways-to-run-an-experiment) covers the rest of the options: previewing a run, narrowing it to one provider, model or profile, running a single row, and running several calls at once.
 
-Get aggregate statistics (total, finished, running, errors, total tokens, and per-provider / per-model breakdowns). The per-model table reports, for each model, the `provider` serving it, `requests`, `finished`, `open` (pending/unrun), `time total` (HH:MM:SS elapsed over finished requests), `average time` (HH:MM:SS mean elapsed per finished request), and `tokens` (summed over finished requests). With no `--file` it reads the project's single `experiment_*.db` (pass `--file` if several exist):
+**8. Check the statistics**
 ```bash
 llmexer experiment stats --pid llm-survey-2026
 ```
-Pass `--file` to inspect a specific database instead:
+
+You get totals, token counts, and a breakdown per provider and per model. If the project holds several databases, pass `--file` to choose one:
 ```bash
 llmexer experiment stats --pid llm-survey-2026 --file experiment_<SAMPLE>.db
 ```
 
 **9. Export the results as HTML (optional)**
 
-Render the finished experiment as a single, self-contained page for screening or sharing:
+This renders the experiment as one self-contained page, which is handy for screening or sharing:
 ```bash
 llmexer experiment export --pid llm-survey-2026 --file experiment_<SAMPLE>.db
 ```
 
-<details markdown="1">
-
-Writes `experiment_<SAMPLE>.html` next to the database: sortable columns, per-column filters,
-row counters, dark mode and a copy button on every cell. Ten columns are exported —
-`provider`, `model`, `profile`, `code`, `response_text`, `tokens`, `status`, `seconds`,
-`timestamp`, `try`.
-
-The `try` column holds a ready-to-run command that re-runs that one combination — copy the
-cell and paste it into a shell:
-```bash
-llmexer experiment try --pid llm-survey-2026 --file experiment_<SAMPLE>.db \
-  --data-id D01 --prompt prompt01 --profile ollama-default \
-  --model llama3.3:latest --provider ollama
-```
-</details>
+The page has sortable columns, per-column filters and a copy button on every cell. Each row also carries a ready-to-run `experiment try` command, so you can copy a cell and re-run that single combination in a shell.
 
 **10. Analyse the results in a notebook (optional)**
-
-Scaffold a Jupyter workspace for the project and open it:
 ```bash
 llmexer analysis init --pid llm-survey-2026
 ```
 
-<details markdown="1">
+This creates an `analysis/` folder with two notebooks and the Python modules they call. Open `analyse_experiment.ipynb` and run all cells: it loads the experiment database, parses each model answer from JSON into its own columns, exports those answers as a CSV, and prints the statistics and charts. `analyse_searches.ipynb` does the same for one search.
 
-Creates `analysis/` next to `experiment/`, `papers/` and `searches/`, containing
-`analyse_experiment.ipynb`, `analyse_searches.ipynb` and the `transform.py` / `stats.py` /
-`plots.py` modules they call. Open `analysis/analyse_experiment.ipynb` and run all cells: it
-loads the experiment database named in `DB_FILE`, parses each model answer from JSON into its
-own columns, writes just those answers to a CSV next to the notebook, counts the distinct values
-of every answer column and charts the yes/no and countable ones, then prints the statistics and
-renders the rest of the charts inline. `analyse_searches.ipynb` does the same for one search — set
-`SEARCH_INDEX` to pick which.
+The modules are copies, so each project can grow its own analysis. The notebooks import only those copies and never `llmexer`, so the folder stands on its own. To restore the shipped versions, run `llmexer analysis init --rewrite`; your copies are backed up first.
 
-The modules are copies, so a project can grow its own analysis — `%autoreload` picks up every
-edit without a kernel restart. The notebooks import only those copies, never `llmexer`, so the
-folder is self-contained. `llmexer analysis init --rewrite` puts the shipped versions back,
-moving your copies into `analysis/.backup/` first. Running the notebooks needs the optional packages:
-`uv pip install -e . --group analysis`.
-
-</details>
-
-The API key is read from `.env` (pattern -> `PROVIDER_<PROVIDER_UPPER>_KEY`).
-
-P.S.: CLI interfaces could become very complex with the time, thus refer to the `--help` to get options and parameters of the utility:
+Running the notebooks needs the optional analysis packages:
 ```bash
-llmexer --help
+uv pip install -e . --group analysis
 ```
 
-## 📢 Scenario 1: Gathering data for projects by adding papers
+> 💡 The CLI has many more options than this guide shows. Run `llmexer --help`, or `llmexer <category> <command> --help`, to see them all.
 
-**1. Add papers to the project** - local file
+## 📢 Scenario 1: Add papers to a project
 
 From a local file:
 ```bash
 llmexer papers add --pid llm-survey-2026 --file ~/Downloads/attention-is-all-you-need.pdf
 ```
-**2. Add papers to the project** - from directory
 
 From a directory of PDFs:
 ```bash
 llmexer papers add --pid llm-survey-2026 --directory ~/Downloads/papers/
 ```
 
-**3. Add papers to the project** - from url
 From a URL:
 ```bash
 llmexer papers add --pid llm-survey-2026 --url https://arxiv.org/pdf/1706.03762
 ```
 
-## 📢 Scenario 2: Gathering data for projects by running search
+## 📢 Scenario 2: Collect data by running a literature search
 
-**1. Run a literature search**
+**1. Run a search**
 
-Create a search configuration and run it:
+Create a search configuration, then run it:
 ```bash
 llmexer search create --pid llm-survey-2026 --query "large language models"
 llmexer search list --pid llm-survey-2026
 llmexer search run --pid llm-survey-2026 --file 20260401-bfdd863d.yaml
 ```
 
-Or run directly from a query string:
+Or run a query directly:
 ```bash
 llmexer search run --pid llm-survey-2026 --query "large language models" --limit 500
 ```
 
-Results are saved as `<ID>__results.csv` in `searches/` (the raw JSON is saved as `<ID>__results_raw.json` in `searches/jsons/`).
+Results are saved as `<ID>__results.csv` in `searches/`.
 
-**2. Filter search results by excluding rows (optional)**
+**2. Filter out rows you do not need (optional)**
 
-`filter` **excludes** rows by one or more criteria and writes `<ID>__filtered.csv`. Filters chain: each run reads the existing `__filtered.csv` (or the `__results.csv` if none) and rewrites it. Combine `--language`, `--source`, `--doi`, `--downloaded` in one run:
+`filter` removes rows and writes `<ID>__filtered.csv`. Filters chain: each run reads the existing filtered file, or the results file if there is none, and rewrites it. You can combine `--language`, `--source`, `--doi` and `--downloaded` in one run:
 ```bash
-# drop German rows and rows still not downloaded
+# drop German rows, and rows that are not downloaded yet
 llmexer search filter --pid llm-survey-2026 --file 20260401-bfdd863d.yaml --language de --downloaded
 ```
-`--file` is optional — omit it to apply the same filters to **every** search in the project. Every applied filter (per search) is recorded in `searches/logs/filters-applied.log`.
+
+Leave out `--file` to apply the same filters to every search in the project. Each applied filter is logged, so you can see later what was removed.
 
 **3. Export search results as HTML (optional)**
-
 ```bash
 llmexer search export --pid llm-survey-2026 --file 20260401-bfdd863d.yaml
 ```
-Writes `<ID>__results.html` next to the CSV: sortable columns, per-column filters, row counters, dark mode, clickable DOIs, copy buttons, collapsible abstracts. `--csv-file <name>.csv` exports a single CSV; omit both to export every search.
 
-## 📢 Scenario 3: Gathering data by downloading papers and extracting text
+This writes an HTML page next to the CSV, with sortable columns, per-column filters, clickable DOIs and collapsible abstracts. Leave out `--file` to export every search.
 
-**1. Download open-access papers by DOI via Unpaywall**
+## 📢 Scenario 3: Download papers and extract their text
 
-Download by DOI (one or more):
+**1. Download open-access papers by DOI**
+
+`llmexer` uses the Unpaywall API, which needs your email address:
 ```bash
 llmexer papers download --pid llm-survey-2026 --doi 10.1038/nature12373 --email you@example.com
 ```
-Download from a full search result CSV (downloads all papers with a DOI, names each file `YEAR_AUTHOR_TITLE_DOI.pdf`):
+
+You can also download every paper with a DOI from a search result file:
 ```bash
 llmexer papers download --pid llm-survey-2026 --search-file 20260401-bfdd863d__results.csv
 ```
-Or from a filtered CSV to download only the papers that passed the language filter:
+
+Or from a filtered file, to download only the papers that passed your filters:
 ```bash
 llmexer papers download --pid llm-survey-2026 --search-file 20260401-bfdd863d__filtered.csv
 ```
-Failed downloads are saved automatically as `20260401-bfdd863d__results_download_failed.csv` (columns: `doi`, `url`, `title`, `desired_filename`, `downloaded`) in the `searches/logs/` folder. After a `--search-file` download completes, the search is automatically synced against the `papers/` folder in **existing-only** mode — it updates `pdf_downloaded` (and text/markdown companions) for the listed rows but does not add new rows for unrelated PDFs.
 
-**2. Extract text from all added papers** - pypdf
+Failed downloads are written to a CSV in `searches/logs/`, so you can retry them. When the download finishes, the search is synced against your `papers/` folder: the listed rows are updated, and no new rows are added.
 
-Using the default `pypdf` backend (saves `.txt` files):
+**2. Extract text from the papers**
+
+The default `pypdf` backend saves `.txt` files:
 ```bash
 llmexer papers extract --pid llm-survey-2026
 ```
 
-**3. Extract text from all added papers** - docling
-
-Using the `docling` backend for richer Markdown output (saves `.md` files), reading connection details from `.env`:
+The `docling` backend gives richer Markdown output and saves `.md` files. It reads its connection details from `.env`:
 ```bash
 llmexer papers extract --pid llm-survey-2026 --processor docling
 ```
 
-Override `.env` connection settings at runtime:
+You can also pass those details directly:
 ```bash
 llmexer papers extract --pid llm-survey-2026 --processor docling \
   --docling-url http://myserver:5001/ \
@@ -355,53 +302,42 @@ llmexer papers extract --pid llm-survey-2026 --processor docling \
   --docling-password secret
 ```
 
-By default, papers that already have an extracted file are skipped. Use `--rewrite` to force re-extraction:
+Papers that already have an extracted file are skipped. Use `--rewrite` to extract them again:
 ```bash
 llmexer papers extract --pid llm-survey-2026 --rewrite
 ```
 
-## 📢 Scenario 4: Advanced usage of the experiment CLI commands
-
-<details>
-<summary>Details about how does the `experiment run` CLI command works</summary>
-`experiment run` reads every row from the generated database (`experiment_*.db`, joining each row with its provider's `params_<provider>` table) and calls the appropriate LLM. With no `--file` it uses the newest `experiment_*.db`. Results are written **back into the same database in place** — each row's response, status, token usage, and timestamps are updated on its provider table, so the database stays the single source of truth (no separate results file). Re-running skips rows that already finished successfully and updates the rest. Each individual call is also saved as a JSON file under `experiment/responses/`. Both the per-call JSON and the database `response_json` column include the **complete raw backend response** under `raw_response` (all provider fields — e.g. `finish_reason`, per-token `usage`, and ollama extras like `eval_count` / `*_duration`), not just the response text and total token count.
-</details>
+## 📢 Scenario 4: More ways to run an experiment
 
 **1. Preview a run without calling any LLM**
-
-Use `--dry-run` to see the row count first:
 ```bash
 llmexer --dry-run experiment run --pid llm-survey-2026
 ```
 
-**2. Run only a specific provider's rows by applying filter**
+**2. Run the rows of one provider**
 
-Useful when only one backend is available (e.g. a local ollama):
+This helps when only one backend is available, such as a local ollama:
 ```bash
 llmexer experiment run --pid llm-survey-2026 --filter-provider ollama
 ```
 
-**3. Narrow the run to one model or one hyperparameter profile**
+**3. Run one model or one profile**
 
-Both match the name in full and case-sensitively:
-
+Both names must match in full, and they are case-sensitive:
 ```bash
 llmexer experiment run --pid llm-survey-2026 --filter-model gemma4:31b
 ```
 
-Filter by profile
 ```bash
 llmexer experiment run --pid llm-survey-2026 --filter-profile ollama-creative
 ```
 
-Combining two filter
+You can also combine the filters:
 ```bash
 llmexer experiment run --pid llm-survey-2026 --filter-provider ollama --filter-model gemma4:31b
 ```
 
-**4. Run a single experiment out of the set of experiments**
-
-By its `code`:
+**4. Run a single row by its code**
 ```bash
 llmexer experiment run --pid llm-survey-2026 \
   --file experiment_<SAMPLE>.db --code 1
@@ -409,193 +345,183 @@ llmexer experiment run --pid llm-survey-2026 \
 
 **5. Run several LLM calls at once**
 
-Most of a run is spent waiting on the LLM backend, so `--parallel-calls` lets several calls be in flight at once. The N limit is global to all (never more than N calls in total, whatever mix of providers the rows use). Default is `1` (i.e. the sequential runs). Results are still written **one at a time**.
+Most of a run is spent waiting for the backend, so `--parallel-calls` lets several calls run at the same time. The limit applies across all providers, and the default is `1`, which runs the rows one after another. Results are always written one at a time.
 ```bash
 llmexer experiment run --pid llm-survey-2026 --parallel-calls 4
 ```
 
-**6. Try a single experiment combination (optional)**
+#### Working with the current project
 
-Before running the whole cross join, check what one prompt actually returns for one data row under one profile:
-```bash
-llmexer experiment try --pid llm-survey-2026 \
-  --prompt prompt01 --profile ollama-default --data-id D01
-```
-
-#### Using Current Project ID
-
-Many commands support the `--pid` parameter to specify which project to work with. If you set `PROJECT_ID` in your `.env` file, you can omit this parameter and the commands will use the current project automatically:
+Most commands take a `--pid` option to say which project to use. If you set `PROJECT_ID` in your `.env` file, you can leave it out:
 
 ```bash
-# Set in .env
+# in .env
 PROJECT_ID=my-project
 
-# These commands will use my-project automatically
+# uses my-project
 llmexer search run --query "machine learning"
 ```
 
-You can still override the current project by explicitly providing `--pid`:
+Pass `--pid` to override it for a single command:
 ```bash
 llmexer search run --pid different-project --query "deep learning"
 ```
 
 ## 🗂️ CLI category: **project**
 
-The `project` (alias: `proj`) category provides commands for managing LLM projects (the top-level container for experiments, papers, and searches):
+A project is the top-level container for your experiments, papers and searches. The `project` category (alias: `proj`) manages them.
 
-| Command   | Description | Command Example |
+| Command   | What it does | Example |
 |-----------|-------------|-----------------|
-| `create` | Create a new project folder under `.projects/` using format `YYYYMMDD-GUID`. Accepts an optional custom ID. | `llmexer project create --id my-project` |
-| `current` | Display the current project ID loaded from `.env`. | `llmexer project current` |
-| `rename` | Rename an existing project. Uses `PROJECT_ID` from `.env` if `--old-id` is omitted. | `llmexer project rename --old-id old-name --new-id new-name` |
+| `create` | Creates a project folder under `.projects/`. Takes an optional custom ID. | `llmexer project create --id my-project` |
+| `current` | Shows the current project ID from `.env`. | `llmexer project current` |
+| `rename` | Renames a project. Uses `PROJECT_ID` from `.env` if you leave out `--old-id`. | `llmexer project rename --old-id old-name --new-id new-name` |
 
 ## 🧪 CLI category: **experiment**
 
-The `experiment` (alias: `exp`) category provides commands for initialising, generating, and running LLM experiments inside a project:
+The `experiment` category (alias: `exp`) sets up, generates and runs the experiments inside a project.
 
-| Command   | Description | Command Example |
+| Command   | What it does | Example |
 |-----------|-------------|-----------------|
-| `init` | Initialise an existing project with a standard folder structure (`experiment/`, `experiment/prompts/`) and template files: `llms-for-experiment.csv` (`provider;model_name;profile_name;notes`, pre-filled with example ollama models pointing at the `ollama-default` / `ollama-creative` profiles), `data.csv`, `mapping.csv` (pre-filled with D01 and D02 rows), `prompts/prompt01.txt` (Jinja2 template using `{{title}}` and `{{abstract}}`), and `llm-params.csv` (hyperparameter profiles; universal: `temperature`, `top_p`, `max_tokens`; ollama: `ollama_context_window`, `ollama_repeat_penalty`; vllm: `vllm_min_p`, `vllm_best_of`; openai: `openai_seed`; gemini: `gemini_thinking_level`). Raises an error if already initialised. | `llmexer experiment init --pid my-project` |
-| `copy-papers` | Copy parsed papers (`.md`/`.txt`) from the project's `papers/` folder into `experiment/data.csv` as rows `ID;filename;content`, with IDs `P01`, `P02`, … ordered alphabetically by filename (`.md` preferred over `.txt` when both exist). An existing `data.csv` is backed up to `data_backup_<YYYYMMDD>_<NN>.csv` first. | `llmexer experiment copy-papers --pid my-project` |
-| `copy-search` | Copy a search results CSV (`--file`, absolute or relative to the project's `searches/` folder) into `experiment/data.csv` as rows `ID;Title;Abstract;doi;authors`, with IDs `S01`, `S02`, … preserving the source file's row order. An existing `data.csv` is backed up to `data_backup_<YYYYMMDD>_<NN>.csv` first. | `llmexer experiment copy-search --pid my-project --file <SEARCH_ID>__results.csv` |
-| `map` | Build `experiment/mapping.csv` by pairing every row of `data.csv` with the selected prompt(s) from `prompts/` — a cross join, written prompt by prompt. Use `--prompt` to pick templates (repeatable, and each value may itself be a comma-separated list; the `.txt` extension is optional); omit it to use every prompt in `prompts/`. A named prompt that does not exist aborts the command with every missing name listed, leaving `mapping.csv` untouched. An existing `mapping.csv` is backed up to `mapping_backup_<YYYYMMDD>_<NN>.csv` first. Supports `--dry-run`. | `llmexer experiment map --pid my-project --prompt prompt01,prompt02` |
-| `generate` | Render all (data row × prompt × LLM models × LLM parameters) combinations and write a self-contained SQLite database `experiment/experiment_<YYYYMMDD>_<NN>.db` (`<NN>` is a zero-padded counter starting at `01`). Each LLM provider gets two tables: `experiment_<provider>` (e.g. `experiment_ollama`) with columns `ID`, `code` (`DATAID_PROMPTID_MODELNAME_PROFILENAME`), `prompt`, `tokens_estimate`, `original_data`, `model_name`, `provider_name`, the `params_code` / `profile_name` join key, the `prompt_hash` / `original_data_hash` columns and the result columns filled in by `run` (`response_text`, `status`, `state`, `call_count`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `elapsed_seconds`, `timestamp`, `response_json`); and `params_<provider>` (e.g. `params_ollama`) with one row per hyperparameter set from `llm-params.csv` — primary key `(params_code, profile_name)`, then `temperature`, `top_p`, `max_tokens` plus the provider-specific ones (e.g. `ollama_context_window`, `ollama_repeat_penalty`). Profiles from `llm-params.csv` are matched on all three of `provider`, `model_name` and `profile_name`; a model with no matching profile is reported and skipped, and a duplicated combination in either file is reported in red and aborts before anything is written. Rows are sorted by model order from `llms-for-experiment.csv`. Supports `--dry-run`. | `llmexer experiment generate --pid my-project` |
-| `update` | Add combinations added to the input CSVs into an already generated database, instead of generating a new one. The CSVs are re-read and cross-joined exactly as `generate` does, then compared with the database: combinations it does not hold yet are appended after the highest existing `ID`, while stored rows and the results `run` collected for them are left untouched (a provider new to the database gets its `experiment_<provider>` / `params_<provider>` pair created). A profile of `llm-params.csv` whose values changed under an unchanged `profile_name` aborts the command with the differing columns reported as `db=` vs `csv=` and nothing written — rename the profile and re-run. Stored rows whose prompt template or `data.csv` text has since changed are reported as a warning and left as they are. Supports `--dry-run` and `--file` (choose a specific `.db`, defaults to the newest). | `llmexer experiment update --pid my-project` |
-| `try` | Render and run **one** `data.csv` row × prompt × profile combination and print the response — `generate` and `run` at once, for a single try. Takes `--prompt` (a template from `prompts/`, `.txt` optional), `--profile` (a profile name from `llm-params.csv`, matched in full and case-sensitively) and `--data-id` (an `ID` from `data.csv`); all three are validated up front and an unknown name aborts before any LLM call, listing what is available. The model and provider come from the profile's row; `--model` / `--provider` disambiguate a profile name shared by several models. The response is printed under a `model` / `provider` / prompt, completion and total token header, saved as JSON under `experiment/responses/`, and appended to the `try_experiment_<provider>` / `try_param_<provider>` tables of the database (`--file`, newest by default) — one row per try in each, so every try keeps the parameters it ran with. Generated rows and `stats` are unaffected. On a real try the rendered prompt is printed first, then a `Waiting for LLM provider to answer ...` spinner while the call is in flight. Supports `--dry-run` both as the global flag and as its own option (`-d`), which renders and prints the prompt and calls nothing. | `llmexer experiment try --pid my-project --prompt prompt01 --profile ollama-default --data-id D01 --dry-run` |
-| `run` | Execute every row in the generated database `experiment_*.db` (no separate params file needed — all columns are embedded). Calls each LLM via the OpenAI SDK (supports ollama, vllm, litellm, openai, gemini) and writes results **back into the same database in place** (response, status, `prompt_tokens` / `completion_tokens` / `total_tokens`, timestamps, plus the complete raw backend response under `raw_response`); re-runs skip rows that already finished successfully and update the rest. Individual JSON responses are saved under `experiment/responses/`. Supports `--dry-run`, `--file` (choose a specific `.db`, defaults to the newest), `--filter-provider` (only run rows for a specific provider, case-insensitive), `--filter-model` / `--filter-profile` (only run rows whose `model_name` / `profile_name` matches in full, case-sensitively), `--code` (run a single combination by its `code`), `--parallel-calls` (how many LLM calls may be in flight at once across all providers, default `1`; results are still written one at a time). The filters combine with AND; when none of the filtered rows exist the command reports it and exits cleanly. API key read from the `PROVIDER_<PROVIDER_UPPER>_KEY` env var; URL from `PROVIDER_<PROVIDER_UPPER>_URL` or built-in defaults (`litellm` requires both to be set explicitly). Requires `openai` package (`pip install openai`). | `llmexer experiment run --pid my-project --filter-provider ollama` |
-| `stats` | Show aggregate statistics from a project's experiment database: totals (total, finished, running, errors), total tokens, and per-provider / per-model breakdowns rendered as Rich tables. The Models table has columns `Model`, `Provider`, `requests`, `finished`, `open` (pending/unrun), `time total` (HH:MM:SS over finished requests), `average time` (HH:MM:SS mean per finished request), and `tokens` (summed over finished requests); it is grouped by (model, provider) and sorted by model then provider, so the same model served by two providers is reported once per provider rather than merged into one row. With no `--file` it reads the project's single `experiment_*.db` (pass `--file` to choose one when several exist). | `llmexer experiment stats --pid my-project` |
-| `list` | List all projects with their initialization state and generated experiment databases, with optional sorting by name or date. | `llmexer experiment list --sort-by date --desc` |
-| `export` | Render a generated experiment database as an HTML page next to it (same name, `.html`). Exports `provider`, `model`, `profile`, `code`, `response_text`, `tokens`, `status`, `seconds`, `timestamp` and `try` for every row, run or not. Sortable columns, per-column filters, row counters, dark mode and a copy button on every cell. `code` is collapsed to 5 characters behind a `more` toggle; `response_text` is pretty-printed as JSON when it parses (a ```json fence is stripped first) and kept as plain text when it does not; `tokens` is `total_tokens`; `seconds` is rounded to one decimal and `timestamp` trimmed to whole seconds; `try` is a ready-to-run `experiment try` command that re-runs that single combination. `--file` chooses a database (newest by default), `--rewrite` overwrites; respects `--dry-run`. | `llmexer experiment export --pid my-project` |
+| `init` | Creates the `experiment/` folder with template CSVs and a starter prompt. Stops if the project is already set up. | `llmexer experiment init --pid my-project` |
+| `copy-papers` | Copies the extracted text of your papers into `data.csv`, one row per paper. Backs up the old file first. | `llmexer experiment copy-papers --pid my-project` |
+| `copy-search` | Copies a search result CSV into `data.csv`, keeping the original row order. Backs up the old file first. | `llmexer experiment copy-search --pid my-project --file <SEARCH_ID>__results.csv` |
+| `map` | Rebuilds `mapping.csv` by pairing every data row with the prompts you select. Use `--prompt` to pick them, or leave it out to use all of them. An unknown prompt name stops the command. Backs up the old file first. Supports `--dry-run`. | `llmexer experiment map --pid my-project --prompt prompt01,prompt02` |
+| `generate` | Renders every combination of data row, prompt, model and parameter profile into a new SQLite database. A model without a matching profile is skipped, and a repeated combination stops the command before anything is written. Supports `--dry-run`. | `llmexer experiment generate --pid my-project` |
+| `update` | Appends new combinations to an existing database instead of generating a new one. Stored rows and their results stay as they are. A profile whose values changed under the same name stops the command; rename the profile and run it again. Supports `--dry-run` and `--file`. | `llmexer experiment update --pid my-project` |
+| `try` | Renders and runs one combination of data row, prompt and profile, then prints the answer. All three names are checked first, so a typo stops the command before any LLM call. Each try is kept as history, with the parameters it used. Supports `--dry-run`. | `llmexer experiment try --pid my-project --prompt prompt01 --profile ollama-default --data-id D01` |
+| `run` | Runs every row of a generated database against its provider and writes the results back into the same database. Rows that already finished are skipped. Narrow the run with `--filter-provider`, `--filter-model`, `--filter-profile` or `--code`, and raise the throughput with `--parallel-calls`. Supports `--dry-run` and `--file`. | `llmexer experiment run --pid my-project --filter-provider ollama` |
+| `stats` | Shows the totals, token counts, and a breakdown per provider and per model. The same model served by two providers is reported once per provider. Pass `--file` to pick a database. | `llmexer experiment stats --pid my-project` |
+| `list` | Lists all projects with their setup state and their experiment databases. Sort with `--sort-by` and `--desc`. | `llmexer experiment list --sort-by date --desc` |
+| `export` | Renders an experiment database as an HTML page next to it, with sortable columns, per-column filters and a ready-to-run `try` command per row. Supports `--file`, `--rewrite` and `--dry-run`. | `llmexer experiment export --pid my-project` |
 
 ## 📊 CLI category: **analysis**
 
-The `analysis` (aliases: `analyse`, `analyze`) category scaffolds a ready-to-run Jupyter workspace for analysing a project. It creates `analysis/` next to `experiment/`, `papers/` and `searches/`, holding two notebooks and the Python modules they call. The notebooks contain no logic — the cells configure paths, call functions and display the result — so the analysis itself stays testable code. The modules are **copies** and the notebooks import only them, never `llmexer`, so a scaffolded `analysis/` folder is self-contained and can be tweaked per project.
+The `analysis` category (aliases: `analyse`, `analyze`) sets up a Jupyter workspace for a project. It creates an `analysis/` folder next to `experiment/`, `papers/` and `searches/`, holding two notebooks and the Python modules they call.
 
-| Command   | Description | Command Example |
+The notebooks hold no logic of their own — the cells set the paths, call functions and show the result — so the analysis itself stays testable code. The modules are copies, and the notebooks import only them, never `llmexer`. That keeps the folder self-contained and lets you adapt it per project.
+
+| Command   | What it does | Example |
 |-----------|-------------|-----------------|
-| `init` | Create `<project>/analysis/` with `analyse_experiment.ipynb` (loads the experiment database, flattens each `response_text` from JSON into columns, exports those parsed answers as a CSV **led by `code`, `model_name`, `provider_name` and `profile_name`** so each row says whose answer it is, then profiles them — how many distinct values each answer column took and whether it is yes/no, a countable rating or a small set of labels, with a bar chart per chartable column, and crosstabs the first of them by provider and model — before printing the summary, per-model responses, response times, token usage and failures, and rendering four more charts) and `analyse_searches.ipynb` (loads **one** search plus the `papers/` inventory, then breaks it down by search engine, year, open access and language). Alongside them it copies `transform.py`, `stats.py` and `plots.py` — edit them freely, the notebooks pick the changes up via `%autoreload`. What each notebook reads is set by literals written in at scaffold time and editable by hand: `DB_FILE` (the newest `experiment_*.db`) and `SEARCHES` (one entry per search, naming its YAML and the `results` / `filter` CSVs written from it) with `SEARCH_INDEX` choosing which one to analyse — searches are never combined, since two queries are two different populations. Neither literal updates itself: after another `experiment generate` or `search run`, edit the value or re-scaffold. Every notebook is validated with `nbformat` before it is written. Existing files are **never** overwritten without `--rewrite`, which first copies each one to `analysis/.backup/<stem>_backup_<YYYYMMDD>_<NN><ext>`, so the analysis folder keeps showing only the files meant to be opened. Works on a project with no experiment or searches yet — the notebooks report an empty project rather than failing. Respects `--dry-run`. | `llmexer analysis init --pid my-project` |
+| `init` | Creates `<project>/analysis/` with `analyse_experiment.ipynb`, `analyse_searches.ipynb` and the modules they call. The experiment notebook loads the database, parses each answer from JSON into columns, exports them as a CSV, and prints the statistics and charts. The searches notebook breaks one search down by engine, year, open access and language. Both work on an empty project. Existing files are only replaced with `--rewrite`, which backs them up first. Supports `--dry-run`. | `llmexer analysis init --pid my-project` |
+
+The notebooks read their database and search files from literals written in when the folder is created, so you can edit them by hand. They do not refresh themselves: after another `experiment generate` or `search run`, change the value or run `init --rewrite`. Searches are analysed one at a time, because two queries describe two different populations.
 
 Running the notebooks needs the optional analysis packages: `uv pip install -e . --group analysis`.
 
 ## 📑 CLI category: **papers**
 
-The `papers` category provides commands for managing PDF papers within a project:
+The `papers` category manages the PDFs of a project.
 
-| Command   | Description | Command Example |
+| Command   | What it does | Example |
 |-----------|-------------|-----------------|
-| `add --file` | Copy a single PDF into the project's `papers/` folder. | `llmexer papers add --file /path/to/paper.pdf` |
-| `add --directory` | Recursively copy all PDFs from a directory. Already-existing papers are skipped. | `llmexer papers add --directory /path/to/folder` |
-| `add --url` | Download a PDF from a URL into the project's `papers/` folder. | `llmexer papers add --url https://example.com/paper.pdf` |
-| `download --doi` | Download one or more open-access PDFs by DOI using the Unpaywall API. Email required via `--email` or `UNPAYWALL_EMAIL` env var. | `llmexer papers download --doi 10.1038/nature12373 --email you@example.com` |
-| `download --search-file` | Download all papers from a search result CSV (inside `searches/`), including filtered CSVs (`__filtered.csv`). Files are named `YEAR_AUTHOR_TITLE_DOI.pdf`. On completion, auto-runs `search sync` to reconcile the search against `papers/` (updates `pdf_downloaded`, txt/markdown). Failures saved as `<stem>_download_failed.csv` in `searches/logs/`. | `llmexer papers download --search-file 20260401-abc123__filtered.csv` |
-| `extract` | Extract text from all PDFs in `papers/`. Default `pypdf` backend saves `.txt`; `docling` backend sends PDFs to a remote docling-serve instance and saves `.md`. Connection details (`DOCLING_URL`, `DOCLING_USER`, `DOCLING_PASSWORD`) read from `.env`; overridable via `--docling-url`, `--docling-user`, `--docling-password`. Already-extracted files are skipped unless `--rewrite` is passed. Pass `--skip-if-md` (pypdf only) to skip PDFs that already have a `.md` extraction. Reports counts for `Extracted`, `Skipped`, `Existing`, and `Error`. | `llmexer papers extract --pid my-project --processor docling` |
+| `add --file` | Copies one PDF into the project's `papers/` folder. | `llmexer papers add --file /path/to/paper.pdf` |
+| `add --directory` | Copies every PDF from a directory and its subdirectories. Papers already in the project are skipped. | `llmexer papers add --directory /path/to/folder` |
+| `add --url` | Downloads a PDF from a URL. | `llmexer papers add --url https://example.com/paper.pdf` |
+| `download --doi` | Downloads open-access PDFs by DOI through the Unpaywall API. Needs your email, from `--email` or `UNPAYWALL_EMAIL`. | `llmexer papers download --doi 10.1038/nature12373 --email you@example.com` |
+| `download --search-file` | Downloads every paper with a DOI from a search result or filtered CSV, then syncs the search against `papers/`. Failures are logged so you can retry them. | `llmexer papers download --search-file 20260401-abc123__filtered.csv` |
+| `extract` | Extracts the text of every PDF in `papers/`. The default `pypdf` backend saves `.txt`; the `docling` backend saves `.md`. Already extracted files are skipped unless you pass `--rewrite`. | `llmexer papers extract --pid my-project --processor docling` |
 
 ## 🔍 CLI category: **search**
 
-The `search` category provides commands for managing and running literature searches. `search run` queries the Semantic Scholar bulk API and, when `OPENALEX_API_KEY` is set, additionally queries the OpenAlex Works API as a second engine — keeping only publications not already found by Semantic Scholar (matched by DOI, falling back to title). OpenAlex is skipped if the key is unset. OpenAlex rows are marked `entry_source="OpenAlex"`.
+The `search` category manages and runs literature searches. `search run` queries the Semantic Scholar bulk API. If you set `OPENALEX_API_KEY`, it then queries the OpenAlex Works API as a second engine and keeps only the publications Semantic Scholar did not already return, matched by DOI or by title. Without the key, OpenAlex is skipped.
 
-| Command   | Description | Command Example |
+| Command   | What it does | Example |
 |-----------|-------------|-----------------|
-| `create` | Create a search configuration YAML file in the project's `searches/` folder. | `llmexer search create --query "machine learning"` |
-| `list` | List all search YAML configs in the project's `searches/` folder as a table (columns: `#`, `Name`, `Query`, `Year`, `Created`, `Results`). Prints a next-step hint referencing the latest search file. | `llmexer search list --pid my-project` |
-| `rename` | Rename a search ID and all its associated files (`<id>.yaml`, `<id>__results.csv`, `<id>__filtered.csv`, `<id>__results_raw.json` under `searches/jsons/`, and `<id>__results_download_failed.csv` under `searches/logs/`). Accepts a full `.yaml` filename for `--old-id`. | `llmexer search rename --old-id 20260401-abc123 --new-id my-search` |
-| `run --query` | Run a search directly from a query string. Saves `<ID>__results.csv` to `searches/` and `<ID>__results_raw.json` to `searches/jsons/`. CSV columns include: `sem_scholar_paper_id`, `year`, `title`, `authors`, `abstract`, `isOpenAccess`, `doi`, `language`, `referenceCount`, `citationCount`, `entry_source`, `pdf_filename`, `txt_filename`, `markdown_filename`, `pdf_downloaded`. Raw JSON also contains `fieldsOfStudy`, `citationStyles`, `publicationTypes`. | `llmexer search run --query "neural networks" --limit 200` |
-| `run --file` | Run a search loading parameters from an existing YAML config. Use `--rewrite` to overwrite existing result files. | `llmexer search run --file 20260401-abc123.yaml` |
-| `stats` | Display statistics for a completed search: papers per year and a stats breakdown (open access, language, downloaded, entry source, txt/markdown presence), stacked for results and filtered CSVs. Without `--file`, falls back to the merged file(s) (`<pid>__merged_results.csv` / `<pid>__merged_filtered.csv`) if present. | `llmexer search stats --file 20260401-abc123.yaml` |
-| `filter` | **Exclude** rows from a search and rewrite `<ID>__filtered.csv`. Reads the existing `__filtered.csv` if present (filters chain), else `__results.csv`. `--file` is optional — omit it to filter every search in the project. Combinable criteria, each applied in order and logged: `--language <code>` / `--source <value>` / `--doi <value>` drop rows equal to the value; `--downloaded` drops rows not yet downloaded. Each applied filter appends a line to `searches/logs/filters-applied.log`. | `llmexer search filter --file 20260401-abc123.yaml --language de --downloaded` |
-| `merge` | Merge the project's search CSVs into two deduplicated files: `<pid>__merged_results.csv` (from `*__results.csv`) and `<pid>__merged_filtered.csv` (from `*__filtered.csv`). Deduplicates by DOI (falling back to title); adds a `0/1` column per search (named after its YAML id) and a `duplicates_counter` column (number of duplicate occurrences, i.e. searches found in minus one). Rows are sorted by year (newest first; blank years last). Use `--rewrite` to overwrite; respects `--dry-run`. | `llmexer search merge --pid my-project` |
-| `sync` | Reconcile `<ID>__results.csv` (and `<ID>__filtered.csv` if present) against the project's `papers/` folder. Updates `pdf_downloaded`, `txt_filename`, and `markdown_filename` for existing rows. By default only files listed in existing rows are updated; pass `--add-local-extra-pdfs` to also append new rows for PDFs in `papers/` not yet listed (marked `entry_source="manually added"`). `--file` is optional: with it a single search is synced, without it every search in the project is synced (in that case `--add-local-extra-pdfs` is not applied). Respects `--dry-run`. | `llmexer search sync --file 20260401-abc123.yaml` |
-| `export` | Render sanitized search result CSVs as HTML pages next to the CSV (same name, `.html`). Sortable columns, per-column filters, row counters, dark mode, clickable DOIs, copy buttons, `more`/`less` toggles. `--file` takes a search ID/YAML name, `--csv-file` a CSV filename inside `searches/`; omit both to export the whole project. `--rewrite` overwrites; respects `--dry-run`. | `llmexer search export --file 20260401-abc123.yaml` |
+| `create` | Creates a search configuration file in the project's `searches/` folder. | `llmexer search create --query "machine learning"` |
+| `list` | Lists the search configurations of a project as a table. | `llmexer search list --pid my-project` |
+| `run --query` | Runs a search from a query string and saves the results as a CSV in `searches/`. | `llmexer search run --query "neural networks" --limit 200` |
+| `run --file` | Runs a search from a configuration file. Use `--rewrite` to replace existing result files. | `llmexer search run --file 20260401-abc123.yaml` |
+| `rename` | Renames a search and all the files that belong to it. | `llmexer search rename --old-id 20260401-abc123 --new-id my-search` |
+| `stats` | Shows the statistics of a search: papers per year, plus a breakdown by open access, language, download state and source. | `llmexer search stats --file 20260401-abc123.yaml` |
+| `filter` | Removes rows from a search and rewrites its filtered CSV. Filters chain, and you can combine `--language`, `--source`, `--doi` and `--downloaded`. Leave out `--file` to filter every search. Each applied filter is logged. | `llmexer search filter --file 20260401-abc123.yaml --language de --downloaded` |
+| `merge` | Merges the project's search CSVs into one deduplicated results file and one deduplicated filtered file, marking which search each row came from and how often it was found. Supports `--rewrite` and `--dry-run`. | `llmexer search merge --pid my-project` |
+| `sync` | Reconciles a search against the project's `papers/` folder and updates which files each row has. Pass `--add-local-extra-pdfs` to also list PDFs that no row mentions yet. Leave out `--file` to sync every search. Supports `--dry-run`. | `llmexer search sync --file 20260401-abc123.yaml` |
+| `export` | Renders search results as an HTML page next to the CSV, with sortable columns, per-column filters, clickable DOIs and collapsible abstracts. Leave out `--file` and `--csv-file` to export the whole project. Supports `--rewrite` and `--dry-run`. | `llmexer search export --file 20260401-abc123.yaml` |
 
-Semantic Scholar API Documentation: [Paper bulk search](https://api.semanticscholar.org/api-docs/#tag/Paper-Data/operation/get_graph_paper_bulk_search) -> this can be used to formulate more sophisticated query string
+To write more precise queries, see the API documentation of both engines:
 
-OpenAlex API Documentation: [Works](https://docs.openalex.org/api-entities/works) -> queried as a second engine when `OPENALEX_API_KEY` is set
+* Semantic Scholar: [Paper bulk search](https://api.semanticscholar.org/api-docs/#tag/Paper-Data/operation/get_graph_paper_bulk_search)
+* OpenAlex: [Works](https://docs.openalex.org/api-entities/works)
 
 ## 🔎 CLI category: **self**
 
-The `self` category provides introspection commands for the llmexer CLI itself:
+The `self` category reports on the CLI itself.
 
-| Command   | Description | Command Example |
+| Command   | What it does | Example |
 |-----------|-------------|-----------------|
-| `version` | Print the current llmexer package version. | `llmexer self version` |
-| `envs` | Display all llmexer-relevant environment variables as a table. `PROJECT_ID` is highlighted in bold cyan; `DOCLING_PASSWORD` is masked as `********` when set. | `llmexer self envs` |
+| `version` | Prints the installed version. | `llmexer self version` |
+| `envs` | Lists the environment variables `llmexer` uses, with passwords masked. | `llmexer self envs` |
 
+## 💡 Additional: Rename PDFs with `pdf-renamer`
 
-## 💡 Additional: Renaming PDFs with `pdf-renamer` tool
+Before you add papers to a project, you can rename them by their bibliographic metadata — year, journal, authors and title — with the external [`pdf-renamer`](https://github.com/MicheleCotrufo/pdf-renamer) tool. You do not need to install it; run it with `uvx`.
 
-Before adding papers to a project, you can automatically rename them by their bibliographic metadata (year, journal, authors, title) using the external [`pdf-renamer`](https://github.com/MicheleCotrufo/pdf-renamer) tool.
-
-No installation is needed — run it directly with `uvx`.
-
-Rename using custom format: year - authors (et al.) - title:
+Rename as year, authors, title:
 ```bash
 uvx --from pdf-renamer pdfrenamer -f "{YYYY}_{A3etal}_{T}" /path/to/pdfs
 ```
-Rename recursively (include subdirectories)
+
+Include subdirectories:
 ```bash
 uvx --from pdf-renamer pdfrenamer /path/to/pdfs -sf
 ```
 
-## 💡 Additional: Extract BiBTeX
+## 💡 Additional: Extract BibTeX
 
-There is also a possibility to extract BiBTeX of a publication as follows
+You can also extract the BibTeX entry of a publication:
 ```bash
 uvx --from pdf2bib pdf2bib -s bibtex.bib /path/to/pdfs
 ```
 
 ## ✏️ CLI UI
 
-CLI feature overview:
-```
+An overview of the CLI:
+```bash
 llmexer --help
 ```
 
 ![help CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui.png)
 
-Checking the statistics of a performed search query directly in CLI:
-```
+The statistics of a search, shown in the terminal:
+```bash
 llmexer search stats --file <filename>
 ```
 ![search CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui-search-stats.png)
 
-List existing projects directly in CLI with the current project highlighted:
-```
+Your projects, with the current one highlighted:
+```bash
 llmexer experiment list
 ```
 ![experiment CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui-experiment-list.png)
 
-Export the search results as a static HTML file to make it easier to screen the initial results:
-```
+Search results exported as a static HTML page, which makes screening easier:
+```bash
 llmexer search export
 ```
 ![experiment CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/search-export.png)
 
-
-
 ## 🧩 Development Setup
 
-This guide walks through setting up the project for local development using `uv`.
+To work on `llmexer` itself, set it up locally with `uv`.
 
-1. Create a new virtual environment in a `.venv` directory and activates it.
+1. Create a virtual environment:
     ```bash
     uv venv
     ```
-1. Activate the environment (macOS/Linux):
-   ```
-   source .venv/bin/activate
-   ```
-1. Activate the environment (Windows):
+2. Activate it on macOS or Linux:
+    ```bash
+    source .venv/bin/activate
     ```
+    Or on Windows:
+    ```bash
     call .venv/Scripts/activate.bat
     ```
-1.  Install package in **editable mode** with **dev** dependencies
-    Installing the package in **editable mode** (`-e`) is the key to development. It links the `llmexer` command in your environment directly to your source code.
+3. Install the package in editable mode with the `dev` dependencies. Editable mode (`-e`) is the key to development: it links the `llmexer` command to your source code.
     ```bash
     uv pip install -e . --group dev
     ```
-    The `dev` group already pulls in the `analysis` group (matplotlib, seaborn, ipykernel,
-    jupyterlab), so the scaffolded notebooks run and their tests import cleanly. To install
-    only what is needed to *run* the notebooks:
+    The `dev` group also pulls in the `analysis` group (matplotlib, seaborn, ipykernel, jupyterlab), so the notebooks run and their tests import cleanly. To install only what you need to *run* the notebooks:
     ```bash
     uv pip install -e . --group analysis
     ```
