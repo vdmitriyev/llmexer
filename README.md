@@ -543,22 +543,6 @@ There is also a possibility to extract BiBTeX of a publication as follows
 uvx --from pdf2bib pdf2bib -s bibtex.bib /path/to/pdfs
 ```
 
-## 💡 Additional: Migrating a pre-`0.4.0` experiment database
-
-`0.4.0` replaced the single `usage_tokens` result column with `prompt_tokens` / `completion_tokens` / `total_tokens`, the two new columns placed immediately before `total_tokens`. A database written by an earlier version is now rejected when it is opened, so it either has to be regenerated with `experiment generate` or converted in place.
-
-`scripts/migrate_usage_tokens.py` does the conversion. It is a standalone stdlib-only script, not a CLI command: it takes the `.db` file itself, rebuilds each `experiment_<provider>` / `try_experiment_<provider>` table so the two new columns land in the right position, reads the prompt/completion split out of the stored per-call JSON (`response_json`), carries `usage_tokens` over into `total_tokens` where that was never written, and rewrites the stored payloads to the new keys. A row whose provider never reported a breakdown keeps `NULL` in the two new columns rather than a misleading `0`.
-
-```bash
-# report what would change, touch nothing
-python scripts/migrate_usage_tokens.py .projects/my-project/experiment/experiment_20260101_01.db --dry-run
-
-# convert in place; the original is copied to <stem>_backup_<YYYYMMDD>_<NN>.db first
-python scripts/migrate_usage_tokens.py .projects/my-project/experiment/experiment_20260101_01.db
-```
-
-Running it twice is a no-op — an already-migrated table is reported and skipped. Pass `--no-backup` to skip the copy.
-
 ## ✏️ CLI UI
 
 CLI feature overview:
