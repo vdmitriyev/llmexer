@@ -3,8 +3,12 @@
 import pandas as pd
 import pytest
 
+from llmexer.base.analysis import transform
 from llmexer.base.analysis.stats import (
+    GROUP_COLUMNS,
+    IDENTITY_COLUMNS,
     ExperimentSummary,
+    answers_by_model,
     failed_calls,
     response_time_stats,
     summary,
@@ -422,3 +426,159 @@ def test_value_counts_returns_counts_and_shares(answers):
 def test_value_counts_on_a_missing_column(answers):
     with pytest.raises(KeyError):
         value_counts(answers, "nope")
+
+
+# ---------------------------------------------------------------------------
+# identity columns — mirrored across the copied modules
+# ---------------------------------------------------------------------------
+
+
+def test_identity_columns_match_the_transform_module():
+    """The copied modules may not import each other, so the tuple is duplicated.
+
+    This is the guard that keeps the two in step - the same arrangement as
+    `strip_code_fence`.
+    """
+
+    assert IDENTITY_COLUMNS == transform.IDENTITY_COLUMNS
+
+
+def test_every_grouping_column_is_an_identity_column():
+    """`answers_by_model` groups on columns `flattened_only` must have exported."""
+
+    assert set(GROUP_COLUMNS) <= set(IDENTITY_COLUMNS)
+
+
+@pytest.fixture()
+def identified_answers(answers):
+    """Flattened answers as `flattened_only` now returns them: identity first."""
+
+    identity = pd.DataFrame(
+        {
+            "code": [f"D0{i}_P1_m1_default" for i in range(len(answers))],
+            "model_name": ["m1", "m1", "gpt", "gpt"],
+            "provider_name": ["ollama", "ollama", "openai", "openai"],
+            "profile_name": ["default"] * len(answers),
+        }
+    )
+
+    return pd.concat([identity, answers], axis=1)
+
+
+def test_value_counts_summary_skips_the_identity_columns(identified_answers):
+    """Identity is not an answer, and `model_name` would be a plottable column.
+
+    The notebook picks its chart column as the first plottable one, so without
+    this the whole answer profile would describe the identity instead.
+    """
+
+    profiled = value_counts_summary(identified_answers)["column"].tolist()
+
+    for name in IDENTITY_COLUMNS:
+        assert name not in profiled
+    assert "verdict" in profiled
+
+
+def test_value_counts_summary_profiles_an_identity_column_when_asked(identified_answers):
+    out = value_counts_summary(identified_answers, columns=["model_name"])
+
+    assert out["column"].tolist() == ["model_name"]
+
+
+# ---------------------------------------------------------------------------
+# answers_by_model
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def judged():
+    """The same model on two providers, plus a row that was never answered."""
+
+    return pd.DataFrame(
+        {
+            "provider_name": ["ollama", "ollama", "openai", "openai", "openai"],
+            "model_name": ["m1", "m1", "m1", "gpt", "gpt"],
+            "verdict": ["yes", "no", "yes", "yes", None],
+            "rating": [1, 10, 2, 3, 3],
+        }
+    )
+
+
+def test_answers_by_model_is_one_row_per_provider_and_model(judged):
+    out = answers_by_model(judged, "verdict")
+
+    assert list(zip(out["provider_name"], out["model_name"])) == [
+        ("ollama", "m1"),
+        ("openai", "gpt"),
+        ("openai", "m1"),
+    ]
+    assert list(out.columns) == ["provider_name", "model_name", "no", "yes"]
+
+
+def test_answers_by_model_keeps_one_model_on_two_providers_apart(judged):
+    """Merging them would report a row belonging to neither setup."""
+
+    out = answers_by_model(judged, "verdict").set_index(["provider_name", "model_name"])
+
+    assert out.loc[("ollama", "m1"), "yes"] == 1
+    assert out.loc[("openai", "m1"), "yes"] == 1
+
+
+def test_answers_by_model_invents_no_combination_that_never_ran(judged):
+    """`ollama`/`gpt` is not a setup, so it is not a row."""
+
+    out = answers_by_model(judged, "verdict")
+
+    assert ("ollama", "gpt") not in set(zip(out["provider_name"], out["model_name"]))
+
+
+def test_answers_by_model_leaves_out_the_rows_with_no_answer(judged):
+    out = answers_by_model(judged, "verdict")
+    counted = int(out[["no", "yes"]].to_numpy().sum())
+
+    assert counted == int(judged["verdict"].notna().sum()) == 4
+
+
+def test_answers_by_model_orders_a_rating_by_its_own_scale(judged):
+    """Read as text a 1-10 scale sorts 1, 10, 2 - which no reader expects."""
+
+    out = answers_by_model(judged, "rating")
+
+    assert [name for name in out.columns if name not in GROUP_COLUMNS] == ["1", "2", "3", "10"]
+
+
+def test_answers_by_model_honours_a_grouping_override(judged):
+    out = answers_by_model(judged, "verdict", by="model_name")
+
+    assert list(out.columns) == ["model_name", "no", "yes"]
+    assert out["model_name"].tolist() == ["gpt", "m1"]
+
+
+def test_answers_by_model_renames_an_answer_spelled_like_a_group_column():
+    """Otherwise moving the index back into columns refuses to insert it."""
+
+    df = pd.DataFrame({"provider_name": ["a"], "model_name": ["m"], "verdict": ["model_name"]})
+    out = answers_by_model(df, "verdict")
+
+    assert "model_name_answer" in out.columns
+    assert out.loc[0, "model_name_answer"] == 1
+
+
+def test_answers_by_model_on_a_missing_column(judged):
+    with pytest.raises(KeyError):
+        answers_by_model(judged, "nope")
+
+
+def test_answers_by_model_on_an_empty_frame():
+    out = answers_by_model(pd.DataFrame({"verdict": pd.Series(dtype="object")}), "verdict")
+
+    assert list(out.columns) == list(GROUP_COLUMNS)
+    assert out.empty
+
+
+def test_answers_by_model_when_nothing_was_answered():
+    df = pd.DataFrame({"provider_name": ["a"], "model_name": ["m"], "verdict": [None]})
+    out = answers_by_model(df, "verdict")
+
+    assert list(out.columns) == list(GROUP_COLUMNS)
+    assert out.empty

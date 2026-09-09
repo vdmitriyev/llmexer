@@ -33,7 +33,8 @@
    "source": [
     "## Folders\n",
     "\n",
-    "The next cell derives these from `PROJECT_DIR`:\n",
+    "The next three cells derive these from `PROJECT_DIR` — the folders first, then\n",
+    "the imports, then `SEARCHES` on its own so it is easy to find and change:\n",
     "\n",
     "| variable | path |\n",
     "|---|---|\n",
@@ -74,22 +75,21 @@
     {{ project_id | tojson | tojson }},
     "\n",
     "\n",
-    "# One entry per search found when this notebook was scaffolded:\n",
-    "# the YAML that defines it, and the CSVs written from it (None if absent).\n",
-    "SEARCHES = ",
-    {{ searches | pyliteral | tojson }},
-    "\n",
-    "\n",
-    "# This notebook analyses ONE search, not all of them combined: results from\n",
-    "# different queries are different populations and averaging them says nothing.\n",
-    "# Change the index to analyse another search from the list above.\n",
-    "SEARCH_INDEX = 0\n",
-    "\n",
-    "# --- imports ---------------------------------------------------------------\n",
-    "# `transform`, `stats` and `plots` are the copies sitting next to this notebook.\n",
+    "# `transform` and `plots` are the copies sitting next to this notebook, so\n",
+    "# the folder has to be importable before the next cell runs.\n",
     "if str(ANALYSIS_DIR) not in sys.path:\n",
-    "    sys.path.insert(0, str(ANALYSIS_DIR))\n",
-    "\n",
+    "    sys.path.insert(0, str(ANALYSIS_DIR))\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# --- imports ---------------------------------------------------------------\n",
+    "# Every name below comes from the modules next to this notebook - edit them\n",
+    "# freely, `%autoreload` picks the changes up without restarting the kernel.\n",
     "%matplotlib inline\n",
     "%load_ext autoreload\n",
     "%autoreload 2\n",
@@ -100,10 +100,32 @@
     "from transform import list_papers, load_search_frame\n",
     "\n",
     "setup_style()\n",
-    "pd.set_option('display.max_colwidth', 120)\n",
+    "pd.set_option('display.max_colwidth', 120)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# --- the search to analyse -------------------------------------------------\n",
+    "# One entry per search found when this notebook was scaffolded: the YAML that\n",
+    "# defines it, and the CSVs written from it (None if absent). It does NOT update\n",
+    "# itself - add an entry by hand after a new `search run`.\n",
+    "SEARCHES = ",
+    {{ searches | pyliteral | tojson }},
+    "\n",
+    "\n",
+    "# This notebook analyses ONE search, not all of them combined: results from\n",
+    "# different queries are different populations and averaging them says nothing.\n",
+    "# Change the index to analyse another search from the list above, then re-run\n",
+    "# from here.\n",
+    "SEARCH_INDEX = 0\n",
     "\n",
     "print(f'project      : {PROJECT_ID}')\n",
-    "print(f'analysis dir : {ANALYSIS_DIR}')\n"
+    "print(f'analysis dir : {ANALYSIS_DIR}')\n",
+    "print(f'searches     : {len(SEARCHES)}')\n"
    ]
   },
   {

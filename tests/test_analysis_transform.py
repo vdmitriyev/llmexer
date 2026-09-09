@@ -6,9 +6,12 @@ import pandas as pd
 import pytest
 
 from llmexer.base.analysis.transform import (
+    EXPERIMENT_COLUMNS,
     FLATTEN_ERROR_COLUMN,
+    IDENTITY_COLUMNS,
     SEARCH_COLUMNS,
     MissingColumnError,
+    empty_frame,
     export_as_csv,
     flatten_llm_response,
     flattened_only,
@@ -56,6 +59,24 @@ def frame():
             "response_text": _VALUES,
         },
         index=range(100, 100 + len(_VALUES)),
+    )
+
+
+@pytest.fixture()
+def identified_frame():
+    """A frame carrying every identity column, as `load_experiment_db` returns."""
+
+    return pd.DataFrame(
+        {
+            "ID": [1, 2],
+            "code": ["D01_P1_m1_default", "D02_P1_m1_default"],
+            "prompt": ["rendered", "rendered"],
+            "model_name": ["m1", "m1"],
+            "provider_name": ["ollama", "openai"],
+            "profile_name": ["default", "default"],
+            "response_text": ['{"score": 1}', '{"score": 2}'],
+        },
+        index=[100, 101],
     )
 
 
@@ -500,13 +521,14 @@ def test_list_papers_on_a_missing_folder(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_flattened_only_keeps_just_the_parsed_answer(frame):
-    """The CSV export is a table of what the models said, nothing around it."""
+def test_flattened_only_keeps_the_answer_and_its_identity(frame):
+    """The export is what the models said, plus whose answer each row is."""
 
     out = flattened_only(flatten_llm_response(frame))
 
     assert "score" in out.columns
-    for original in ("code", "status", "response_text"):
+    assert "code" in out.columns
+    for original in ("status", "response_text"):
         assert original not in out.columns
 
 
@@ -535,10 +557,59 @@ def test_flattened_only_on_a_frame_that_was_never_flattened():
     assert flattened_only(pd.DataFrame({"a": [1]})).empty
 
 
-def test_exported_csv_holds_only_the_answers(tmp_path, frame):
-    out = flattened_only(flatten_llm_response(frame))
+def test_exported_csv_holds_the_answers_and_their_identity(tmp_path, identified_frame):
+    out = flattened_only(flatten_llm_response(identified_frame))
     path = export_as_csv(out, tmp_path / "flat.csv")
     header = path.read_text(encoding="utf-8").splitlines()[0]
 
-    assert "response_text" not in header.replace("response_text_items", "")
+    assert header.startswith(";".join(IDENTITY_COLUMNS))
     assert "score" in header
+    assert "prompt" not in header
+    assert "response_text" not in header.replace("response_text_items", "")
+
+
+def test_flattened_only_leads_with_the_identity_columns(identified_frame):
+    """The identity has to come first, or the CSV opens on nameless values."""
+
+    out = flattened_only(flatten_llm_response(identified_frame))
+
+    assert list(out.columns)[: len(IDENTITY_COLUMNS)] == list(IDENTITY_COLUMNS)
+
+
+def test_flattened_only_carries_identity_when_nothing_was_answered():
+    """An empty project still exports a header, not an empty file.
+
+    `flatten_llm_response` records only `flatten_error` there, so gating on the
+    recorded column list rather than on the attrs key would drop the identity.
+    """
+
+    out = flattened_only(flatten_llm_response(empty_frame(EXPERIMENT_COLUMNS)))
+
+    assert list(out.columns) == list(IDENTITY_COLUMNS)
+    assert len(out) == 0
+
+
+def test_flattened_only_does_not_let_an_answer_shadow_the_identity(identified_frame):
+    """A model answering `{"code": ...}` must not overwrite the row's own code."""
+
+    identified_frame["response_text"] = ['{"code": "answered"}'] * len(identified_frame)
+    out = flattened_only(flatten_llm_response(identified_frame))
+
+    assert "code_flat" in out.columns
+    assert list(out["code"]) == list(identified_frame["code"])
+
+
+def test_flattened_only_never_selects_an_identity_column_twice(identified_frame):
+    """An answer key can be spelled like an identity column the frame lacks.
+
+    `flatten_llm_response` only suffixes a key that collided with a column of
+    the input frame, so without the dedupe this yields two `profile_name`
+    columns and a CSV with a duplicated header.
+    """
+
+    frame = identified_frame.drop(columns=["profile_name"])
+    frame["response_text"] = ['{"profile_name": "answered"}'] * len(frame)
+    out = flattened_only(flatten_llm_response(frame))
+
+    assert not out.columns.duplicated().any()
+    assert list(out["profile_name"]) == ["answered"] * len(frame)

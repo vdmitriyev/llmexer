@@ -246,3 +246,60 @@ def plot_flattened_values(df: pd.DataFrame, summary: pd.DataFrame, *, max_column
     figure.tight_layout()
 
     return figure
+
+
+# `setup_style` sets the `colorblind` palette, which carries exactly this many
+# colours. `stats.MAX_PLOTTABLE_VALUES` allows up to 12 answer values, so beyond
+# this count the palette would cycle and two answers would share a colour.
+_PALETTE_COLOURS = 10
+
+
+def _value_order(labels) -> list:
+    """Order answer labels numerically when they all parse, else as text.
+
+    Mirror of ``stats._value_order``. The copied modules may not import each
+    other, so the rule is duplicated and `tests/test_analysis_plots.py` asserts
+    the two stay in step - without it the chart and the table
+    ``stats.answers_by_model`` returns would read in different orders.
+    """
+
+    unique = sorted({str(label) for label in labels})
+    numeric = pd.to_numeric(pd.Series(unique, dtype="object"), errors="coerce")
+    if len(unique) and numeric.notna().all():
+        return [label for _, label in sorted(zip(numeric.tolist(), unique))]
+
+    return unique
+
+
+def plot_answers_by_model(df: pd.DataFrame, column: str, ax=None, *, title: str = "Answers by model"):
+    """Counts of one answer column per model, one bar per answer value.
+
+    The chart form of what ``stats.answers_by_model`` tabulates: one bar group
+    per model, so a model served by two providers stays two groups. Rows with no
+    answer are left out, matching the table.
+    """
+
+    if df.empty:
+        return _no_data(_axis(ax))
+    _require(df, "model_name", column)
+
+    work = pd.DataFrame({MODEL_LABEL: _model_label(df), "answer": df[column]})
+    work = work[work["answer"].notna()]
+    if work.empty:
+        return _no_data(_axis(ax), "No answers")
+
+    work["answer"] = work["answer"].astype(str)
+    counts = work.groupby([MODEL_LABEL, "answer"], dropna=False).size().reset_index(name="answers")
+    order = _value_order(counts["answer"])
+
+    # One row of `counts` is one bar, so a wide answer set needs a taller axis.
+    ax = _axis(ax, figsize=(FIGSIZE[0], max(FIGSIZE[1], 0.28 * len(counts))))
+    palette = None if len(order) <= _PALETTE_COLOURS else sns.color_palette("husl", len(order))
+    sns.barplot(data=counts, y=MODEL_LABEL, x="answers", hue="answer", hue_order=order, palette=palette, ax=ax)
+    ax.set_title(title)
+    ax.set_xlabel("answers")
+    legend = ax.get_legend()
+    if legend is not None:
+        legend.set_title(column)
+
+    return ax

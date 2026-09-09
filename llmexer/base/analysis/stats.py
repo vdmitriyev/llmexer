@@ -30,6 +30,11 @@ import pandas as pd
 # two rows, never merged - same rule as `experiment stats` since 0.3.10.
 GROUP_COLUMNS = ("provider_name", "model_name")
 
+# Mirror of ``transform.IDENTITY_COLUMNS``. The copied modules may not import
+# each other, so the tuple is duplicated and `tests/test_analysis_stats.py`
+# asserts the two stay in step - the same arrangement as `strip_code_fence`.
+IDENTITY_COLUMNS = ("code", "model_name", "provider_name", "profile_name")
+
 TRUNCATED_STATE = "maxtokenreached"
 RUNNING_STATE = "running"
 SUCCESS_STATUS = "success"
@@ -433,9 +438,15 @@ def value_counts_summary(df: pd.DataFrame, columns=None) -> pd.DataFrame:
 
     Columns: ``column``, ``values``, ``missing``, ``unique``, ``kind``,
     ``plottable``, ``top``, ``top_count``.
+
+    :data:`IDENTITY_COLUMNS` are skipped by default. They are not answers, and
+    profiling them would put ``model_name`` among the plottable columns - which
+    is what the notebook picks its chart column from. Name one in ``columns`` to
+    profile it anyway; that is also the way to reach a genuine answer key that
+    happens to be spelled like one of them.
     """
 
-    names = list(columns) if columns is not None else list(df.columns)
+    names = list(columns) if columns is not None else [name for name in df.columns if name not in IDENTITY_COLUMNS]
     rows = []
     for name in names:
         if name not in df.columns:
@@ -477,3 +488,74 @@ def value_counts(df: pd.DataFrame, column: str) -> pd.DataFrame:
     out["share"] = (out["count"] / out["count"].sum()) if out["count"].sum() else 0.0
 
     return out.reset_index(names=column)
+
+
+# Suffix given to an answer value that is spelled like one of the group columns,
+# so moving the crosstab index back into columns cannot collide with it.
+ANSWER_COLLISION_SUFFIX = "_answer"
+
+# Name the answer labels are grouped under while the table is being built.
+_ANSWER_LEVEL = "_answer_value"
+
+
+def _value_order(labels) -> list:
+    """Order answer labels numerically when they all parse, else as text.
+
+    A rating read as text sorts "1", "10", "2"; ordering the columns of a
+    crosstab that way makes a 1-10 scale unreadable. `plot_flattened_values`
+    solves the same problem by reading ``kind`` off the summary, which this
+    function has no access to, so the order is derived from the labels.
+    """
+
+    unique = sorted({str(label) for label in labels})
+    numeric = pd.to_numeric(pd.Series(unique, dtype="object"), errors="coerce")
+    if len(unique) and numeric.notna().all():
+        return [label for _, label in sorted(zip(numeric.tolist(), unique))]
+
+    return unique
+
+
+def answers_by_model(df: pd.DataFrame, column: str, *, by=None) -> pd.DataFrame:
+    """One answer column crosstabbed against provider+model.
+
+    One row per (provider, model), one column per distinct value the models
+    answered with, so two models judging the same population sit side by side. A
+    model served by two providers stays two rows - the same rule as every other
+    per-model breakdown here.
+
+    Rows with no answer (unrun, errored, unparsed, or truncated at
+    ``max_tokens``) are left out, the same treatment :func:`value_counts` gives
+    an answer column, so the counts sum to the answers and not to the generated
+    rows. Value columns are ordered numerically when every answer is a number.
+    """
+
+    if column not in df.columns:
+        raise KeyError(f"missing column: {column!r}; available: {sorted(df.columns)}")
+
+    groups = _groups(df, by)
+    if df.empty or not groups:
+        return _empty(groups or list(GROUP_COLUMNS))
+
+    answered = df[df[column].notna()]
+    if answered.empty:
+        return _empty(groups)
+
+    labels = answered[column].astype(str)
+    # `groupby` + `unstack` rather than `crosstab`: crosstab crosses the index
+    # levels, inventing a row for every (provider, model) pair that never ran.
+    work = answered[groups].copy()
+    work[_ANSWER_LEVEL] = labels
+    table = work.groupby(groups + [_ANSWER_LEVEL], dropna=False).size().unstack(_ANSWER_LEVEL, fill_value=0)
+    table = table.reindex(columns=_value_order(labels))
+
+    # An answer spelled "model_name" would make `reset_index` refuse to insert
+    # the group column of the same name, so it is renamed rather than crashing.
+    clashes = {name: f"{name}{ANSWER_COLLISION_SUFFIX}" for name in table.columns if name in groups}
+    table = table.rename(columns=clashes)
+
+    aggregated = table.reset_index()
+    aggregated.columns.name = None
+    for name in table.columns:
+        aggregated[name] = aggregated[name].astype("int64")
+
+    return aggregated.sort_values(groups).reset_index(drop=True)

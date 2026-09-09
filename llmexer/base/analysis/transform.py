@@ -32,6 +32,12 @@ ITEMS_SUFFIX = "_items"
 # added, so :func:`flattened_only` can hand back just the model's answer.
 FLATTENED_COLUMNS_KEY = "llmexer_flattened_columns"
 
+# Identity of the combination an answer arrived on, prepended to the flattened
+# frame by :func:`flattened_only`. DB spelling on purpose: ``stats.GROUP_COLUMNS``
+# and ``plots._model_label()`` already group on these names, so the exported
+# answers can be crosstabbed by model and provider without a rename.
+IDENTITY_COLUMNS = ("code", "model_name", "provider_name", "profile_name")
+
 # `experiment generate` writes one pair of tables per provider.
 EXPERIMENT_TABLE_PREFIX = "experiment_"
 PARAMS_TABLE_PREFIX = "params_"
@@ -229,22 +235,36 @@ def flatten_llm_response(
 
 
 def flattened_only(df: pd.DataFrame) -> pd.DataFrame:
-    """Return just the columns :func:`flatten_llm_response` produced.
+    """Return what the models answered, led by the identity of each answer.
 
-    The flattened frame keeps the experiment row next to the parsed answer, which
-    is what the cross-model comparisons need. The answer on its own is a
+    The flattened frame keeps the whole experiment row next to the parsed answer,
+    which is what the cross-model comparisons need. The answer on its own is a
     different thing - a table of what the models actually said - and that is what
-    gets exported, without the prompt, the raw payload and the identity columns
-    around it.
+    gets exported, without the prompt and the raw payload around it.
+
+    :data:`IDENTITY_COLUMNS` come along, ahead of the values: an answer with
+    nothing to attach it to cannot be traced back to the combination that
+    produced it, and two models answering the same input would be
+    indistinguishable. They are also exactly what ``stats.answers_by_model()``
+    groups on, so the exported CSV can be crosstabbed as it stands.
 
     ``flatten_error`` is left out: it describes the parse, not the answer.
     """
 
-    names = [
-        name for name in df.attrs.get(FLATTENED_COLUMNS_KEY, []) if name != FLATTEN_ERROR_COLUMN and name in df.columns
-    ]
+    if FLATTENED_COLUMNS_KEY not in df.attrs:
+        # Never flattened. Bare identity columns would claim answers that are
+        # not there, so this stays the empty frame it has always been.
+        return df.loc[:, []].copy()
 
-    return df[names].copy()
+    flattened = [
+        name for name in df.attrs[FLATTENED_COLUMNS_KEY] if name != FLATTEN_ERROR_COLUMN and name in df.columns
+    ]
+    # `flatten_llm_response` only suffixes an answer key that collided with a
+    # column of the *input* frame, so a frame missing one of the four can carry
+    # an answer under that very name. Selecting it twice would duplicate it.
+    identity = [name for name in IDENTITY_COLUMNS if name in df.columns and name not in flattened]
+
+    return df[identity + flattened].copy()
 
 
 def export_as_csv(df: pd.DataFrame, path) -> Path:

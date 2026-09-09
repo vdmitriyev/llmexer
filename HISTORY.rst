@@ -2,6 +2,13 @@
 History
 =======
 
+0.4.2 (2026-09-09)
+-------------------
+
+* **Breaking:** the flattened answers exported by the experiment notebook now carry ``code``, ``model_name``, ``provider_name`` and ``profile_name`` ahead of the parsed values, so a row can be traced back to the combination that produced it. ``transform.flattened_only()`` adds them unconditionally; ``stats.value_counts_summary()`` leaves them out of the answer profile.
+* Both analysis notebooks split their setup cell in three — folders, imports, then ``DB_FILE`` / ``SEARCHES`` alone with the prints, so the value a reader actually changes is easy to find.
+* Add ``stats.answers_by_model()`` and ``plots.plot_answers_by_model()``: one answer column crosstabbed against provider and model, as a table and as a chart. Both are wired into ``analyse_experiment.ipynb`` — re-run ``analysis init --rewrite`` to pick them up.
+
 0.4.1 (2026-09-09)
 -------------------
 

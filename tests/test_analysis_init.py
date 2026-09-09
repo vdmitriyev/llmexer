@@ -214,13 +214,21 @@ def test_notebook_code_never_imports_llmexer(project, name):
     assert "llmexer" not in code
 
 
+# Setup is three code cells: the folders, the imports, and the scaffold-time
+# literal on its own so a reader can change it without hunting. Only the first
+# and the last carry injected values; the imports cell in between pulls in the
+# copied modules and is not what these tests are about.
+SETUP_LITERAL_CELLS = (2, 4)
+
+
 def _exec_folders_cell(project, name):
-    """Run the part of the setup cell that defines the injected literals."""
+    """Run the setup cells that define the injected literals."""
 
     notebook = nbformat.read(str(_analysis_dir(project) / name), as_version=4)
-    body = notebook.cells[2].source.split("# --- imports")[0]
     namespace = {}
-    exec(compile(body, "<setup>", "exec"), namespace)  # nosec B102 - our own generated cell
+    for index in SETUP_LITERAL_CELLS:
+        source = notebook.cells[index].source
+        exec(compile(source, "<setup>", "exec"), namespace)  # nosec B102 - our own generated cell
 
     return namespace
 
@@ -474,3 +482,58 @@ def test_no_project_id_raises(projects_dir, mock_no_dotenv, monkeypatch):
 
     assert result.exit_code != 0
     assert isinstance(result.exception, ProjectIDRequiredException)
+
+
+# ---------------------------------------------------------------------------
+# Setup cells: folders, imports and the editable literal are three cells
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", list(NOTEBOOKS.values()))
+def test_setup_keeps_the_folders_apart_from_the_imports(project, name):
+    """Re-running the paths must not re-run the imports, or the reverse."""
+
+    _init()
+    notebook = nbformat.read(str(_analysis_dir(project) / name), as_version=4)
+    folders, imports = notebook.cells[2].source, notebook.cells[3].source
+
+    assert "ANALYSIS_DIR = Path.cwd()" in folders
+    assert "from plots import" not in folders
+    assert "from transform import" not in folders
+
+    assert "from plots import" in imports
+    assert "from transform import" in imports
+    assert "setup_style()" in imports
+
+
+@pytest.mark.parametrize(
+    "name,literal",
+    [(NOTEBOOKS["experiment"], "DB_FILE"), (NOTEBOOKS["searches"], "SEARCHES")],
+)
+def test_the_editable_literal_sits_alone_in_the_last_setup_cell(project, name, literal):
+    """It is the one value a reader routinely changes, so it gets its own cell."""
+
+    _init()
+    notebook = nbformat.read(str(_analysis_dir(project) / name), as_version=4)
+    cells = [cell.source for cell in notebook.cells if cell.cell_type == "code"]
+
+    def _assigns(source):
+        # Line-anchored: `DIR_SEARCHES = ...` ends with "SEARCHES = " too.
+        return any(line.startswith(f"{literal} = ") for line in source.splitlines())
+
+    assert _assigns(cells[2])
+    assert "print(" in cells[2]
+    # Nowhere else in the setup, so there is only one place to edit.
+    assert not _assigns(cells[0])
+    assert not _assigns(cells[1])
+
+
+@pytest.mark.parametrize("name", list(NOTEBOOKS.values()))
+def test_the_sys_path_insert_precedes_the_imports(project, name):
+    """The copied modules are only importable once their folder is on sys.path."""
+
+    _init()
+    notebook = nbformat.read(str(_analysis_dir(project) / name), as_version=4)
+
+    assert "sys.path.insert" in notebook.cells[2].source
+    assert "sys.path.insert" not in notebook.cells[3].source

@@ -11,6 +11,8 @@ from matplotlib.axes import Axes  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 from llmexer.base.analysis.plots import (  # noqa: E402
+    _value_order,
+    plot_answers_by_model,
     plot_failures_by_model,
     plot_flattened_values,
     plot_response_time_by_model,
@@ -19,6 +21,7 @@ from llmexer.base.analysis.plots import (  # noqa: E402
     plot_tokens_by_model,
     setup_style,
 )
+from llmexer.base.analysis.stats import _value_order as _stats_value_order  # noqa: E402
 from llmexer.base.analysis.stats import value_counts_summary  # noqa: E402
 
 _EXPERIMENT_PLOTS = (
@@ -223,5 +226,111 @@ def test_plot_flattened_values_with_an_empty_summary(answers):
 def test_plot_flattened_values_writes_no_file(answers, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     plot_flattened_values(answers, value_counts_summary(answers))
+
+    assert not list(tmp_path.iterdir())
+
+
+# ---------------------------------------------------------------------------
+# plot_answers_by_model — the answers, per model
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def judged():
+    return pd.DataFrame(
+        {
+            "provider_name": ["ollama", "ollama", "openai", "openai"],
+            "model_name": ["m1", "m1", "m1", "gpt"],
+            "verdict": ["yes", "no", "yes", "yes"],
+            "rating": [1, 10, 2, 3],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "labels,expected",
+    [
+        (["1", "10", "2"], ["1", "2", "10"]),
+        (["yes", "no"], ["no", "yes"]),
+        ([], []),
+    ],
+)
+def test_value_order_matches_the_stats_module(labels, expected):
+    """The chart and `stats.answers_by_model` must read in the same order.
+
+    The copied modules may not import each other, so the rule is duplicated -
+    this is the guard that keeps the two in step.
+    """
+
+    assert _value_order(labels) == _stats_value_order(labels) == expected
+
+
+def test_plot_answers_by_model_returns_a_titled_axes(judged):
+    ax = plot_answers_by_model(judged, "verdict")
+
+    assert isinstance(ax, Axes)
+    assert ax.get_title()
+
+
+def test_plot_answers_by_model_draws_into_a_given_axis(judged):
+    _, ax = plt.subplots()
+
+    assert plot_answers_by_model(judged, "verdict", ax=ax) is ax
+
+
+def test_plot_answers_by_model_names_the_legend_after_the_answer(judged):
+    ax = plot_answers_by_model(judged, "verdict")
+
+    assert ax.get_legend().get_title().get_text() == "verdict"
+
+
+def test_plot_answers_by_model_orders_a_rating_by_its_own_scale(judged):
+    ax = plot_answers_by_model(judged, "rating")
+
+    assert [text.get_text() for text in ax.get_legend().get_texts()] == ["1", "2", "3", "10"]
+
+
+def test_plot_answers_by_model_on_an_empty_frame():
+    ax = plot_answers_by_model(pd.DataFrame(), "verdict")
+
+    assert any("No data" in text.get_text() for text in ax.texts)
+
+
+def test_plot_answers_by_model_when_nothing_was_answered():
+    df = pd.DataFrame({"provider_name": ["a"], "model_name": ["m"], "verdict": [None]})
+    ax = plot_answers_by_model(df, "verdict")
+
+    assert any("No answers" in text.get_text() for text in ax.texts)
+
+
+def test_plot_answers_by_model_without_a_model_column(judged):
+    with pytest.raises(KeyError):
+        plot_answers_by_model(judged.drop(columns=["model_name"]), "verdict")
+
+
+def test_plot_answers_by_model_without_the_answer_column(judged):
+    with pytest.raises(KeyError):
+        plot_answers_by_model(judged, "nope")
+
+
+def test_plot_answers_by_model_gives_every_answer_its_own_colour():
+    """`colorblind` carries ten colours; a twelve-value answer set may not cycle."""
+
+    df = pd.DataFrame(
+        {
+            "provider_name": ["ollama"] * 12,
+            "model_name": ["m1"] * 12,
+            "topic": [f"t{index:02d}" for index in range(12)],
+        }
+    )
+    ax = plot_answers_by_model(df, "topic")
+    colours = {tuple(patch.get_facecolor()) for patch in ax.patches}
+
+    assert len(colours) == 12
+
+
+def test_plot_answers_by_model_writes_no_file(judged, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    plot_answers_by_model(judged, "verdict")
 
     assert not list(tmp_path.iterdir())
