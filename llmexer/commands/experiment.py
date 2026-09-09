@@ -1312,15 +1312,25 @@ def _resolve_try_profile(params_df: pd.DataFrame, profile: str, model: str | Non
     )
 
 
-def _print_try_header(model_name: str, provider: str, usage_tokens: Any = None) -> None:
-    """Print the ``model`` / ``provider`` / ``usage_tokens`` header of a try."""
+def _print_try_header(model_name: str, provider: str, experiment: Any = None) -> None:
+    """Print the ``model`` / ``provider`` / token-count header of a try.
+
+    The prompt/completion split is shown next to the total: ``try`` is where a
+    user tunes ``max_tokens``, so the number that moves is worth seeing on its
+    own. A provider that reports no split prints ``-`` rather than a zero.
+    """
 
     header = Table(show_header=False, box=None, padding=(0, 1))
     header.add_column(style="bold white", no_wrap=True)
     header.add_column()
     header.add_row("Model:", f"[bold blue]{model_name}[/bold blue]")
     header.add_row("Provider:", f"[bold blue]{provider}[/bold blue]")
-    header.add_row("Usage tokens:", f"[bold blue]{usage_tokens if usage_tokens is not None else '-'}[/bold blue]")
+    for label, value in (
+        ("Prompt tokens:", getattr(experiment, "prompt_tokens", None)),
+        ("Completion tokens:", getattr(experiment, "completion_tokens", None)),
+        ("Total tokens:", getattr(experiment, "total_tokens", None)),
+    ):
+        header.add_row(label, f"[bold blue]{value if value is not None else '-'}[/bold blue]")
     console.print(header)
 
 
@@ -1451,7 +1461,7 @@ def try_one(
         try_id = dao.append_try_row(provider_name, {**row, **result_values(experiment, provider_name)})
 
     cprint("")
-    _print_try_header(model_name, provider_name, experiment.usage_tokens)
+    _print_try_header(model_name, provider_name, experiment)
 
     if experiment.status == "success":
         cprint("\nResponse text:\n")

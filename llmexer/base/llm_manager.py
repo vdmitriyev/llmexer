@@ -47,10 +47,13 @@ class Experiment:
 
     # Execution results / provider state
     response_text: str = ""
-    usage_tokens: Optional[int] = None
     status: Optional[str] = None
     state: Optional[str] = None
     call_count: int = 0
+    # Left None when the provider reports no split, so an unknown prompt cost is
+    # never rounded down to zero.
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
     total_tokens: int = 0
     elapsed_seconds: float = 0.0
     timestamp: Optional[str] = None
@@ -80,10 +83,11 @@ class Experiment:
             top_p=row.get("top_p"),
             max_tokens=row.get("max_tokens"),
             response_text=str(row.get("response_text") or ""),
-            usage_tokens=row.get("usage_tokens"),
             status=row.get("status"),
             state=row.get("state"),
             call_count=int(row.get("call_count") or 0),
+            prompt_tokens=row.get("prompt_tokens"),
+            completion_tokens=row.get("completion_tokens"),
             total_tokens=int(row.get("total_tokens") or 0),
             elapsed_seconds=float(row.get("elapsed_seconds") or 0.0),
             timestamp=row.get("timestamp"),
@@ -97,10 +101,11 @@ class Experiment:
         merged.update(
             {
                 "response_text": self.response_text,
-                "usage_tokens": self.usage_tokens,
                 "status": self.status,
                 "state": self.state,
                 "call_count": self.call_count,
+                "prompt_tokens": self.prompt_tokens,
+                "completion_tokens": self.completion_tokens,
                 "total_tokens": self.total_tokens,
                 "elapsed_seconds": self.elapsed_seconds,
                 "timestamp": self.timestamp,
@@ -154,7 +159,9 @@ def build_response_payload(experiment: Experiment, provider: str) -> Dict[str, A
         "prompt": experiment.prompt,
         "profile": experiment.profile_name,
         "response_text": experiment.response_text,
-        "usage_tokens": experiment.usage_tokens,
+        "prompt_tokens": experiment.prompt_tokens,
+        "completion_tokens": experiment.completion_tokens,
+        "total_tokens": experiment.total_tokens,
         "status": experiment.status,
         "timestamp": experiment.timestamp,
         "raw_response": experiment.raw_response,
@@ -167,10 +174,11 @@ def result_values(experiment: Experiment, provider: str) -> Dict[str, Any]:
     payload = build_response_payload(experiment, provider)
     return {
         "response_text": experiment.response_text,
-        "usage_tokens": experiment.usage_tokens,
         "status": experiment.status,
         "state": experiment.state,
         "call_count": experiment.call_count,
+        "prompt_tokens": experiment.prompt_tokens,
+        "completion_tokens": experiment.completion_tokens,
         "total_tokens": experiment.total_tokens,
         "elapsed_seconds": experiment.elapsed_seconds,
         "timestamp": experiment.timestamp,
@@ -196,14 +204,15 @@ def _apply_provider_result(experiment: Experiment, caller: Any, resp: Any) -> No
     """Copy a provider caller's response, state and stats onto ``experiment``."""
 
     experiment.response_text = resp.text
-    experiment.usage_tokens = resp.usage_tokens
     experiment.raw_response = serialize_response(resp.raw)
     experiment.status = f"Error: {resp.raw}" if caller.state == CallerState.ERROR else "success"
     state = getattr(caller, "state", CallerState.FINISHED)
     experiment.state = getattr(state, "value", str(state))
     stats = getattr(caller, "stats", None)
     experiment.call_count = getattr(stats, "call_count", 1)
-    experiment.total_tokens = getattr(stats, "total_tokens", experiment.usage_tokens or 0)
+    experiment.prompt_tokens = getattr(stats, "prompt_tokens", None) or resp.prompt_tokens
+    experiment.completion_tokens = getattr(stats, "completion_tokens", None) or resp.completion_tokens
+    experiment.total_tokens = getattr(stats, "total_tokens", resp.total_tokens or 0)
     experiment.elapsed_seconds = getattr(stats, "elapsed_seconds", 0.0)
     experiment.timestamp = datetime.now(timezone.utc).isoformat()
 

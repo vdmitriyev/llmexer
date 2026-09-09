@@ -68,18 +68,22 @@ def mock_providers(monkeypatch):
     class FakeOllamaProvider:
         def __init__(self, provider, auth=None, base_url=None, **kwargs):
             self.state = CallerState.FINISHED
-            self.stats = CallerStats(call_count=1, total_tokens=42, elapsed_seconds=0.5)
+            self.stats = CallerStats(
+                call_count=1, prompt_tokens=10, completion_tokens=32, total_tokens=42, elapsed_seconds=0.5
+            )
 
         def execute(self, prompt, row):
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="mocked response", usage_tokens=42)
+            return ProviderResponse(text="mocked response", prompt_tokens=10, completion_tokens=32, total_tokens=42)
 
     class FakeOpenAIProvider(FakeOllamaProvider):
         """Same canned behaviour, but carries a raw response worth serialising."""
 
         def execute(self, prompt, row):
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="mocked response", usage_tokens=42, raw=FakeCompletion())
+            return ProviderResponse(
+                text="mocked response", prompt_tokens=10, completion_tokens=32, total_tokens=42, raw=FakeCompletion()
+            )
 
     class FakeLiteLLMProvider(FakeOllamaProvider):
         """Same canned behaviour, but records that config was validated."""
@@ -96,7 +100,9 @@ def mock_providers(monkeypatch):
 
         def execute(self, prompt, row):
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="mocked litellm response", usage_tokens=42)
+            return ProviderResponse(
+                text="mocked litellm response", prompt_tokens=10, completion_tokens=32, total_tokens=42
+            )
 
     monkeypatch.setattr(llm_module, "OllamaProvider", FakeOllamaProvider)
     monkeypatch.setattr(llm_module, "OpenAIProvider", FakeOpenAIProvider)
@@ -158,11 +164,11 @@ def test_experiment_to_json_explicit_file_is_indented(tmp_path):
 
 def test_experiment_to_yaml(tmp_path):
     out = tmp_path / "out.yaml"
-    exp = Experiment(experiment_id="abc", response_text="hi", usage_tokens=7)
+    exp = Experiment(experiment_id="abc", response_text="hi", total_tokens=7)
     exp.to_yaml(str(out))
     data = yaml.safe_load(out.read_text(encoding="utf-8"))
     assert data["experiment_id"] == "abc"
-    assert data["usage_tokens"] == 7
+    assert data["total_tokens"] == 7
     assert "raw" not in data
 
 
@@ -320,6 +326,26 @@ def test_open_old_layout_database_raises_through_manager(tmp_path):
         ExperimentsManager().open(str(path))
 
 
+def test_open_database_with_the_old_token_columns_raises(tmp_path):
+    """`usage_tokens` was replaced by the prompt/completion/total split."""
+    path = tmp_path / "old_tokens.db"
+    con = sqlite3.connect(str(path))
+    con.execute(
+        "CREATE TABLE experiment_ollama "
+        "(ID INTEGER PRIMARY KEY, code VARCHAR, params_code VARCHAR, profile_name VARCHAR, "
+        "usage_tokens INTEGER, total_tokens INTEGER)"
+    )
+    con.execute("CREATE TABLE params_ollama (params_code VARCHAR, profile_name VARCHAR, temperature FLOAT)")
+    con.commit()
+    con.close()
+
+    with pytest.raises(LLMExerException) as exc:
+        ExperimentDAO(str(path))
+    message = str(exc.value)
+    assert "prompt_tokens" in message
+    assert "experiment generate" in message
+
+
 def test_fetch_rows_tags_provider(db_file):
     with ExperimentDAO(db_file) as dao:
         rows = dao.fetch_rows()
@@ -381,7 +407,8 @@ def test_run_openai_branch(db_file, mock_providers):
     exp = mgr.run(2)
     assert exp.status == "success"
     assert exp.state == CallerState.FINISHED.value
-    assert exp.usage_tokens == 42
+    assert exp.total_tokens == 42
+    assert (exp.prompt_tokens, exp.completion_tokens) == (10, 32)
     # The full backend response is captured and persisted into response_json.
     assert exp.raw_response["usage"]["prompt_tokens"] == 10
     saved = json.loads(mgr.dao.fetch_rows(id_experiment=2)[0]["response_json"])
@@ -396,7 +423,7 @@ def test_run_litellm_dispatches_to_provider_class(db_file, mock_providers):
     assert exp.status == "success"
     assert exp.state == CallerState.FINISHED.value
     assert exp.response_text == "mocked litellm response"
-    assert exp.usage_tokens == 42
+    assert exp.total_tokens == 42
     row = mgr.dao.fetch_rows(id_experiment=3)[0]
     assert row["response_text"] == "mocked litellm response"
     assert json.loads(row["response_json"])["provider"] == "litellm"
@@ -466,7 +493,7 @@ def test_run_error_state_recorded(db_file, monkeypatch):
 
         def execute(self, prompt, row):
             self.state = CallerState.ERROR
-            return ProviderResponse(text="", usage_tokens=None, raw="refused")
+            return ProviderResponse(text="", total_tokens=None, raw="refused")
 
     monkeypatch.setattr(llm_module, "OllamaProvider", ErrorOllamaProvider)
 
@@ -568,7 +595,7 @@ def test_stats_counts_errors(db_file, monkeypatch):
 
         def execute(self, prompt, row):
             self.state = CallerState.ERROR
-            return ProviderResponse(text="", usage_tokens=None, raw="boom")
+            return ProviderResponse(text="", total_tokens=None, raw="boom")
 
     monkeypatch.setattr(llm_module, "OllamaProvider", ErrorOllamaProvider)
 

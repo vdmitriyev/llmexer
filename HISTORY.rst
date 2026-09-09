@@ -2,12 +2,20 @@
 History
 =======
 
+0.4.1 (2026-09-09)
+-------------------
+
+* **Breaking:** experiment results drop ``usage_tokens`` for a ``prompt_tokens`` / ``completion_tokens`` / ``total_tokens`` split, the two new columns sitting before ``total_tokens``. The split is stored per row instead of being parsed back out of ``response_json``, and stays NULL when a provider does not report it. Opening a database written by an earlier version now aborts: either re-run ``experiment generate`` or convert it in place with ``scripts/migrate_usage_tokens.py``.
+* **Breaking:** ``ProviderResponse`` carries ``prompt_tokens`` / ``completion_tokens`` / ``total_tokens`` in place of ``usage_tokens``, and ``CallerStats`` gains the same split next to its ``total_tokens``.
+* Fix scripts used by the ``analysis`` CLI
+
 0.4.0 (2026-09-09)
 -------------------
 
 * Add the ``analysis`` CLI category (aliases ``analyse`` / ``analyze``). ``analysis init`` scaffolds ``<project>/analysis/`` with two ready-to-run Jupyter notebooks — ``analyse_experiment.ipynb`` and ``analyse_searches.ipynb`` — and the ``transform`` / ``stats`` / ``plots`` modules they call. The notebooks hold no logic and import only those copies, never ``llmexer``, so the folder is self-contained; the answers parsed out of ``response_text`` are exported as CSV on their own and profiled (distinct values per column, plus a bar chart for the yes/no, countable and small-set ones), and the searches notebook analyses one search at a time. ``--rewrite`` restores the shipped versions, moving the replaced ones into ``analysis/.backup/`` first.
 * ``llmexer.common``: add ``strip_code_fence`` (moved out of ``experiment_export``) and ``next_backup_name``, which now takes a ``suffix`` so non-CSV files can be backed up too.
 * New optional ``analysis`` dependency group (``matplotlib``, ``seaborn``, ``ipykernel``, ``jupyterlab``); ``nbformat`` joins the runtime dependencies, so ``analysis init`` validates every notebook it writes.
+* ``experiment try`` prints the prompt, completion and total token counts instead of a single ``Usage tokens`` row.
 
 0.3.11 (2026-09-08)
 -------------------

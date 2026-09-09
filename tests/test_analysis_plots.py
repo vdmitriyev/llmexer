@@ -46,7 +46,6 @@ def frame():
                 state="finished",
                 elapsed_seconds=2.0,
                 total_tokens=100,
-                usage_tokens=100,
             ),
             dict(
                 provider_name="ollama",
@@ -55,7 +54,6 @@ def frame():
                 state="maxtokenreached",
                 elapsed_seconds=4.0,
                 total_tokens=50,
-                usage_tokens=50,
             ),
             dict(
                 provider_name="litellm",
@@ -64,7 +62,6 @@ def frame():
                 state="error",
                 elapsed_seconds=None,
                 total_tokens=None,
-                usage_tokens=None,
             ),
             dict(
                 provider_name="litellm",
@@ -73,7 +70,6 @@ def frame():
                 state=None,
                 elapsed_seconds=None,
                 total_tokens=None,
-                usage_tokens=None,
             ),
         ]
     )

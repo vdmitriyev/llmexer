@@ -96,7 +96,7 @@ def probe_provider(monkeypatch):
             finally:
                 probe.leave()
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="mocked response", usage_tokens=42)
+            return ProviderResponse(text="mocked response", total_tokens=42)
 
     monkeypatch.setattr(llm_module, "OllamaProvider", ProbeOllamaProvider)
     return probe

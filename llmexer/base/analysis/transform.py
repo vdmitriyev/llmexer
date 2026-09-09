@@ -58,16 +58,15 @@ EXPERIMENT_COLUMNS = (
     "provider_name",
     "profile_name",
     "response_text",
-    "usage_tokens",
-    "total_tokens",
     "status",
     "state",
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
     "elapsed_seconds",
     "timestamp",
     "response_json",
     "_provider",
-    "prompt_tokens",
-    "completion_tokens",
 )
 
 SEARCH_COLUMNS = (
@@ -289,50 +288,6 @@ def _experiment_tables(connection) -> list:
     return [(name, _provider_of(name)) for name in names if _PROVIDER_RE.match(_provider_of(name))]
 
 
-def _usage_of(payload: dict) -> dict:
-    """The ``usage`` block of a stored per-call payload, or ``{}``."""
-
-    raw = payload.get("raw_response")
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            return {}
-    if not isinstance(raw, dict):
-        return {}
-    usage = raw.get("usage")
-
-    return usage if isinstance(usage, dict) else {}
-
-
-def add_token_split(df: pd.DataFrame) -> pd.DataFrame:
-    """Add ``prompt_tokens`` / ``completion_tokens`` parsed from ``response_json``.
-
-    The split is not a column of the database - it only exists inside the stored
-    raw provider response. Both are nullable ``Int64`` and are **never**
-    zero-filled: a zero would quietly understate prompt cost, whereas a missing
-    value shows up as ``<NA>`` and in ``stats.token_stats``' ``coverage``.
-    """
-
-    prompt, completion = [], []
-    for value in df.get("response_json", pd.Series([None] * len(df), index=df.index)):
-        payload = value
-        if isinstance(value, str) and value.strip():
-            try:
-                payload = json.loads(value)
-            except (json.JSONDecodeError, ValueError):
-                payload = None
-
-        block = _usage_of(payload) if isinstance(payload, dict) else {}
-        prompt.append(block.get("prompt_tokens"))
-        completion.append(block.get("completion_tokens"))
-
-    df["prompt_tokens"] = pd.Series(prompt, index=df.index, dtype="object").astype("Int64")
-    df["completion_tokens"] = pd.Series(completion, index=df.index, dtype="object").astype("Int64")
-
-    return df
-
-
 def load_experiment_db(db_path) -> pd.DataFrame:
     """Load every generated row of an experiment database into one frame.
 
@@ -381,7 +336,13 @@ def load_experiment_db(db_path) -> pd.DataFrame:
     if "ID" in df.columns:
         df = df.sort_values("ID").reset_index(drop=True)
 
-    return add_token_split(df)
+    # Stored as INTEGER NULL: kept nullable so a provider that reported no
+    # split stays <NA> instead of turning into a float NaN or a zero.
+    for name in ("prompt_tokens", "completion_tokens"):
+        if name in df.columns:
+            df[name] = pd.to_numeric(df[name], errors="coerce").astype("Int64")
+
+    return df
 
 
 def load_search_frame(searches_dir, search, *, kind: str = "results") -> pd.DataFrame:

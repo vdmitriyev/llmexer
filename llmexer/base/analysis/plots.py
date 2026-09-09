@@ -71,15 +71,9 @@ def _model_label(df: pd.DataFrame) -> pd.Series:
 
 
 def _tokens(df: pd.DataFrame) -> pd.Series:
-    total = pd.to_numeric(df.get("total_tokens"), errors="coerce") if "total_tokens" in df else None
-    usage = pd.to_numeric(df.get("usage_tokens"), errors="coerce") if "usage_tokens" in df else None
-    if total is None and usage is None:
-        raise KeyError("missing column(s): ['total_tokens', 'usage_tokens']")
-    if total is None:
-        return usage.fillna(0)
-    if usage is None:
-        return total.fillna(0)
-    return total.fillna(usage).fillna(0)
+    _require(df, "total_tokens")
+
+    return pd.to_numeric(df["total_tokens"], errors="coerce").fillna(0)
 
 
 def plot_responses_by_model(df: pd.DataFrame, ax=None, *, title: str = "Responses by model"):

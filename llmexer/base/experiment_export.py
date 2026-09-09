@@ -162,17 +162,13 @@ def build_try_command(row: dict, project_id: str, db_name: str) -> str:
 
 
 def row_tokens(row: dict) -> int:
-    """Token count for a row: ``total_tokens``, else ``usage_tokens``, else 0.
+    """Token count for a row: ``total_tokens``, else 0.
 
-    The same fallback ``ExperimentDAO.stats()`` applies, so the export and the
-    stats table can never report different numbers for the same run.
+    The same rule ``ExperimentDAO.stats()`` applies, so the export and the stats
+    table can never report different numbers for the same run.
     """
 
-    for key in ("total_tokens", "usage_tokens"):
-        value = row.get(key)
-        if value:
-            return int(value)
-    return 0
+    return int(row.get("total_tokens") or 0)
 
 
 def format_response_text(text: str) -> tuple:

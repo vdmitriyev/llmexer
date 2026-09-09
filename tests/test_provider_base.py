@@ -29,7 +29,7 @@ class _StubProvider(LLMProviderBase):
         try:
             self.build_session()
             self.build_request(prompt, row)
-            self.response = ProviderResponse(text="ok", usage_tokens=10)
+            self.response = ProviderResponse(text="ok", total_tokens=10)
             self.stats.call_count += 1
             self.stats.total_tokens += 10
             self.state = CallerState.FINISHED
@@ -107,14 +107,14 @@ def test_provider_request_with_params():
 def test_provider_response_defaults():
     resp = ProviderResponse()
     assert resp.text == ""
-    assert resp.usage_tokens is None
+    assert (resp.prompt_tokens, resp.completion_tokens, resp.total_tokens) == (None, None, None)
     assert resp.raw is None
 
 
 def test_provider_response_with_values():
-    resp = ProviderResponse(text="answer", usage_tokens=42, raw={"id": "xyz"})
+    resp = ProviderResponse(text="answer", prompt_tokens=10, completion_tokens=32, total_tokens=42, raw={"id": "xyz"})
     assert resp.text == "answer"
-    assert resp.usage_tokens == 42
+    assert (resp.prompt_tokens, resp.completion_tokens, resp.total_tokens) == (10, 32, 42)
     assert resp.raw == {"id": "xyz"}
 
 
@@ -126,6 +126,8 @@ def test_provider_response_with_values():
 def test_caller_stats_defaults():
     stats = CallerStats()
     assert stats.call_count == 0
+    # The split starts as None, not 0: nothing has been reported yet.
+    assert (stats.prompt_tokens, stats.completion_tokens) == (None, None)
     assert stats.total_tokens == 0
     assert stats.elapsed_seconds == 0.0
 
@@ -175,7 +177,7 @@ def test_stub_execute_populates_response():
     resp = stub.execute("say hello", {"model": "stub-model"})
     assert isinstance(resp, ProviderResponse)
     assert resp.text == "ok"
-    assert resp.usage_tokens == 10
+    assert resp.total_tokens == 10
 
 
 def test_stub_execute_updates_stats():

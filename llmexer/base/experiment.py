@@ -98,12 +98,15 @@ PROVIDER_PARAM_COLUMNS = {
 
 # Result columns written back once a row has been run. ``response_json`` stores
 # the full per-call JSON payload (the same dict also exported to responses/).
+# ``prompt_tokens`` / ``completion_tokens`` stay NULL when a provider reports no
+# split: a zero there would understate the cost rather than admit it is unknown.
 RESULT_COLUMNS = [
     "response_text",
-    "usage_tokens",
     "status",
     "state",
     "call_count",
+    "prompt_tokens",
+    "completion_tokens",
     "total_tokens",
     "elapsed_seconds",
     "timestamp",

@@ -13,7 +13,7 @@ The semantics deliberately mirror ``ExperimentDAO.stats()`` so the notebook and
 * errors    -> ``status`` starts with ``"Error"``
 * running   -> ``state == "running"``
 * open      -> ``status`` is null (generated but never run)
-* tokens    -> ``total_tokens``, falling back to ``usage_tokens``, else 0
+* tokens    -> ``total_tokens``, else 0
 
 With one addition the DAO does not make. A reply cut short at ``max_tokens`` is
 stored as ``status="success"`` with ``state="maxtokenreached"`` and the text
@@ -67,12 +67,9 @@ def _is_open(df: pd.DataFrame) -> pd.Series:
 
 
 def tokens_series(df: pd.DataFrame) -> pd.Series:
-    """Token count per row: ``total_tokens``, else ``usage_tokens``, else 0."""
+    """Token count per row: ``total_tokens``, else 0."""
 
-    total = pd.to_numeric(_column(df, "total_tokens"), errors="coerce")
-    usage = pd.to_numeric(_column(df, "usage_tokens"), errors="coerce")
-
-    return total.fillna(usage).fillna(0).astype("int64")
+    return pd.to_numeric(_column(df, "total_tokens"), errors="coerce").fillna(0).astype("int64")
 
 
 def _groups(df: pd.DataFrame, by) -> list:
@@ -211,10 +208,11 @@ def token_stats(df: pd.DataFrame, by=None) -> pd.DataFrame:
     """Token totals and averages per provider+model.
 
     ``prompt_tokens`` / ``completion_tokens`` are reported when the frame
-    carries them - ``transform.load_experiment_db`` parses them out of
-    ``response_json``. They are nullable and never zero-filled: a zero would
-    understate prompt cost, so a missing split shows up as ``<NA>`` and in the
-    ``coverage`` column rather than as a plausible-looking number.
+    carries them - they are columns of the experiment table, filled by ``run``
+    from the provider's own usage block. They are nullable and never
+    zero-filled: a zero would understate prompt cost, so a provider that
+    reported no split shows up as ``<NA>`` and in the ``coverage`` column
+    rather than as a plausible-looking number.
     """
 
     groups = _groups(df, by)

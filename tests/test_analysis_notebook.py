@@ -132,8 +132,9 @@ def _project_with_data(projects_dir):
                     ID=1,
                     status="success",
                     state="finished",
+                    prompt_tokens=80,
+                    completion_tokens=20,
                     total_tokens=100,
-                    usage_tokens=100,
                     elapsed_seconds=1.5,
                     response_text='{"verdict": "relevant"}',
                 )

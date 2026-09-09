@@ -275,14 +275,10 @@ def _payload(prompt_tokens=11, completion_tokens=7):
     return json.dumps(
         {
             "model": "m",
-            "raw_response": {
-                "choices": [{"finish_reason": "stop"}],
-                "usage": {
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                    "total_tokens": prompt_tokens + completion_tokens,
-                },
-            },
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+            "raw_response": {"choices": [{"finish_reason": "stop"}]},
         }
     )
 
@@ -294,14 +290,23 @@ def seeded_db(tmp_path):
         path,
         {
             "ollama": [
-                dict(OLLAMA_ROW, ID=1, status="success", total_tokens=100, usage_tokens=100, response_json=_payload()),
+                dict(
+                    OLLAMA_ROW,
+                    ID=1,
+                    status="success",
+                    prompt_tokens=11,
+                    completion_tokens=7,
+                    total_tokens=18,
+                    response_json=_payload(),
+                ),
                 dict(
                     OLLAMA_ROW,
                     ID=2,
                     code="D02_prompt01_llama3.3:latest_ollama-default",
                     status="success",
-                    total_tokens=None,
-                    usage_tokens=42,
+                    prompt_tokens=None,
+                    completion_tokens=None,
+                    total_tokens=42,
                     response_json=None,
                 ),
             ],
@@ -349,7 +354,9 @@ def test_load_experiment_db_keeps_try_tables_out(seeded_db):
     assert 99 not in set(load_experiment_db(seeded_db)["ID"])
 
 
-def test_load_experiment_db_parses_the_token_split(seeded_db):
+def test_load_experiment_db_reads_the_token_split(seeded_db):
+    """The split is stored per row, not reconstructed from response_json."""
+
     df = load_experiment_db(seeded_db).set_index("ID")
 
     assert df.loc[1, "prompt_tokens"] == 11

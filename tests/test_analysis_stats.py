@@ -43,7 +43,6 @@ def frame():
                 state="finished",
                 elapsed_seconds=2.0,
                 total_tokens=100,
-                usage_tokens=100,
                 prompt_tokens=80,
                 completion_tokens=20,
             ),
@@ -54,8 +53,7 @@ def frame():
                 status="success",
                 state="maxtokenreached",
                 elapsed_seconds=4.0,
-                total_tokens=None,
-                usage_tokens=50,
+                total_tokens=50,
                 prompt_tokens=None,
                 completion_tokens=None,
             ),
@@ -67,7 +65,6 @@ def frame():
                 state="error",
                 elapsed_seconds=None,
                 total_tokens=None,
-                usage_tokens=None,
                 prompt_tokens=None,
                 completion_tokens=None,
             ),
@@ -79,7 +76,6 @@ def frame():
                 state=None,
                 elapsed_seconds=None,
                 total_tokens=None,
-                usage_tokens=None,
                 prompt_tokens=None,
                 completion_tokens=None,
             ),
@@ -165,7 +161,9 @@ def test_response_time_stats_on_an_empty_frame():
 # ---------------------------------------------------------------------------
 
 
-def test_tokens_series_falls_back_to_usage_tokens(frame):
+def test_tokens_series_zero_fills_a_missing_total(frame):
+    """A row that was never run, or whose provider reported nothing, counts as 0."""
+
     assert list(tokens_series(frame)) == [100, 50, 0, 0]
 
 

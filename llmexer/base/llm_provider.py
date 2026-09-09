@@ -146,13 +146,20 @@ class ProviderRequest:
 @dataclass
 class ProviderResponse:
     text: str = ""
-    usage_tokens: Optional[int] = None
+    # None means the provider reported nothing, which is not the same as zero.
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
     raw: Optional[Any] = field(default=None, repr=False)
 
 
 @dataclass
 class CallerStats:
     call_count: int = 0
+    # Nullable for the same reason as on ProviderResponse: the split survives
+    # into the database as NULL rather than as a zero nobody can tell apart.
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
     total_tokens: int = 0
     elapsed_seconds: float = 0.0
 
@@ -283,18 +290,31 @@ class OpenAICompatibleProvider(LLMProviderBase):
             else:
                 text = choice.message.content or ""
                 self.state = CallerState.FINISHED
-            tokens = getattr(completion.usage, "total_tokens", None)
-            self.response = ProviderResponse(text=text, usage_tokens=tokens, raw=completion)  # gitleaks:allow
+            usage = getattr(completion, "usage", None)
+            self.response = ProviderResponse(  # gitleaks:allow
+                text=text,
+                prompt_tokens=getattr(usage, "prompt_tokens", None),
+                completion_tokens=getattr(usage, "completion_tokens", None),
+                total_tokens=getattr(usage, "total_tokens", None),
+                raw=completion,
+            )
         except Exception as exc:
             logger.exception(exc)
-            self.response = ProviderResponse(text="", usage_tokens=None, raw=str(exc))
+            self.response = ProviderResponse(text="", raw=str(exc))
             self.state = CallerState.ERROR
         finally:
             elapsed = time.monotonic() - t0
             self.stats.call_count += 1
             self.stats.elapsed_seconds += elapsed
-            if self.response and self.response.usage_tokens:
-                self.stats.total_tokens += self.response.usage_tokens
+            if self.response:
+                if self.response.total_tokens:
+                    self.stats.total_tokens += self.response.total_tokens
+                # Accumulated only from the calls that reported one, so a
+                # provider that reports no split leaves the stat at None.
+                for name in ("prompt_tokens", "completion_tokens"):
+                    value = getattr(self.response, name)
+                    if value is not None:
+                        setattr(self.stats, name, (getattr(self.stats, name) or 0) + value)
         return self.response
 
 

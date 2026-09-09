@@ -80,14 +80,20 @@ def mock_providers(monkeypatch):
 
         def execute(self, prompt, row):
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="mocked response", usage_tokens=42)
+            return ProviderResponse(text="mocked response", total_tokens=42)
 
     class FakeOpenAIProvider(FakeOllamaProvider):
-        """Same canned behaviour, but carries a raw response worth serialising."""
+        """Same canned behaviour, but reports a usage split and a raw response."""
 
         def execute(self, prompt, row):
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="mocked response", usage_tokens=42, raw=FakeCompletion())
+            return ProviderResponse(
+                text="mocked response",
+                prompt_tokens=10,
+                completion_tokens=32,
+                total_tokens=42,
+                raw=FakeCompletion(),
+            )
 
     monkeypatch.setattr(llm_module, "OllamaProvider", FakeOllamaProvider)
     monkeypatch.setattr(llm_module, "OpenAIProvider", FakeOpenAIProvider)
@@ -161,8 +167,10 @@ def test_run_result_row_has_result_columns(experiment_with_db, mock_providers):
     df = read_experiment_df(find_db(exp_subdir))
     for col in [
         "response_text",
-        "usage_tokens",
         "status",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
         "timestamp",
         "response_json",
     ]:
@@ -271,7 +279,7 @@ def test_run_failed_call_still_writes_row(experiment_with_db, monkeypatch):
 
         def execute(self, prompt, row):
             self.state = CallerState.ERROR
-            return ProviderResponse(text="", usage_tokens=None, raw="connection refused")
+            return ProviderResponse(text="", total_tokens=None, raw="connection refused")
 
     monkeypatch.setattr(llm_module, "OllamaProvider", ErrorOllamaProvider)
 
@@ -444,7 +452,7 @@ def test_run_passes_joined_params_to_the_provider(experiment_with_db, monkeypatc
         def execute(self, prompt, row):
             captured["row"] = dict(row)
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="x", usage_tokens=1)
+            return ProviderResponse(text="x", total_tokens=1)
 
     monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
 
@@ -478,7 +486,7 @@ def test_run_uses_provider_url_from_env(experiment_with_db, monkeypatch):
 
         def execute(self, prompt, row):
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="x", usage_tokens=1)
+            return ProviderResponse(text="x", total_tokens=1)
 
     monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
     monkeypatch.setenv("PROVIDER_OLLAMA_URL", "http://custom-ollama:9999/v1")
@@ -505,7 +513,7 @@ def test_run_provider_url_falls_back_to_url_map(experiment_with_db, monkeypatch)
 
         def execute(self, prompt, row):
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="x", usage_tokens=1)
+            return ProviderResponse(text="x", total_tokens=1)
 
     monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
     monkeypatch.delenv("PROVIDER_OLLAMA_URL", raising=False)
@@ -532,7 +540,7 @@ def test_run_uses_provider_key_from_env(experiment_with_db, monkeypatch):
 
         def execute(self, prompt, row):
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="x", usage_tokens=1)
+            return ProviderResponse(text="x", total_tokens=1)
 
     monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
     monkeypatch.setenv("PROVIDER_OLLAMA_KEY", "provider-specific-key")
@@ -560,7 +568,7 @@ def test_run_provider_key_defaults_to_na_when_absent(experiment_with_db, monkeyp
 
         def execute(self, prompt, row):
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="x", usage_tokens=1)
+            return ProviderResponse(text="x", total_tokens=1)
 
     monkeypatch.setattr(llm_module, "OllamaProvider", CapturingOllamaProvider)
     monkeypatch.delenv("PROVIDER_OLLAMA_KEY", raising=False)
@@ -618,6 +626,27 @@ def test_run_filter_provider_runs_only_matching_rows(experiment_with_two_provide
     openai_row = df[df["provider_name"].str.lower() == "openai"].iloc[0]
     assert ollama_row["status"] == "success"
     assert pd.isna(openai_row["status"])
+
+
+def test_run_writes_the_token_split_and_leaves_it_null_when_unreported(
+    experiment_with_two_provider_rows, mock_providers
+):
+    """The openai fake reports a split; the ollama one reports none and stays NULL."""
+    pid, exp_subdir = experiment_with_two_provider_rows
+
+    result = runner.invoke(app, ["experiment", "run", "--pid", pid, "--file", _EXPERIMENT_DB_NAME])
+
+    assert result.exit_code == 0
+    df = read_experiment_df(find_db(exp_subdir))
+    openai_row = df[df["provider_name"].str.lower() == "openai"].iloc[0]
+    assert (openai_row["prompt_tokens"], openai_row["completion_tokens"]) == (10, 32)
+    assert openai_row["total_tokens"] == 42
+
+    # A zero here would read as "the prompt cost nothing", so it has to stay NULL.
+    ollama_row = df[df["provider_name"].str.lower() == "ollama"].iloc[0]
+    assert pd.isna(ollama_row["prompt_tokens"])
+    assert pd.isna(ollama_row["completion_tokens"])
+    assert ollama_row["total_tokens"] == 42
 
 
 def test_run_filter_provider_no_match_exits_cleanly(experiment_with_two_provider_rows, mock_providers):

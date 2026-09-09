@@ -51,7 +51,7 @@ def mock_ollama(monkeypatch):
 
         def execute(self, prompt, row):
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="mocked response", usage_tokens=42)
+            return ProviderResponse(text="mocked response", prompt_tokens=10, completion_tokens=32, total_tokens=42)
 
     monkeypatch.setattr(llm_module, "OllamaProvider", FakeOllamaProvider)
     return FakeOllamaProvider
@@ -69,7 +69,7 @@ def mock_failing_ollama(monkeypatch):
 
         def execute(self, prompt, row):
             self.state = CallerState.ERROR
-            return ProviderResponse(text="", usage_tokens=None, raw="connection refused")
+            return ProviderResponse(text="", total_tokens=None, raw="connection refused")
 
     monkeypatch.setattr(llm_module, "OllamaProvider", FailingOllamaProvider)
     return FailingOllamaProvider
@@ -148,7 +148,8 @@ def test_try_appends_to_both_try_tables(generated_experiment, mock_ollama):
     assert row["code"] == "D01_prompt01_llama3.3:latest_ollama-default"
     assert row["status"] == "success"
     assert row["response_text"] == "mocked response"
-    assert row["usage_tokens"] == 42
+    assert row["total_tokens"] == 42
+    assert (row["prompt_tokens"], row["completion_tokens"]) == (10, 32)
     assert row["model_name"] == "llama3.3:latest"
     assert row["provider_name"] == "ollama"
     # The parameters the try ran with are joined back in.
@@ -157,7 +158,7 @@ def test_try_appends_to_both_try_tables(generated_experiment, mock_ollama):
 
 
 def test_try_prints_header_and_response(generated_experiment, mock_ollama):
-    """The header names model, provider and usage tokens; then the response."""
+    """The header names model, provider and the token counts; then the response."""
     pid, _exp_subdir, _db_path = generated_experiment
 
     result = _try(pid)
@@ -166,7 +167,9 @@ def test_try_prints_header_and_response(generated_experiment, mock_ollama):
     output = " ".join(result.output.split())
     assert "Model: llama3.3:latest" in output
     assert "Provider: ollama" in output
-    assert "Usage tokens: 42" in output
+    assert "Prompt tokens: 10" in output
+    assert "Completion tokens: 32" in output
+    assert "Total tokens: 42" in output
     assert "mocked response" in output
 
 

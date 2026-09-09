@@ -30,12 +30,17 @@ from llmexer.common import get_user_agent
 from llmexer.exceptions import ProviderConfigException
 
 
-def _make_completion(text="hello", total_tokens=42, finish_reason="stop"):
-    """Build a minimal mock openai ChatCompletion object."""
+def _make_completion(text="hello", total_tokens=42, finish_reason="stop", split=(10, 32)):
+    """Build a minimal mock openai ChatCompletion object.
+
+    ``split`` is the ``(prompt, completion)`` pair the usage block reports;
+    ``None`` stands for a provider that reports no breakdown at all.
+    """
     completion = MagicMock()
     completion.choices[0].message.content = text
     completion.choices[0].finish_reason = finish_reason
     completion.usage.total_tokens = total_tokens
+    completion.usage.prompt_tokens, completion.usage.completion_tokens = split or (None, None)
     return completion
 
 
@@ -212,9 +217,22 @@ def test_execute_records_state_and_stats():
     resp = caller.execute("say hi", {"model_name": "gemini-2.5-flash"})
 
     assert resp.text == "answer"
-    assert resp.usage_tokens == 17
+    assert (resp.prompt_tokens, resp.completion_tokens, resp.total_tokens) == (10, 32, 17)
     assert caller.state == CallerState.FINISHED
     assert caller.stats.call_count == 1
+    assert (caller.stats.prompt_tokens, caller.stats.completion_tokens) == (10, 32)
+    assert caller.stats.total_tokens == 17
+
+
+def test_execute_leaves_an_unreported_split_none():
+    """A provider that reports only a total must not fabricate a breakdown."""
+    caller = GeminiProvider(provider="gemini")
+    caller.session = _mock_client(total_tokens=17, split=None)
+
+    resp = caller.execute("say hi", {"model_name": "gemini-2.5-flash"})
+
+    assert resp.prompt_tokens is None and resp.completion_tokens is None
+    assert caller.stats.prompt_tokens is None and caller.stats.completion_tokens is None
     assert caller.stats.total_tokens == 17
 
 
@@ -225,6 +243,7 @@ def test_execute_records_an_error_without_raising():
 
     resp = caller.execute("say hi", {"model_name": "gpt-4o"})
     assert resp.text == ""
+    assert (resp.prompt_tokens, resp.completion_tokens, resp.total_tokens) == (None, None, None)
     assert "connection refused" in str(resp.raw)
     assert caller.state == CallerState.ERROR
     assert caller.stats.call_count == 1
@@ -253,7 +272,7 @@ def test_a_truncated_answer_is_flagged_on_every_provider(provider_class, provide
     assert caller.state == CallerState.MAXTOKENREACHED
     assert resp.text == MAX_TOKENS_TEXT
     # The token count is still recorded: the call did consume budget.
-    assert resp.usage_tokens == 42
+    assert resp.total_tokens == 42
 
 
 def test_a_complete_answer_is_not_flagged():

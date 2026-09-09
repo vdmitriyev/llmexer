@@ -102,10 +102,11 @@ COLUMN_TYPES: Dict[str, Any] = {
     "litellm_best_of": Integer,
     # results
     "response_text": Text,
-    "usage_tokens": Integer,
     "status": String,
     "state": String,
     "call_count": Integer,
+    "prompt_tokens": Integer,
+    "completion_tokens": Integer,
     "total_tokens": Integer,
     "elapsed_seconds": Float,
     "timestamp": String,
@@ -319,6 +320,7 @@ class ExperimentDAO:
                 elif table.name.startswith(TABLE_PREFIX):
                     self._tables[provider_from_table_name(table.name)] = table
             self._require_params_tables()
+            self._require_current_result_columns()
 
     def _require_params_tables(self) -> None:
         """Reject databases written before parameters moved to their own table.
@@ -337,6 +339,28 @@ class ExperimentDAO:
             f"no {names} table(s) to join parameters from. Parameters now live in a separate "
             "'params_<provider>' table -- re-run `experiment generate` to create a database "
             "in the current format."
+        )
+
+    def _require_current_result_columns(self) -> None:
+        """Reject databases written before the token columns were split.
+
+        ``usage_tokens`` was dropped in favour of ``prompt_tokens`` /
+        ``completion_tokens`` next to ``total_tokens``. The mismatch would
+        otherwise pass unnoticed: ``update_result`` filters its payload against
+        the table's own columns, so a run against an old database would drop the
+        two new values without a word.
+        """
+
+        stale = sorted(prov for prov, table in self._tables.items() if "prompt_tokens" not in table.c)
+        if not stale:
+            return
+        names = ", ".join(f"'{table_name_for(p)}'" for p in stale)
+        raise LLMExerException(
+            f"Experiment database '{self.db_path}' uses the previous result columns: "
+            f"{names} has no 'prompt_tokens' / 'completion_tokens' column. The single "
+            "'usage_tokens' column was replaced by the prompt/completion/total split -- "
+            "re-run `experiment generate` for a database in the current format, or convert "
+            "this one in place with scripts/migrate_usage_tokens.py."
         )
 
     # ----------------------------------------------------------------- schema
@@ -764,7 +788,7 @@ class ExperimentDAO:
                 running += count(table.c.state == "running")
 
                 token_sum = conn.execute(
-                    select(func.sum(func.coalesce(table.c.total_tokens, table.c.usage_tokens, 0))).select_from(table)
+                    select(func.sum(func.coalesce(table.c.total_tokens, 0))).select_from(table)
                 ).scalar()
                 total_tokens += int(token_sum or 0)
 
@@ -772,7 +796,7 @@ class ExperimentDAO:
                 # open (pending/unrun, NULL status) rows, plus tokens and elapsed
                 # time accumulated over the model's *finished* rows only.
                 is_finished = table.c.status == "success"
-                finished_tokens = func.coalesce(table.c.total_tokens, table.c.usage_tokens, 0)
+                finished_tokens = func.coalesce(table.c.total_tokens, 0)
                 for (
                     name,
                     cnt,

@@ -71,8 +71,9 @@ def _ran_row(row_id, code_suffix, response, **overrides):
             "code": f"D{code_suffix}_prompt01_llama3.3:latest_ollama-default",
             "response_text": response,
             "status": "success",
+            "prompt_tokens": 100,
+            "completion_tokens": 42,
             "total_tokens": 142,
-            "usage_tokens": 142,
             # Deliberately messy: a raw float and a microsecond timestamp, as
             # `run` actually stores them.
             "elapsed_seconds": 2.4700000000000002,
@@ -93,8 +94,8 @@ def experiment_with_results(projects_dir):
         {
             "ollama": [
                 _ran_row(1, "01", _JSON_RESPONSE),
-                # total_tokens missing -> the export falls back to usage_tokens.
-                _ran_row(2, "02", _FENCED_RESPONSE, total_tokens=None, usage_tokens=88),
+                # A row the provider reported no token count for at all.
+                _ran_row(2, "02", _FENCED_RESPONSE, prompt_tokens=None, completion_tokens=None, total_tokens=None),
                 _ran_row(3, "03", _PROSE_RESPONSE),
             ],
             # Never run: no status, no response.
@@ -235,28 +236,27 @@ def test_export_keeps_non_json_responses_as_plain_text(experiment_with_results):
 # ---------------------------------------------------------------------------
 
 
-def test_export_falls_back_to_usage_tokens(experiment_with_results):
-    """A row with no total_tokens reports usage_tokens instead."""
+def test_export_reports_zero_without_a_token_count(experiment_with_results):
+    """A row the provider reported no tokens for exports as 0, not as blank."""
     html = _export_html(experiment_with_results)
     body = html[html.index("<tbody>") : html.index("</tbody>")]
 
     second_row = body.split("<tr>")[2]
     tokens_cell = second_row.split("<td ")[6]
-    assert '<span class="cell-value">88</span>' in tokens_cell
+    assert '<span class="cell-value">0</span>' in tokens_cell
 
 
 @pytest.mark.parametrize(
     "row, expected",
     [
-        ({"total_tokens": 142, "usage_tokens": 142}, 142),
-        ({"total_tokens": None, "usage_tokens": 88}, 88),
-        ({"total_tokens": 0, "usage_tokens": 12}, 12),
-        ({"total_tokens": None, "usage_tokens": None}, 0),
+        ({"total_tokens": 142}, 142),
+        ({"total_tokens": 0}, 0),
+        ({"total_tokens": None}, 0),
         ({}, 0),
     ],
 )
 def test_row_tokens(row, expected):
-    """total_tokens wins, usage_tokens is the fallback, absent means zero."""
+    """total_tokens as it stands; missing, null or zero all mean zero."""
     assert row_tokens(row) == expected
 
 
@@ -488,7 +488,7 @@ def mock_ollama(monkeypatch):
 
         def execute(self, prompt, row):
             self.state = CallerState.FINISHED
-            return ProviderResponse(text="mocked response", usage_tokens=42)
+            return ProviderResponse(text="mocked response", prompt_tokens=10, completion_tokens=32, total_tokens=42)
 
     monkeypatch.setattr(llm_module, "OllamaProvider", FakeOllamaProvider)
     return FakeOllamaProvider

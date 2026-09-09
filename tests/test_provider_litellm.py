@@ -23,6 +23,7 @@ def _make_completion(text="hello", total_tokens=42):
     completion = MagicMock()
     completion.choices[0].message.content = text
     completion.usage.total_tokens = total_tokens
+    completion.usage.prompt_tokens, completion.usage.completion_tokens = 10, 32
     return completion
 
 
@@ -229,7 +230,7 @@ def test_execute_success_response_text():
     caller.session = _mock_client("world", total_tokens=10)
     resp = caller.execute("say hello", _row())
     assert resp.text == "world"
-    assert resp.usage_tokens == 10
+    assert resp.total_tokens == 10
 
 
 def test_execute_success_updates_stats():
