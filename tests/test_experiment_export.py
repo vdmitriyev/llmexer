@@ -627,3 +627,176 @@ def test_export_does_not_emit_raw_markup_from_a_response(projects_dir):
     html = (exp_subdir / _HTML_NAME).read_text(encoding="utf-8")
     assert "<script>alert(1)</script>" not in html
     assert "alert(1)" in html
+
+
+# ---------------------------------------------------------------------------
+# Filters
+# ---------------------------------------------------------------------------
+
+
+def _ollama_row(row_id, model_name, profile_name):
+    """Build one ollama row for a (model, profile) pair of the cross join."""
+    row = dict(OLLAMA_ROW)
+    row.update(
+        {
+            "ID": row_id,
+            "code": f"D01_prompt01_{model_name}_{profile_name}",
+            "model_name": model_name,
+            "profile_name": profile_name,
+        }
+    )
+    return row
+
+
+@pytest.fixture()
+def experiment_with_model_profile_matrix(projects_dir):
+    """Database with one ollama table holding two models × two profiles."""
+    exp_subdir = projects_dir / PID / "experiment"
+    os.makedirs(exp_subdir)
+    seed_db(
+        exp_subdir / _DB_NAME,
+        {
+            "ollama": [
+                _ollama_row(1, "llama3.3:latest", "ollama-default"),
+                _ollama_row(2, "llama3.3:latest", "ollama-creative"),
+                _ollama_row(3, "phi4:14b", "ollama-default"),
+                _ollama_row(4, "phi4:14b", "ollama-creative"),
+            ]
+        },
+    )
+    return exp_subdir
+
+
+def _row_count(output):
+    """The row count `export` reports, read back off its output line."""
+    return int(re.search(r"—\s*(\d+)\s*rows", " ".join(output.split())).group(1))
+
+
+def test_export_without_filters_keeps_the_plain_name(experiment_with_results):
+    """The unfiltered export still writes `<db>.html` with every row."""
+    result = _export()
+
+    assert result.exit_code == 0, result.output
+    assert (experiment_with_results / _HTML_NAME).exists()
+    assert _row_count(result.output) == 4
+
+
+def test_export_filter_provider_names_the_file_after_the_filter(experiment_with_results):
+    """--filter-provider appends `__provider-<value>` and leaves the plain name free."""
+    result = _export(PID, "--filter-provider", "ollama")
+
+    assert result.exit_code == 0, result.output
+    assert (experiment_with_results / "experiment_20240101_01__provider-ollama.html").exists()
+    assert not (experiment_with_results / _HTML_NAME).exists()
+
+
+def test_export_filter_provider_exports_only_matching_rows(experiment_with_results):
+    """The page holds the filtered provider's rows and nothing else."""
+    result = _export(PID, "--filter-provider", "ollama")
+
+    assert _row_count(result.output) == 3
+    html = (experiment_with_results / "experiment_20240101_01__provider-ollama.html").read_text(encoding="utf-8")
+    assert "D01_prompt01_llama3.3:latest_ollama-default" in html
+    assert LITELLM_ROW["code"] not in html
+
+
+def test_export_filter_model_makes_the_value_safe_for_a_filename(experiment_with_model_profile_matrix):
+    """A `:` in a model name becomes `-` in the file name."""
+    result = _export(PID, "--filter-model", "phi4:14b")
+
+    assert result.exit_code == 0, result.output
+    assert (experiment_with_model_profile_matrix / "experiment_20240101_01__model-phi4-14b.html").exists()
+    assert _row_count(result.output) == 2
+
+
+def test_export_filters_combine_in_a_fixed_order(experiment_with_model_profile_matrix):
+    """Every filter given lands in the name, provider then model then profile."""
+    result = _export(
+        PID,
+        "--filter-profile",
+        "ollama-default",
+        "--filter-provider",
+        "ollama",
+        "--filter-model",
+        "phi4:14b",
+    )
+
+    assert result.exit_code == 0, result.output
+    expected = "experiment_20240101_01__provider-ollama__model-phi4-14b__profile-ollama-default.html"
+    assert (experiment_with_model_profile_matrix / expected).exists()
+    assert _row_count(result.output) == 1
+
+
+def test_export_page_names_the_filters_in_its_header(experiment_with_model_profile_matrix):
+    """The page itself says which filters produced it."""
+    _export(PID, "--filter-model", "phi4:14b")
+
+    html = (experiment_with_model_profile_matrix / "experiment_20240101_01__model-phi4-14b.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Filters <strong>" in html
+    assert "model &#39;phi4:14b&#39;" in html
+
+
+def test_export_unfiltered_page_has_no_filters_item(experiment_with_results):
+    """Nothing is added to the header when the whole database is exported."""
+    _export()
+
+    html = (experiment_with_results / _HTML_NAME).read_text(encoding="utf-8")
+    # Not a bare "Filters": the page carries a "Reset filters" button and a
+    # `columnFilters` variable of its own.
+    assert "Filters <strong>" not in html
+
+
+def test_export_filter_without_matches_warns_and_still_writes(experiment_with_model_profile_matrix):
+    """A filter matching nothing is a warning naming it, not an error."""
+    result = _export(PID, "--filter-model", "nope")
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert "No rows matched" in output
+    assert "model 'nope'" in output
+    assert (experiment_with_model_profile_matrix / "experiment_20240101_01__model-nope.html").exists()
+
+
+def test_export_filtered_and_plain_pages_coexist(experiment_with_results):
+    """A filtered export does not collide with the unfiltered one."""
+    assert _export().exit_code == 0
+    result = _export(PID, "--filter-provider", "ollama")
+
+    assert result.exit_code == 0, result.output
+    assert "Warning" not in result.output
+    assert (experiment_with_results / _HTML_NAME).exists()
+    assert (experiment_with_results / "experiment_20240101_01__provider-ollama.html").exists()
+
+
+def test_export_rewrite_guards_the_filtered_name(experiment_with_results):
+    """The `--rewrite` guard follows the filtered name, not the plain one."""
+    _export(PID, "--filter-provider", "ollama")
+    result = _export(PID, "--filter-provider", "ollama")
+
+    assert result.exit_code == 0, result.output
+    assert "Warning" in result.output
+    assert "__provider-ollama.html" in " ".join(result.output.split())
+
+
+def test_export_dry_run_announces_the_filtered_name(experiment_with_results):
+    """`--dry-run` names the file the filters would produce and writes nothing."""
+    result = runner.invoke(
+        app,
+        ["--dry-run", "experiment", "export", "--pid", PID, "--file", _DB_NAME, "--filter-provider", "ollama"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Dry run" in result.output
+    assert "__provider-ollama.html" in " ".join(result.output.split())
+    assert not list(experiment_with_results.glob("*.html"))
+
+
+def test_export_filter_surrounding_whitespace_is_ignored(experiment_with_model_profile_matrix):
+    """A stray space around --filter-model neither blocks the match nor the name."""
+    result = _export(PID, "--filter-model", " phi4:14b ")
+
+    assert result.exit_code == 0, result.output
+    assert _row_count(result.output) == 2
+    assert (experiment_with_model_profile_matrix / "experiment_20240101_01__model-phi4-14b.html").exists()

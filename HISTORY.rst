@@ -5,7 +5,10 @@ History
 0.4.3 (2026-09-11)
 -------------------
 
-* ``project create`` now writes a ``.gitignore`` into the new project folder, keeping the generated databases, HTML exports, responses, papers, search JSON and CSV backups out of version control.
+* ``experiment export`` takes ``run``'s ``--filter-provider`` / ``--filter-model`` / ``--filter-profile``. Each filter is appended to the HTML file name and named in the page header.
+* Add ``experiment compact``: packs an experiment database into a ``.7z`` archive of the same name next to it, leaving the database in place.
+* Added a new dependency - ``py7zr``
+* ``project create`` now writes a ``.gitignore`` into the new project folder, keeping the generated files (e.g., databases, HTML, JSON responses, backups, etc.) out of version control.
 
 0.4.2 (2026-09-09)
 -------------------

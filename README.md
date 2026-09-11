@@ -193,7 +193,21 @@ llmexer experiment export --pid llm-survey-2026 --file experiment_<SAMPLE>.db
 
 The page has sortable columns, per-column filters and a copy button on every cell. Each row also carries a ready-to-run `experiment try` command, so you can copy a cell and re-run that single combination in a shell.
 
-**10. Analyse the results in a notebook (optional)**
+You can also export part of a database, with the same filters `experiment run` takes:
+```bash
+llmexer experiment export --pid llm-survey-2026 --filter-provider ollama
+```
+
+**10. Compress the database (optional)**
+
+A finished database is easier to share or keep once it is packed. The archive is written next to the database under the same name, and the database itself stays where it is:
+```bash
+llmexer experiment compact --pid llm-survey-2026 --file experiment_<SAMPLE>.db
+```
+
+P.S. This option is just for convenience. You can achieve the same results faster by using the archive program native to your operating system.
+
+**11. Analyse the results in a notebook (optional)**
 ```bash
 llmexer analysis init --pid llm-survey-2026
 ```
@@ -393,7 +407,8 @@ The `experiment` category (alias: `exp`) sets up, generates and runs the experim
 | `run` | Runs every row of a generated database against its provider and writes the results back into the same database. Rows that already finished are skipped. Narrow the run with `--filter-provider`, `--filter-model`, `--filter-profile` or `--code`, and raise the throughput with `--parallel-calls`. Supports `--dry-run` and `--file`. | `llmexer experiment run --pid my-project --filter-provider ollama` |
 | `stats` | Shows the totals, token counts, and a breakdown per provider and per model. The same model served by two providers is reported once per provider. Pass `--file` to pick a database. | `llmexer experiment stats --pid my-project` |
 | `list` | Lists all projects with their setup state and their experiment databases. Sort with `--sort-by` and `--desc`. | `llmexer experiment list --sort-by date --desc` |
-| `export` | Renders an experiment database as an HTML page next to it, with sortable columns, per-column filters and a ready-to-run `try` command per row. Supports `--file`, `--rewrite` and `--dry-run`. | `llmexer experiment export --pid my-project` |
+| `export` | Renders an experiment database as an HTML page next to it, with sortable columns, per-column filters and a ready-to-run `try` command per row. Narrow it with `--filter-provider`, `--filter-model` or `--filter-profile`; each filter is added to the file name. Supports `--file`, `--rewrite` and `--dry-run`. | `llmexer experiment export --pid my-project --filter-provider ollama` |
+| `compact` | Compresses an experiment database into a `.7z` archive next to it, under the same name. The database is left in place. Supports `--file`, `--rewrite` and `--dry-run`. | `llmexer experiment compact --pid my-project` |
 
 ## 📊 CLI category: **analysis**
 

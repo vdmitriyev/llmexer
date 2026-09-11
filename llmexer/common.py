@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from datetime import datetime, timezone
 
 import requests
@@ -175,3 +176,21 @@ def next_backup_name(folder: str, stem: str, suffix: str = ".csv") -> str:
                 except ValueError:
                     continue
     return f"{prefix}{counter + 1:02d}{suffix}"
+
+
+def safe_filename_part(value: str, max_length: int = 40) -> str:
+    """Return ``value`` reduced to characters that are safe in a file name.
+
+    Letters, digits, ``.``, ``-`` and ``_`` are kept; every other character
+    becomes ``-``. Runs of ``-`` and of ``_`` are collapsed to one, so a value
+    never grows a ``__`` that reads as a separator, and leading or trailing
+    ``-._`` are dropped. The result is cut to ``max_length`` and falls back to
+    ``"unnamed"`` when nothing is left.
+    """
+
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "-", str(value))
+    cleaned = re.sub(r"-+", "-", cleaned)
+    cleaned = re.sub(r"_+", "_", cleaned)
+    cleaned = cleaned[:max_length].strip("-._")
+
+    return cleaned or "unnamed"

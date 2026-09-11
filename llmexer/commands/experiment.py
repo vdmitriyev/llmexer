@@ -40,6 +40,7 @@ from llmexer.base.experiment import (
     _get_generated_experiment_files,
     _is_experiment_initialized,
 )
+from llmexer.base.experiment_archive import compact_db_to_7z
 from llmexer.base.experiment_export import export_db_to_html
 from llmexer.common import (
     ensure_directory_exists,
@@ -47,6 +48,7 @@ from llmexer.common import (
     get_project_directory_path,
     get_proper_pid,
     next_backup_name,
+    safe_filename_part,
 )
 from llmexer.configs import console, cprint, settings
 from llmexer.constants import PAPERS_DIR, PROJECTS_PATH, SEARCHES_DIR
@@ -189,6 +191,50 @@ def _resolve_experiment_db(pid: str, file: str) -> tuple[str, str]:
         raise LLMExerException(f"Experiment database not found: '{db_path}'.")
 
     return db_path, experiment_subdir_path
+
+
+def _filter_pairs(provider: str, model_name: str, profile_name: str) -> list[tuple[str, str]]:
+    """Return ``(label, value)`` for every filter given, in a fixed order.
+
+    Model and profile are stripped: stored values are stripped by `generate`, so a
+    stray space around a shell argument must not turn into a silent no-match. The
+    provider is left as typed — the DAO matches it case-insensitively.
+    """
+
+    values = (
+        ("provider", provider),
+        ("model", model_name.strip() if model_name is not None else None),
+        ("profile", profile_name.strip() if profile_name is not None else None),
+    )
+    return [(label, value) for label, value in values if value is not None]
+
+
+def _describe_filters(pairs: list[tuple[str, str]]) -> list[str]:
+    """Render filter pairs as ``["provider 'ollama'", ...]`` for the console."""
+
+    return [f"{label} '{value}'" for label, value in pairs]
+
+
+def _filter_values(pairs: list[tuple[str, str]]) -> dict:
+    """Filter pairs as the keyword arguments ``ExperimentDAO.fetch_rows()`` takes."""
+
+    by_label = dict(pairs)
+    return {
+        "provider": by_label.get("provider"),
+        "model_name": by_label.get("model"),
+        "profile_name": by_label.get("profile"),
+    }
+
+
+def _export_html_path(db_path: str, pairs: list[tuple[str, str]]) -> str:
+    """Return ``<db stem>[__<label>-<value>...].html`` next to the database.
+
+    Each filter the export was narrowed by is appended to the name, so two
+    filtered exports of one database never overwrite each other.
+    """
+
+    suffix = "".join(f"__{label}-{safe_filename_part(value)}" for label, value in pairs)
+    return f"{os.path.splitext(db_path)[0]}{suffix}.html"
 
 
 def _write_csv_with_backup(folder: str, filename: str, df: pd.DataFrame) -> tuple[str, str]:
@@ -1147,19 +1193,8 @@ def run(
     pid = get_proper_pid(pid)
     db_path, experiment_subdir_path = _resolve_experiment_db(pid, file)
 
-    # Stored model/profile values are stripped by `generate`, so a stray space
-    # around a shell argument must not turn into a silent no-match.
-    filter_model = filter_model.strip() if filter_model is not None else None
-    filter_profile = filter_profile.strip() if filter_profile is not None else None
-    active_filters = [
-        f"{label} '{value}'"
-        for label, value in (
-            ("provider", filter_provider),
-            ("model", filter_model),
-            ("profile", filter_profile),
-        )
-        if value is not None
-    ]
+    pairs = _filter_pairs(filter_provider, filter_model, filter_profile)
+    active_filters = _describe_filters(pairs)
 
     # Lazy import to keep openai optional
     try:
@@ -1177,12 +1212,7 @@ def run(
     cprint(f"Using experiment database: [bold yellow]{os.path.basename(db_path)}[/bold yellow]")
 
     with ExperimentDAO(db_path) as dao:
-        rows = dao.fetch_rows(
-            provider=filter_provider,
-            id_experiment=code,
-            model_name=filter_model,
-            profile_name=filter_profile,
-        )
+        rows = dao.fetch_rows(id_experiment=code, **_filter_values(pairs))
 
         if not rows:
             _report_no_rows_to_run(active_filters, code)
@@ -1574,6 +1604,23 @@ def export(
         "--file",
         help="Experiment database to export. Defaults to the newest experiment_*.db.",
     ),
+    filter_provider: str = typer.Option(
+        None,
+        "--filter-provider",
+        help="Only export rows whose provider matches this value (case-insensitive). " "E.g. --filter-provider ollama",
+    ),
+    filter_model: str = typer.Option(
+        None,
+        "--filter-model",
+        help="Only export rows whose model_name matches this value in full (case-sensitive). "
+        "E.g. --filter-model gemma4:31b",
+    ),
+    filter_profile: str = typer.Option(
+        None,
+        "--filter-profile",
+        help="Only export rows whose profile_name matches this value in full (case-sensitive). "
+        "E.g. --filter-profile ollama-default",
+    ),
     rewrite: bool = typer.Option(
         False,
         "--rewrite",
@@ -1585,12 +1632,19 @@ def export(
     The page is written next to the database with the same name and an ``.html``
     extension. Every generated row is exported, run or not: an unrun row simply
     carries an empty response and no status.
+
+    ``--filter-provider`` / ``--filter-model`` / ``--filter-profile`` narrow the
+    page exactly as they narrow ``experiment run``. Each filter given is appended
+    to the file name as ``__<label>-<value>``, so filtered exports of one database
+    never overwrite each other.
     """
 
     pid = get_proper_pid(pid)
     db_path, _ = _resolve_experiment_db(pid, file)
 
-    html_path = f"{os.path.splitext(db_path)[0]}.html"
+    pairs = _filter_pairs(filter_provider, filter_model, filter_profile)
+    active_filters = _describe_filters(pairs)
+    html_path = _export_html_path(db_path, pairs)
 
     if os.path.exists(html_path) and not rewrite:
         cprint(
@@ -1603,10 +1657,74 @@ def export(
         cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{html_path}'")
         return
 
+    if active_filters:
+        cprint(f"Active filter(s): [bold yellow]{', '.join(active_filters)}[/bold yellow]")
+
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    rows = export_db_to_html(db_path, html_path, pid, generated_at)
+    rows = export_db_to_html(
+        db_path,
+        html_path,
+        pid,
+        generated_at,
+        filters=", ".join(active_filters),
+        **_filter_values(pairs),
+    )
+
+    if not rows and active_filters:
+        cprint(
+            f"[bold yellow]Warning:[/bold yellow] No rows matched {', '.join(active_filters)} — " "the page is empty."
+        )
 
     cprint(f"File with export ([magenta]HTML[/magenta]) — {rows} rows:\n  {html_path}")
+
+
+@app.command()
+def compact(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    file: str = typer.Option(
+        None,
+        "--file",
+        help="Experiment database to compact. Defaults to the newest experiment_*.db.",
+    ),
+    rewrite: bool = typer.Option(
+        False,
+        "--rewrite",
+        help="Overwrite the 7z file if it already exists.",
+    ),
+) -> None:
+    """Compress a generated experiment database into a 7z archive
+
+    The archive is written next to the database with the same name and a ``.7z``
+    extension, and holds the database under its own file name. The database itself
+    is left in place.
+    """
+
+    pid = get_proper_pid(pid)
+    db_path, _ = _resolve_experiment_db(pid, file)
+
+    archive_path = f"{os.path.splitext(db_path)[0]}.7z"
+
+    if os.path.exists(archive_path) and not rewrite:
+        cprint(
+            f"[bold yellow]Warning:[/bold yellow] '{Path(archive_path).name}' already exists. "
+            "Use --rewrite to overwrite."
+        )
+        return
+
+    if settings.dry_run:
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{archive_path}'")
+        return
+
+    with console.status(f"[bold blue]Compressing '{Path(db_path).name}' ...[/bold blue]", spinner="dots"):
+        source_bytes, archive_bytes = compact_db_to_7z(db_path, archive_path)
+
+    ratio = (archive_bytes / source_bytes * 100) if source_bytes else 100.0
+
+    cprint(f"File with archive ([magenta]7z[/magenta]) — {ratio:.1f}% of the original:\n  {archive_path}")
 
 
 @app.command(name="list")

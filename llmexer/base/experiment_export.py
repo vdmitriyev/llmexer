@@ -259,8 +259,14 @@ def _cell_value(row: dict, key, kind: str) -> str:
     return _sanitize(str(value))
 
 
-def build_export_context(rows: list, title: str, project_id: str, source_db: str, generated_at: str) -> dict:
-    """Build the full rendering context for the experiment export template."""
+def build_export_context(
+    rows: list, title: str, project_id: str, source_db: str, generated_at: str, filters: str = ""
+) -> dict:
+    """Build the full rendering context for the experiment export template.
+
+    ``filters`` names the filters the rows were narrowed by, for the page
+    header; it is empty when the whole database was exported.
+    """
 
     columns = [
         {
@@ -294,6 +300,7 @@ def build_export_context(rows: list, title: str, project_id: str, source_db: str
         "project_id": project_id,
         "source_db": source_db,
         "generated_at": generated_at,
+        "filters": filters,
         "columns": columns,
         "rows": table_rows,
         "row_count": len(table_rows),
@@ -306,16 +313,28 @@ def render_experiment_export_html(context: dict) -> str:
     return render_template(TEMPLATE_NAME, context)
 
 
-def export_db_to_html(db_path: str, html_path: str, project_id: str, generated_at: str) -> int:
+def export_db_to_html(
+    db_path: str,
+    html_path: str,
+    project_id: str,
+    generated_at: str,
+    *,
+    provider: str = None,
+    model_name: str = None,
+    profile_name: str = None,
+    filters: str = "",
+) -> int:
     """Render an experiment database to an HTML file. Returns the row count.
 
     Every generated row is exported, run or not: an unrun one simply carries an
-    empty response and no status. Dry-run handling belongs to the caller; this
-    always writes.
+    empty response and no status. ``provider`` / ``model_name`` / ``profile_name``
+    narrow the export exactly as they narrow ``experiment run``, and ``filters``
+    is the wording naming them on the page. Dry-run handling belongs to the
+    caller; this always writes.
     """
 
     with ExperimentDAO(db_path) as dao:
-        rows = dao.fetch_rows()
+        rows = dao.fetch_rows(provider=provider, model_name=model_name, profile_name=profile_name)
 
     context = build_export_context(
         rows,
@@ -323,6 +342,7 @@ def export_db_to_html(db_path: str, html_path: str, project_id: str, generated_a
         project_id=project_id,
         source_db=os.path.basename(db_path),
         generated_at=generated_at,
+        filters=filters,
     )
 
     with open(html_path, "w", encoding="utf-8") as f:

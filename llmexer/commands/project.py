@@ -19,6 +19,7 @@ GITIGNORE_TEMPLATE = """\
 # extensions
 *.html
 *.db
+*.7z
 
 # files
 experiment/data_backup_*.csv
