@@ -5,10 +5,11 @@ History
 0.4.3 (2026-09-11)
 -------------------
 
+* ``experiment copy-search`` also copies the publication year, writing ``ID;Title;Abstract;year;doi;authors``. A search file without a ``year`` column is now rejected.
 * ``experiment export`` takes ``run``'s ``--filter-provider`` / ``--filter-model`` / ``--filter-profile``. Each filter is appended to the HTML file name and named in the page header.
+* ``project create`` now writes a ``.gitignore`` into the new project folder, keeping the generated files (e.g., databases, HTML, JSON responses, backups, etc.) out of version control.
 * Add ``experiment compact``: packs an experiment database into a ``.7z`` archive of the same name next to it, leaving the database in place.
 * Added a new dependency - ``py7zr``
-* ``project create`` now writes a ``.gitignore`` into the new project folder, keeping the generated files (e.g., databases, HTML, JSON responses, backups, etc.) out of version control.
 
 0.4.2 (2026-09-09)
 -------------------

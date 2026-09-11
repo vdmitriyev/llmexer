@@ -266,6 +266,22 @@ def _write_data_csv(experiment_subdir_path: str, df: pd.DataFrame) -> tuple[str,
     return _write_csv_with_backup(experiment_subdir_path, FILE_DATA, df)
 
 
+def _format_year(value: Any) -> str:
+    """Render a search result's publication year as a plain string.
+
+    Pandas reads a year column with blanks as floats, so ``2023`` arrives as
+    ``2023.0``. A missing year becomes an empty string.
+    """
+
+    if pd.isna(value):
+        return ""
+    text = str(value).strip()
+    try:
+        return str(int(float(text)))
+    except ValueError:
+        return text
+
+
 def _resolve_prompt_ids(prompts_subdir: str, prompt: list[str] | None) -> list[str]:
     """Resolve ``--prompt`` values into existing prompt IDs from ``prompts/``.
 
@@ -462,8 +478,8 @@ def copy_search(
 ) -> None:
     """Copy a search results file into data.csv
 
-    Writes rows ``ID;Title;Abstract;doi;authors`` with IDs ``S01``, ``S02``, …
-    preserving the source file's row order. An existing ``data.csv`` is backed
+    Writes rows ``ID;Title;Abstract;year;doi;authors`` with IDs ``S01``, ``S02``,
+    … preserving the source file's row order. An existing ``data.csv`` is backed
     up first.
     """
 
@@ -475,7 +491,7 @@ def copy_search(
         raise LLMExerException(f"Search file not found: '{search_path}'.")
 
     search_df = pd.read_csv(search_path, sep=";", encoding="utf-8")
-    required = ["title", "abstract", "doi", "authors"]
+    required = ["title", "abstract", "year", "doi", "authors"]
     missing = [c for c in required if c not in search_df.columns]
     if missing:
         raise LLMExerException(f"Search file '{search_path}' is missing required column(s): " f"{', '.join(missing)}.")
@@ -486,6 +502,7 @@ def copy_search(
             "ID": [f"S{i:02d}" for i in range(1, len(source) + 1)],
             "Title": source["title"].values,
             "Abstract": source["abstract"].values,
+            "year": [_format_year(value) for value in source["year"]],
             "doi": source["doi"].values,
             "authors": source["authors"].values,
         }

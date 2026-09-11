@@ -156,13 +156,33 @@ def test_copy_search_writes_rows_in_order(projects_dir):
 
     assert result.exit_code == 0, result.exception
     df = pd.read_csv(exp_subdir / "data.csv", sep=";", encoding="utf-8").fillna("")
-    assert list(df.columns) == ["ID", "Title", "Abstract", "doi", "authors"]
+    assert list(df.columns) == ["ID", "Title", "Abstract", "year", "doi", "authors"]
     assert list(df["ID"]) == ["S01", "S02"]
     assert list(df["Title"]) == ["First Paper", "Second Paper"]
     assert df.iloc[0]["Abstract"] == "Abstract one; with semicolon."
+    assert list(df["year"]) == [2023, 2022]
     assert df.iloc[0]["doi"] == "10.1/one"
     assert df.iloc[1]["doi"] == ""  # empty, not "nan"
     assert df.iloc[0]["authors"] == "Alice; Bob"
+
+
+def test_copy_search_blank_year_stays_empty(projects_dir):
+    pid = "search-noyear"
+    exp_subdir, _, searches_dir = _project(projects_dir, pid)
+    _write_search_csv(
+        searches_dir / "s1__results.csv",
+        [
+            {"title": "With Year", "authors": "A", "abstract": "Ab", "year": 2024, "doi": "10.1/a"},
+            {"title": "No Year", "authors": "B", "abstract": "Ab", "year": "", "doi": "10.1/b"},
+        ],
+    )
+
+    result = runner.invoke(app, ["experiment", "copy-search", "--pid", pid, "--file", "s1__results.csv"])
+
+    assert result.exit_code == 0, result.exception
+    text = (exp_subdir / "data.csv").read_text(encoding="utf-8")
+    assert "S01;With Year;Ab;2024;10.1/a;A" in text  # not "2024.0"
+    assert "S02;No Year;Ab;;10.1/b;B" in text  # empty, not "nan"
 
 
 def test_copy_search_backs_up_existing_data_csv(projects_dir):
@@ -171,7 +191,7 @@ def test_copy_search_backs_up_existing_data_csv(projects_dir):
     (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;old;old\n", encoding="utf-8")
     _write_search_csv(
         searches_dir / "s1__results.csv",
-        [{"title": "T", "authors": "A", "abstract": "Ab", "doi": "10.1/x"}],
+        [{"title": "T", "authors": "A", "abstract": "Ab", "year": 2021, "doi": "10.1/x"}],
     )
 
     result = runner.invoke(app, ["experiment", "copy-search", "--pid", pid, "--file", "s1__results.csv"])
@@ -198,7 +218,7 @@ def test_copy_search_missing_column_raises(projects_dir):
     # Missing 'authors' column.
     _write_search_csv(
         searches_dir / "s1__results.csv",
-        [{"title": "T", "abstract": "Ab", "doi": "10.1/x"}],
+        [{"title": "T", "abstract": "Ab", "year": 2021, "doi": "10.1/x"}],
     )
 
     result = runner.invoke(app, ["experiment", "copy-search", "--pid", pid, "--file", "s1__results.csv"])
