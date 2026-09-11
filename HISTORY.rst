@@ -2,6 +2,11 @@
 History
 =======
 
+0.4.3 (2026-09-11)
+-------------------
+
+* ``project create`` now writes a ``.gitignore`` into the new project folder, keeping the generated databases, HTML exports, responses, papers, search JSON and CSV backups out of version control.
+
 0.4.2 (2026-09-09)
 -------------------
 

@@ -342,7 +342,7 @@ def init(
         f.write("litellm;minimax-m2.7:229b;litellm-minimax-m2-default;0.7;0.9;4096;;;;;;;0.05;1\n")
         f.write("litellm;gemma4:31b;litellm-gemma4-default;0.7;0.9;512;;;;;;;;1\n")
 
-    cprint(f"Init project [bold yellow]{pid}[/bold yellow] with standard structure.")
+    cprint(f"Initialize project with standard configurations: [bold yellow]{pid}[/bold yellow]")
 
 
 @app.command(name="copy-papers")

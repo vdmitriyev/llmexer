@@ -1,4 +1,4 @@
-"""Tests for the `experiment create` command."""
+"""Tests for the `project create` command."""
 
 import os
 
@@ -23,7 +23,7 @@ def projects_dir(tmp_path, monkeypatch):
 
 
 def test_create_auto_generated_id(projects_dir):
-    """Running `experiment create` without --id should create a YYYYMMDD-XXXX folder."""
+    """Running `project create` without --id should create a YYYYMMDD-XXXX folder."""
     result = runner.invoke(app, ["project", "create"])
     assert result.exit_code == 0
     folders = list(projects_dir.iterdir())
@@ -34,7 +34,7 @@ def test_create_auto_generated_id(projects_dir):
 
 
 def test_create_with_custom_id(projects_dir):
-    """Running `experiment create --id my-exp` should create a folder named my-exp."""
+    """Running `project create --id my-exp` should create a folder named my-exp."""
     result = runner.invoke(app, ["project", "create", "--id", "my-exp"])
     assert result.exit_code == 0
     assert (projects_dir / "my-exp").is_dir()
@@ -42,7 +42,7 @@ def test_create_with_custom_id(projects_dir):
 
 
 def test_create_duplicate_id_raises(projects_dir):
-    """Running `experiment create --id` twice with the same ID should raise ProjectAlreadyExistsException."""
+    """Running `project create --id` twice with the same ID should raise ProjectAlreadyExistsException."""
     runner.invoke(app, ["project", "create", "--id", "duplicate-exp"])
     result = runner.invoke(app, ["project", "create", "--id", "duplicate-exp"])
     assert result.exit_code != 0
@@ -50,8 +50,40 @@ def test_create_duplicate_id_raises(projects_dir):
 
 
 def test_create_duplicate_id_error_message(projects_dir):
-    """The exception message should mention the duplicate experiment ID."""
+    """The exception message should mention the duplicate project ID."""
     exp_id = "dup-exp"
     runner.invoke(app, ["project", "create", "--id", exp_id])
     result = runner.invoke(app, ["project", "create", "--id", exp_id])
     assert exp_id in str(result.exception)
+
+
+def test_create_writes_gitignore(projects_dir):
+    """A new project folder should carry a .gitignore covering the generated artefacts."""
+    result = runner.invoke(app, ["project", "create", "--id", "gi-exp"])
+    assert result.exit_code == 0
+
+    gitignore = projects_dir / "gi-exp" / ".gitignore"
+    assert gitignore.is_file()
+
+    content = gitignore.read_text(encoding="utf-8")
+    for pattern in (
+        "*.html",
+        "*.db",
+        "experiment/data_backup_*.csv",
+        "experiment/mapping_backup_*.csv",
+        "searches/jsons/*",
+        "papers/*",
+        "experiment/responses/*",
+        "analysis/.backup/*",
+    ):
+        assert pattern in content
+
+
+def test_create_gitignore_matches_template(projects_dir):
+    """The written .gitignore should be the shipped template, byte for byte."""
+    import llmexer.commands.project as project_module
+
+    runner.invoke(app, ["project", "create", "--id", "gi-template-exp"])
+
+    gitignore = projects_dir / "gi-template-exp" / ".gitignore"
+    assert gitignore.read_text(encoding="utf-8") == project_module.GITIGNORE_TEMPLATE

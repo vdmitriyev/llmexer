@@ -12,6 +12,25 @@ from llmexer.exceptions import LLMExerException, ProjectAlreadyExistsException
 
 app = typer.Typer(help="Manage projects.")
 
+FILE_GITIGNORE = ".gitignore"
+
+# Dropped into every new project folder
+GITIGNORE_TEMPLATE = """\
+# extensions
+*.html
+*.db
+
+# files
+experiment/data_backup_*.csv
+experiment/mapping_backup_*.csv
+
+# folders
+searches/jsons/*
+papers/*
+experiment/responses/*
+analysis/.backup/*
+"""
+
 
 @app.command()
 def create(
@@ -29,6 +48,11 @@ def create(
         raise ProjectAlreadyExistsException(f"Project '{project_id}' already exists.")
 
     ensure_directory_exists(project_path)
+
+    gitignore_path = os.path.join(project_path, FILE_GITIGNORE)
+    with open(gitignore_path, "w", encoding="utf-8") as f:
+        f.write(GITIGNORE_TEMPLATE)
+
     cprint(f"Created project: [bold yellow]{project_id}[/bold yellow]")
 
 
