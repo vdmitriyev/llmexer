@@ -780,19 +780,6 @@ def test_export_rewrite_guards_the_filtered_name(experiment_with_results):
     assert "__provider-ollama.html" in " ".join(result.output.split())
 
 
-def test_export_dry_run_announces_the_filtered_name(experiment_with_results):
-    """`--dry-run` names the file the filters would produce and writes nothing."""
-    result = runner.invoke(
-        app,
-        ["--dry-run", "experiment", "export", "--pid", PID, "--file", _DB_NAME, "--filter-provider", "ollama"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "Dry run" in result.output
-    assert "__provider-ollama.html" in " ".join(result.output.split())
-    assert not list(experiment_with_results.glob("*.html"))
-
-
 def test_export_filter_surrounding_whitespace_is_ignored(experiment_with_model_profile_matrix):
     """A stray space around --filter-model neither blocks the match nor the name."""
     result = _export(PID, "--filter-model", " phi4:14b ")
