@@ -7,8 +7,10 @@ the same; what differs is the fixed set of columns exported here and the JSON
 treatment of ``response_text``.
 """
 
+import fnmatch
 import json
 import os
+import re
 import shlex
 from datetime import datetime
 
@@ -23,6 +25,7 @@ from llmexer.base.html_export import (
     sanitize_multiline,
 )
 from llmexer.common import strip_code_fence
+from llmexer.exceptions import UnexpectedCLIParamsException
 from llmexer.logger import get_logger
 
 logger = get_logger()
@@ -313,6 +316,62 @@ def render_experiment_export_html(context: dict) -> str:
     return render_template(TEMPLATE_NAME, context)
 
 
+def _compile_code_glob(pattern: str):
+    """Case-insensitive glob matcher for ``code``, anchored to the whole value.
+
+    ``fnmatch`` wildcards (``*``, ``?``, ``[abc]``) over the whole stored code, so
+    ``S12_*`` selects every combination built from data item ``S12``. The pattern
+    is compiled with ``re.IGNORECASE`` rather than lower-cased, which would break
+    a character class such as ``[A-C]``.
+    """
+
+    try:
+        return re.compile(fnmatch.translate(pattern), re.IGNORECASE).fullmatch
+    except re.error as exc:
+        raise UnexpectedCLIParamsException(f"--filter-code is not a valid pattern: '{pattern}' - {exc}") from exc
+
+
+def _compile_response_regex(pattern: str):
+    """Case-insensitive ``re.search`` matcher for ``response_text``.
+
+    Unanchored, so the pattern matches anywhere in the answer. It sees the text as
+    stored, including any ``` fence the page pretty-prints away, and ``.`` does not
+    cross newlines unless the pattern opens with ``(?s)``.
+    """
+
+    try:
+        return re.compile(pattern, re.IGNORECASE).search
+    except re.error as exc:
+        raise UnexpectedCLIParamsException(
+            f"--filter-response is not a valid regular expression: '{pattern}' - {exc}"
+        ) from exc
+
+
+def build_row_filter(code_pattern: str = None, response_pattern: str = None):
+    """Return a ``row -> bool`` predicate for the two pattern filters, or ``None``.
+
+    ``None`` when neither pattern is given, so the unfiltered export keeps its
+    straight path. Both patterns given means both must match. Compiling here
+    rather than per row also makes an invalid pattern fail before any row is read.
+    """
+
+    matchers = []
+    if code_pattern is not None:
+        matchers.append(("code", _compile_code_glob(code_pattern)))
+    if response_pattern is not None:
+        matchers.append(("response_text", _compile_response_regex(response_pattern)))
+
+    if not matchers:
+        return None
+
+    def matches(row: dict) -> bool:
+        # A row that has not run carries no response at all, so the column is
+        # missing or NULL: it is matched as "" rather than skipped.
+        return all(matcher(str(row.get(key) or "")) for key, matcher in matchers)
+
+    return matches
+
+
 def export_db_to_html(
     db_path: str,
     html_path: str,
@@ -322,19 +381,25 @@ def export_db_to_html(
     provider: str = None,
     model_name: str = None,
     profile_name: str = None,
+    row_filter=None,
     filters: str = "",
 ) -> int:
     """Render an experiment database to an HTML file. Returns the row count.
 
     Every generated row is exported, run or not: an unrun one simply carries an
-    empty response and no status. ``provider`` / ``model_name`` / ``profile_name``
-    narrow the export exactly as they narrow ``experiment run``, and ``filters``
-    is the wording naming them on the page. Dry-run handling belongs to the
-    caller; this always writes.
+    empty response and no status -- unless ``row_filter`` drops it.
+    ``provider`` / ``model_name`` / ``profile_name`` narrow the export exactly as
+    they narrow ``experiment run``; ``row_filter`` is the predicate
+    :func:`build_row_filter` builds for the export-only pattern filters, applied
+    here because the DAO is shared with ``run``. ``filters`` is the wording naming
+    them on the page. Dry-run handling belongs to the caller; this always writes.
     """
 
     with ExperimentDAO(db_path) as dao:
         rows = dao.fetch_rows(provider=provider, model_name=model_name, profile_name=profile_name)
+
+    if row_filter is not None:
+        rows = [row for row in rows if row_filter(row)]
 
     context = build_export_context(
         rows,

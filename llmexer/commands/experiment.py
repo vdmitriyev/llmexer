@@ -41,7 +41,7 @@ from llmexer.base.experiment import (
     _is_experiment_initialized,
 )
 from llmexer.base.experiment_archive import compact_db_to_7z
-from llmexer.base.experiment_export import export_db_to_html
+from llmexer.base.experiment_export import build_row_filter, export_db_to_html
 from llmexer.common import (
     ensure_directory_exists,
     get_experiment_subdir_path,
@@ -226,11 +226,46 @@ def _filter_values(pairs: list[tuple[str, str]]) -> dict:
     }
 
 
+def _pattern_pairs(code: str, response: str) -> list[tuple[str, str]]:
+    """Return ``(label, value)`` for the two export-only pattern filters.
+
+    Kept apart from `_filter_pairs` because `run` takes neither: the export
+    concatenates the two lists, so its call site shows which filters are its own.
+    ``code`` is stripped like the other values; ``response`` is not, because
+    leading or trailing whitespace is meaningful in a regular expression. An empty
+    pattern is rejected rather than guessed at -- it means "nothing" for the glob
+    and "everything" for the regex, and in practice it is an unset shell variable.
+    """
+
+    if code is not None:
+        code = code.strip()
+        if not code:
+            raise UnexpectedCLIParamsException("--filter-code needs a pattern, e.g. --filter-code 'S12_*'.")
+    if response is not None and not response:
+        raise UnexpectedCLIParamsException("--filter-response needs a pattern, e.g. --filter-response 'relevant'.")
+
+    values = (("code", code), ("response", response))
+    return [(label, value) for label, value in values if value is not None]
+
+
+def _pattern_values(pairs: list[tuple[str, str]]) -> dict:
+    """Filter pairs as the keyword arguments ``build_row_filter()`` takes."""
+
+    by_label = dict(pairs)
+    return {
+        "code_pattern": by_label.get("code"),
+        "response_pattern": by_label.get("response"),
+    }
+
+
 def _export_html_path(db_path: str, pairs: list[tuple[str, str]]) -> str:
     """Return ``<db stem>[__<label>-<value>...].html`` next to the database.
 
     Each filter the export was narrowed by is appended to the name, so two
-    filtered exports of one database never overwrite each other.
+    filtered exports of one database never overwrite each other. A pattern loses
+    its wildcards on the way (`safe_filename_part`), so ``S12_*`` and ``S12`` do
+    share one name -- the `--rewrite` guard catches that rather than silently
+    replacing the earlier page.
     """
 
     suffix = "".join(f"__{label}-{safe_filename_part(value)}" for label, value in pairs)
@@ -1638,6 +1673,20 @@ def export(
         help="Only export rows whose profile_name matches this value in full (case-sensitive). "
         "E.g. --filter-profile ollama-default",
     ),
+    filter_code: str = typer.Option(
+        None,
+        "--filter-code",
+        help="Only export rows whose code matches this glob in full, case-insensitively. "
+        "Wildcards are * , ? and a character class. A pattern without a wildcard has to "
+        "equal the whole code, so use 'S12_*', not 'S12'. E.g. --filter-code 'S12_*'",
+    ),
+    filter_response: str = typer.Option(
+        None,
+        "--filter-response",
+        help="Only export rows whose response_text matches this regular expression, "
+        "case-insensitively and anywhere in the text. Rows that have not run carry no "
+        "response and drop out. E.g. --filter-response 'relevant'",
+    ),
     rewrite: bool = typer.Option(
         False,
         "--rewrite",
@@ -1648,20 +1697,28 @@ def export(
 
     The page is written next to the database with the same name and an ``.html``
     extension. Every generated row is exported, run or not: an unrun row simply
-    carries an empty response and no status.
+    carries an empty response and no status -- unless ``--filter-response`` drops
+    it, which is the one filter an unrun row cannot satisfy.
 
     ``--filter-provider`` / ``--filter-model`` / ``--filter-profile`` narrow the
-    page exactly as they narrow ``experiment run``. Each filter given is appended
-    to the file name as ``__<label>-<value>``, so filtered exports of one database
-    never overwrite each other.
+    page exactly as they narrow ``experiment run``. ``--filter-code`` and
+    ``--filter-response`` belong to the export alone and match a pattern rather
+    than one value: a glob over ``code`` (unlike ``run --code``, which takes one
+    exact code) and a regular expression over ``response_text``. Each filter given
+    is appended to the file name as ``__<label>-<value>``, so filtered exports of
+    one database never overwrite each other.
     """
 
     pid = get_proper_pid(pid)
     db_path, _ = _resolve_experiment_db(pid, file)
 
-    pairs = _filter_pairs(filter_provider, filter_model, filter_profile)
+    pairs = _filter_pairs(filter_provider, filter_model, filter_profile) + _pattern_pairs(filter_code, filter_response)
     active_filters = _describe_filters(pairs)
     html_path = _export_html_path(db_path, pairs)
+
+    # Built before the --rewrite and dry-run guards, so an unparsable pattern is
+    # reported instead of being hidden by an existing file or a dry run.
+    row_filter = build_row_filter(**_pattern_values(pairs))
 
     if os.path.exists(html_path) and not rewrite:
         cprint(
@@ -1684,6 +1741,7 @@ def export(
         pid,
         generated_at,
         filters=", ".join(active_filters),
+        row_filter=row_filter,
         **_filter_values(pairs),
     )
 

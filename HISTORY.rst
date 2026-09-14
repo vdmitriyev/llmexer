@@ -2,6 +2,12 @@
 History
 =======
 
+0.4.4 (2026-09-15)
+-------------------
+
+* ``experiment export``: add ``--filter-code``, a case-insensitive glob matched against the whole ``code``, so ``S12_*`` selects every combination built from one data item.
+* ``experiment export``: add ``--filter-response``, a case-insensitive regular expression searched anywhere in the answer. Rows that have not run carry no answer and drop out.
+
 0.4.3 (2026-09-11)
 -------------------
 

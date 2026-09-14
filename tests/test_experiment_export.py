@@ -12,6 +12,7 @@ from llmexer.base.experiment_export import (
     CODE_PREVIEW_LENGTH,
     EXPORT_COLUMNS,
     TRY_PREVIEW_LENGTH,
+    build_row_filter,
     build_try_command,
     format_response_text,
     format_seconds,
@@ -19,7 +20,7 @@ from llmexer.base.experiment_export import (
     row_tokens,
 )
 from llmexer.cli import app
-from llmexer.exceptions import LLMExerException
+from llmexer.exceptions import LLMExerException, UnexpectedCLIParamsException
 from tests.db_helpers import LITELLM_ROW, OLLAMA_ROW, find_db, seed_db
 
 runner = CliRunner()
@@ -787,3 +788,267 @@ def test_export_filter_surrounding_whitespace_is_ignored(experiment_with_model_p
     assert result.exit_code == 0, result.output
     assert _row_count(result.output) == 2
     assert (experiment_with_model_profile_matrix / "experiment_20240101_01__model-phi4-14b.html").exists()
+
+
+# ---------------------------------------------------------------------------
+# build_row_filter (no CLI, no database)
+# ---------------------------------------------------------------------------
+
+
+def test_build_row_filter_returns_none_without_patterns():
+    """No pattern given means no predicate, so the unfiltered export keeps its path."""
+    assert build_row_filter() is None
+
+
+def test_build_row_filter_glob_is_anchored_to_the_whole_code():
+    """A glob has to cover the whole code, so a bare prefix is not a prefix match."""
+    row = {"code": "S12_01_gemma4:31b_ollama-default"}
+
+    assert build_row_filter(code_pattern="S12_*")(row)
+    assert not build_row_filter(code_pattern="S12")(row)
+
+
+def test_build_row_filter_glob_ignores_case_without_breaking_classes():
+    """The glob is case-insensitive, and a character class survives it."""
+    row = {"code": "S12_01_gemma4:31b_ollama-default"}
+
+    assert build_row_filter(code_pattern="s12_*")(row)
+    assert build_row_filter(code_pattern="[DS]12_*")(row)
+
+
+def test_build_row_filter_treats_a_missing_response_as_empty():
+    """A row that never ran carries no response and matches only an empty-string pattern."""
+    row = {"code": "S12_01_x_y"}
+
+    assert not build_row_filter(response_pattern="relevant")(row)
+    assert build_row_filter(response_pattern="^$")(row)
+
+
+def test_build_row_filter_combines_both_patterns():
+    """Given both patterns, a row is kept only when each one matches."""
+    row = {"code": "S12_01_x_y", "response_text": "clearly relevant"}
+
+    assert build_row_filter(code_pattern="S12_*", response_pattern="relevant")(row)
+    assert not build_row_filter(code_pattern="S99_*", response_pattern="relevant")(row)
+
+
+def test_build_row_filter_rejects_an_invalid_regex():
+    """An unparsable --filter-response pattern raises instead of matching nothing."""
+    with pytest.raises(UnexpectedCLIParamsException) as excinfo:
+        build_row_filter(response_pattern="[unclosed")
+
+    assert "--filter-response" in str(excinfo.value)
+    assert "[unclosed" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# --filter-code
+# ---------------------------------------------------------------------------
+
+
+def test_export_filter_code_keeps_only_matching_codes(experiment_with_results):
+    """A glob selects the codes it covers end to end and drops the rest."""
+    result = _export(PID, "--filter-code", "D02_*")
+
+    assert result.exit_code == 0, result.output
+    assert _row_count(result.output) == 1
+    html = (experiment_with_results / "experiment_20240101_01__code-D02.html").read_text(encoding="utf-8")
+    assert "D02_prompt01_llama3.3:latest_ollama-default" in html
+    assert "D03_prompt01_llama3.3:latest_ollama-default" not in html
+
+
+def test_export_filter_code_without_a_wildcard_matches_nothing(experiment_with_results):
+    """A bare prefix is not a prefix match: it warns and still writes an empty page."""
+    result = _export(PID, "--filter-code", "D02")
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert "No rows matched" in output
+    assert "code 'D02'" in output
+    assert (experiment_with_results / "experiment_20240101_01__code-D02.html").exists()
+
+
+def test_export_filter_code_is_case_insensitive(experiment_with_results):
+    """A lower-case glob matches a code stored in upper case."""
+    result = _export(PID, "--filter-code", "d02_*")
+
+    assert result.exit_code == 0, result.output
+    assert _row_count(result.output) == 1
+
+
+def test_export_filter_code_spans_every_provider_table(experiment_with_results):
+    """A glob matches across providers, not just the first table."""
+    result = _export(PID, "--filter-code", "D01_*")
+
+    assert result.exit_code == 0, result.output
+    # The ollama row and the unrun litellm row both start with `D01_`.
+    assert _row_count(result.output) == 2
+
+
+def test_export_filter_code_names_the_file_after_the_pattern(experiment_with_results):
+    """The glob is appended to the file name, its wildcards made safe."""
+    result = _export(PID, "--filter-code", "D*1_*")
+
+    assert result.exit_code == 0, result.output
+    assert (experiment_with_results / "experiment_20240101_01__code-D-1.html").exists()
+
+
+def test_export_filter_code_surrounding_whitespace_is_ignored(experiment_with_results):
+    """A stray space around the glob blocks neither the match nor the name."""
+    result = _export(PID, "--filter-code", " D02_* ")
+
+    assert result.exit_code == 0, result.output
+    assert _row_count(result.output) == 1
+    assert (experiment_with_results / "experiment_20240101_01__code-D02.html").exists()
+
+
+def test_export_filter_code_empty_pattern_raises(experiment_with_results):
+    """An empty --filter-code is a mistake, not a filter matching nothing."""
+    result = _export(PID, "--filter-code", "  ")
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, UnexpectedCLIParamsException)
+
+
+# ---------------------------------------------------------------------------
+# --filter-response
+# ---------------------------------------------------------------------------
+
+
+def test_export_filter_response_searches_anywhere_in_the_text(experiment_with_results):
+    """The pattern is an unanchored search, not a whole-value match."""
+    result = _export(PID, "--filter-response", "attention")
+
+    assert result.exit_code == 0, result.output
+    assert _row_count(result.output) == 1
+
+
+def test_export_filter_response_is_case_insensitive(experiment_with_results):
+    """An upper-case pattern matches a response holding the lower-case word."""
+    result = _export(PID, "--filter-response", "ATTENTION")
+
+    assert result.exit_code == 0, result.output
+    assert _row_count(result.output) == 1
+
+
+def test_export_filter_response_accepts_a_full_regex(experiment_with_results):
+    """Alternation, classes and quantifiers all work."""
+    result = _export(PID, "--filter-response", "off topic|relevant but")
+
+    assert result.exit_code == 0, result.output
+    assert _row_count(result.output) == 2
+
+
+def test_export_filter_response_matches_the_stored_text_not_the_rendered_cell(experiment_with_results):
+    """The pattern sees the raw ``` fence the page pretty-prints away."""
+    result = _export(PID, "--filter-response", "^```json")
+
+    assert result.exit_code == 0, result.output
+    assert _row_count(result.output) == 1
+
+
+def test_export_filter_response_drops_rows_that_have_not_run(experiment_with_results):
+    """A row with no response matches only a pattern that matches the empty string."""
+    result = _export(PID, "--filter-response", ".")
+
+    assert result.exit_code == 0, result.output
+    # Three finished rows; the unrun litellm row carries no response at all.
+    assert _row_count(result.output) == 3
+
+    result = _export(PID, "--filter-response", "^$", "--rewrite")
+
+    assert result.exit_code == 0, result.output
+    assert _row_count(result.output) == 1
+
+
+def test_export_filter_response_names_the_file_and_the_page_header(experiment_with_results):
+    """The pattern lands in the file name and in the page's Filters line."""
+    result = _export(PID, "--filter-response", "attention")
+
+    assert result.exit_code == 0, result.output
+    html_path = experiment_with_results / "experiment_20240101_01__response-attention.html"
+    assert html_path.exists()
+    html = html_path.read_text(encoding="utf-8")
+    assert "Filters <strong>" in html
+    assert "response &#39;attention&#39;" in html
+
+
+def test_export_filter_response_rejects_an_invalid_pattern(experiment_with_results):
+    """An unparsable regex stops the command and writes no page."""
+    result = _export(PID, "--filter-response", "[unclosed")
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, UnexpectedCLIParamsException)
+    assert "--filter-response" in str(result.exception)
+    assert not list(experiment_with_results.glob("*.html"))
+
+
+def test_export_filter_response_invalid_pattern_fails_under_dry_run(experiment_with_results):
+    """A bad pattern is caught before the dry-run shortcut returns."""
+    result = runner.invoke(
+        app,
+        ["--dry-run", "experiment", "export", "--pid", PID, "--file", _DB_NAME, "--filter-response", "[unclosed"],
+    )
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, UnexpectedCLIParamsException)
+
+
+def test_export_filter_response_empty_pattern_raises(experiment_with_results):
+    """An empty --filter-response is a mistake, not a filter matching every row."""
+    result = _export(PID, "--filter-response", "")
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, UnexpectedCLIParamsException)
+
+
+# ---------------------------------------------------------------------------
+# The two pattern filters alongside the others
+# ---------------------------------------------------------------------------
+
+
+def test_export_pattern_filters_follow_the_others_in_the_name(experiment_with_results):
+    """Every filter lands in the name, provider then model then profile then code then response."""
+    result = _export(
+        PID,
+        "--filter-response",
+        "attention",
+        "--filter-code",
+        "D01_*",
+        "--filter-provider",
+        "ollama",
+    )
+
+    assert result.exit_code == 0, result.output
+    expected = "experiment_20240101_01__provider-ollama__code-D01__response-attention.html"
+    assert (experiment_with_results / expected).exists()
+    assert _row_count(result.output) == 1
+
+
+def test_export_pattern_filters_and_the_others_combine_with_and(experiment_with_results):
+    """A glob that matches and a provider that does not yield an empty page."""
+    result = _export(PID, "--filter-code", "D01_*", "--filter-provider", "litellm")
+
+    assert result.exit_code == 0, result.output
+    assert _row_count(result.output) == 1
+
+
+def test_run_does_not_take_the_export_only_filters(experiment_with_results):
+    """--filter-code and --filter-response belong to `export`; `run` rejects them."""
+    result = runner.invoke(app, ["experiment", "run", "--pid", PID, "--file", _DB_NAME, "--filter-code", "D01_*"])
+
+    assert result.exit_code == 2
+
+
+def test_export_filter_code_drops_wildcards_from_the_file_name(experiment_with_results):
+    """A glob loses its wildcards in the name, so `D02_*` and `D02` share one file.
+
+    The `--rewrite` guard is what keeps the second export from replacing the first.
+    """
+    assert _export(PID, "--filter-code", "D02_*").exit_code == 0
+
+    result = _export(PID, "--filter-code", "D02")
+
+    assert result.exit_code == 0, result.output
+    assert "Warning" in result.output
+    assert "already exists" in " ".join(result.output.split())
