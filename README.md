@@ -397,6 +397,7 @@ A project is the top-level container for your experiments, papers and searches. 
 |-----------|-------------|-----------------|
 | `create` | Creates a project folder under `.projects/`. Takes an optional custom ID. | `llmexer project create --id my-project` |
 | `current` | Shows the current project ID from `.env`. | `llmexer project current` |
+| `list` | Lists every project under `.projects/` with the parts it holds (search, experiment, analysis, papers) and its creation date. Supports `--sort-by` and `--desc`. | `llmexer project list --sort-by date` |
 | `rename` | Renames a project. Uses `PROJECT_ID` from `.env` if you leave out `--old-id`. | `llmexer project rename --old-id old-name --new-id new-name` |
 
 ## 🧪 CLI category: **experiment**

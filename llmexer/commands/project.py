@@ -3,11 +3,19 @@
 import os
 
 import typer
+from rich.table import Table
 
-from llmexer.base.experiment import generate_project_id
+from llmexer.base.experiment import DIR_EXPERIMENT, generate_project_id
+from llmexer.base.project import (
+    SortBy,
+    format_created,
+    has_content,
+    project_row,
+    scan_projects,
+)
 from llmexer.common import ensure_directory_exists
-from llmexer.configs import cprint, settings
-from llmexer.constants import PROJECTS_PATH
+from llmexer.configs import console, cprint, settings
+from llmexer.constants import ANALYSIS_DIR, PAPERS_DIR, PROJECTS_PATH, SEARCHES_DIR
 from llmexer.exceptions import LLMExerException, ProjectAlreadyExistsException
 
 app = typer.Typer(help="Manage projects.")
@@ -55,6 +63,53 @@ def create(
         f.write(GITIGNORE_TEMPLATE)
 
     cprint(f"Created project: [bold yellow]{project_id}[/bold yellow]")
+
+
+# Columns of `project list`, each one a folder a project may or may not hold yet.
+PROJECT_PARTS = [
+    ("Search", SEARCHES_DIR),
+    ("Experiment", DIR_EXPERIMENT),
+    ("Analysis", ANALYSIS_DIR),
+    ("Papers", PAPERS_DIR),
+]
+
+
+@app.command(name="list")
+def list_projects(
+    sort_by: SortBy = typer.Option(
+        SortBy.alpha,
+        "--sort-by",
+        help="Sort projects by 'alpha' (alphabetical) or 'date' (creation date).",
+    ),
+    desc: bool = typer.Option(False, "--desc", help="Sort in descending order."),
+) -> None:
+    """List all projects under .projects with the parts they hold"""
+
+    entries = scan_projects(PROJECTS_PATH, sort_by, desc)
+    if not entries:
+        cprint("No projects found.")
+        return
+
+    table = Table()
+    table.add_column("#", justify="right", style="cyan", no_wrap=True)
+    table.add_column("Name", style="cyan")
+    table.add_column("Created", style="cyan", no_wrap=True)
+    for label, _ in PROJECT_PARTS:
+        table.add_column(label, justify="center", no_wrap=True)
+
+    current_pid = settings.project_id
+    for i, entry in enumerate(entries, start=1):
+        present = [has_content(entry.path, part_dir) for _, part_dir in PROJECT_PARTS]
+
+        plain_cells = [entry.name, format_created(entry)] + ["YES" if p else "NO" for p in present]
+        display_cells = [entry.name, format_created(entry)] + [
+            "[green]YES[/green]" if p else "[red]NO[/red]" for p in present
+        ]
+
+        is_current = bool(current_pid) and entry.name == current_pid
+        table.add_row(*project_row(i, plain_cells, display_cells, is_current))
+
+    console.print(table)
 
 
 @app.command()

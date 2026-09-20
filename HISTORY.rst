@@ -2,6 +2,11 @@
 History
 =======
 
+0.4.5 (2026-09-20)
+-------------------
+
+* Add ``project list``: every project under ``.projects/`` with the parts it holds (search, experiment, analysis, papers) and its creation date. Takes ``--sort-by`` and ``--desc``.
+
 0.4.4 (2026-09-15)
 -------------------
 

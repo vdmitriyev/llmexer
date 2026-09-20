@@ -7,7 +7,6 @@ import os
 import shutil
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
-from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +41,7 @@ from llmexer.base.experiment import (
 )
 from llmexer.base.experiment_archive import compact_db_to_7z
 from llmexer.base.experiment_export import build_row_filter, export_db_to_html
+from llmexer.base.project import SortBy, format_created, project_row, scan_projects
 from llmexer.common import (
     ensure_directory_exists,
     get_experiment_subdir_path,
@@ -53,12 +53,6 @@ from llmexer.common import (
 from llmexer.configs import console, cprint, settings
 from llmexer.constants import PAPERS_DIR, PROJECTS_PATH, SEARCHES_DIR
 from llmexer.exceptions import LLMExerException, UnexpectedCLIParamsException
-
-
-class SortBy(str, Enum):
-    alpha = "alpha"
-    date = "date"
-
 
 app = typer.Typer(help="Manage LLM experiments.")
 
@@ -1812,20 +1806,10 @@ def list_experiments(
     desc: bool = typer.Option(False, "--desc", help="Sort in descending order."),
 ) -> None:
     """List all projects with their initialization state and generated experiments"""
-    if not os.path.exists(PROJECTS_PATH):
-        cprint("No projects found.")
-        return
-
-    entries = [e for e in os.scandir(PROJECTS_PATH) if e.is_dir()]
-
+    entries = scan_projects(PROJECTS_PATH, sort_by, desc)
     if not entries:
         cprint("No projects found.")
         return
-
-    if sort_by == SortBy.date:
-        entries.sort(key=lambda e: e.stat().st_ctime, reverse=desc)
-    else:
-        entries.sort(key=lambda e: e.name, reverse=desc)
 
     table = Table()
     table.add_column("#", justify="right", style="cyan", no_wrap=True)
@@ -1837,7 +1821,7 @@ def list_experiments(
     current_pid = settings.project_id
     experiment_file_to_run = ""
     for i, entry in enumerate(entries, start=1):
-        ctime = datetime.fromtimestamp(entry.stat().st_ctime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        ctime = format_created(entry)
         is_initialized = _is_experiment_initialized(entry.path)
         init_display = "[green]Yes[/green]" if is_initialized else "[dim]No[/dim]"
 
@@ -1846,21 +1830,14 @@ def list_experiments(
         files_display_plain = "\n".join(generated_files) if generated_files else "-"
 
         # Check if this is the current project
-        is_current = current_pid and entry.name == current_pid
+        is_current = bool(current_pid) and entry.name == current_pid
 
-        if is_current:
-            # Bold yellow for current project, underline only on counter
-            table.add_row(
-                f"[bold underline yellow]{i}[/bold underline yellow]",
-                f"[bold yellow]{entry.name}[/bold yellow]",
-                f"[bold yellow]{ctime}[/bold yellow]",
-                f"[bold yellow]{'Yes' if is_initialized else 'No'}[/bold yellow]",
-                f"[bold yellow]{files_display_plain}[/bold yellow]",
-            )
-            if len(generated_files) > 0:
-                experiment_file_to_run = generated_files[-1]
-        else:
-            table.add_row(str(i), entry.name, ctime, init_display, files_display)
+        plain_cells = [entry.name, ctime, "Yes" if is_initialized else "No", files_display_plain]
+        display_cells = [entry.name, ctime, init_display, files_display]
+        table.add_row(*project_row(i, plain_cells, display_cells, is_current))
+
+        if is_current and len(generated_files) > 0:
+            experiment_file_to_run = generated_files[-1]
 
     console.print(table)
     cprint("\nExample to run an experiment:")
