@@ -63,7 +63,7 @@ where = ["."]
 include = ["llmexer*"]
 
 [tool.setuptools.package-data]
-llmexer = ["data/*.j2"]
+llmexer = ["data/*.j2", "data/experiment/*.txt", "data/project/*"]
 
 [dependency-groups]
 # Everything needed to *run* a scaffolded analysis notebook. `analysis init`
@@ -71,6 +71,7 @@ llmexer = ["data/*.j2"]
 analysis = [
     "matplotlib>=3.9",
     "seaborn>=0.13",
+    "scikit-learn>=1.9",
     "ipykernel>=6.29",
     "jupyterlab>=4.2",
 ]

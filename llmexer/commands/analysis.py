@@ -10,6 +10,7 @@ from rich.table import Table
 
 from llmexer.base.analysis import COPIED_MODULES
 from llmexer.base.analysis.notebook import (
+    ADDON_NOTEBOOKS,
     NOTEBOOKS,
     copy_analysis_modules,
     write_notebook,
@@ -23,6 +24,7 @@ from llmexer.common import (
 )
 from llmexer.configs import console, cprint, settings
 from llmexer.constants import ANALYSIS_BACKUP_DIR, ANALYSIS_DIR, SEARCHES_DIR
+from llmexer.exceptions import UnexpectedCLIParamsException
 from llmexer.version import package_version
 
 app = typer.Typer(help="Helps with analyse of the data by generating ready-to-run Jupyter notebooks.")
@@ -72,7 +74,7 @@ def _search_files(project_path: str) -> list:
     return entries
 
 
-def _plan(analysis_path: str, rewrite: bool) -> list:
+def _plan(analysis_path: str, rewrite: bool, filenames=None) -> list:
     """Decide, per output file, whether it is written, kept or backed up first.
 
     Notebooks and modules are treated the same way: both may carry a
@@ -83,8 +85,9 @@ def _plan(analysis_path: str, rewrite: bool) -> list:
     """
 
     backup_path = os.path.join(analysis_path, ANALYSIS_BACKUP_DIR)
+    names = list(filenames) if filenames is not None else list(NOTEBOOKS.values()) + list(COPIED_MODULES)
     planned = []
-    for filename in list(NOTEBOOKS.values()) + list(COPIED_MODULES):
+    for filename in names:
         path = os.path.join(analysis_path, filename)
         if not os.path.exists(path):
             planned.append((filename, path, "write", ""))
@@ -189,5 +192,146 @@ def init(
     cprint(f"Analysis workspace ready — {len(written)} file(s) written:\n  {analysis_path}")
 
     notebook = os.path.join(analysis_path, NOTEBOOKS["experiment"])
+    cprint("\nNext step is to open Jupyter Notebook file and run all cells.")
+    cprint(f"Jupyter Notebook: [bold yellow]{notebook}[/bold yellow]")
+
+
+def _resolve_fields(fields) -> list:
+    """Flatten the repeatable ``--fields`` option into ordered, unique names.
+
+    Each value may itself be a comma-separated list, as ``experiment map
+    --prompt`` accepts. Blanks are dropped and duplicates removed, keeping the
+    order given.
+    """
+
+    names = []
+    for value in fields or []:
+        names.extend(part.strip() for part in str(value).split(","))
+
+    unique = []
+    for name in names:
+        if name and name not in unique:
+            unique.append(name)
+
+    return unique
+
+
+def _flattened_csv_name(project_path: str):
+    """Name of the flattened CSV the experiment notebook writes, or ``None``."""
+
+    db_file = _latest_db_name(project_path)
+
+    return f"{Path(db_file).stem}_flattened.csv" if db_file else None
+
+
+def _print_agreement_inputs(fields: list, autodetect: bool, csv_file, notebook: str) -> None:
+    """Show what the notebook is being written with, before anything is written."""
+
+    header = Table(show_header=False, box=None, padding=(0, 1))
+    header.add_column(style="bold white", no_wrap=True)
+    header.add_column()
+
+    fields_value = ", ".join(fields) if fields else "(none - detected in the notebook)"
+    autodetect_note = " (explicit --fields given)" if fields else ""
+
+    for label, value in (
+        ("fields:", fields_value),
+        ("autodetect-fields:", f"{autodetect}{autodetect_note}"),
+        ("flattened CSV:", csv_file or "(no experiment database yet)"),
+        ("notebook:", notebook),
+    ):
+        header.add_row(label, f"[bold blue]{value}[/bold blue]")
+    console.print(header)
+
+
+@app.command(name="add-agreement")
+def add_agreement(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    fields: list[str] = typer.Option(
+        None,
+        "--fields",
+        help="Yes/no field(s) of the flattened CSV to compare. Repeatable, and each value "
+        "may itself be a comma-separated list. If omitted, the notebook detects them.",
+    ),
+    autodetect_fields: bool = typer.Option(
+        True,
+        "--autodetect-fields/--no-autodetect-fields",
+        help="Let the notebook find the yes/no fields when --fields is not given.",
+    ),
+    rewrite: bool = typer.Option(
+        False,
+        "--rewrite",
+        help="Replace an existing agreements notebook, backing it up first.",
+    ),
+) -> None:
+    """Add the agreements notebook: pairwise Cohen's kappa between configurations
+
+    Reads the flattened CSV written by ``analyse_experiment.ipynb`` and reports
+    Cohen's kappa for every pair of (provider, model, profile), one row per
+    yes/no field. The modules the notebook calls are copied alongside it, so it
+    also works on a project where ``analysis init`` never ran.
+    """
+
+    selected_fields = _resolve_fields(fields)
+    if not selected_fields and not autodetect_fields:
+        raise UnexpectedCLIParamsException("Nothing to compare: pass --fields, or leave --autodetect-fields on.")
+
+    pid = get_proper_pid(pid)
+    project_path = get_project_directory_path(pid)
+    analysis_path = os.path.join(project_path, ANALYSIS_DIR)
+
+    notebook_name = ADDON_NOTEBOOKS["agreements"]
+    csv_file = _flattened_csv_name(project_path)
+    _print_agreement_inputs(selected_fields, autodetect_fields, csv_file, notebook_name)
+
+    planned = _plan(analysis_path, rewrite, [notebook_name] + list(COPIED_MODULES))
+    console.print(_render_plan_table(planned, analysis_path))
+
+    to_write = [item for item in planned if item[2] != "keep"]
+    if not to_write:
+        cprint(
+            "[bold yellow]Warning:[/bold yellow] the agreements notebook already exists. "
+            "Use --rewrite to replace it."
+        )
+        return
+
+    if settings.dry_run:
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write {len(to_write)} file(s) into '{analysis_path}'")
+        return
+
+    ensure_directory_exists(analysis_path)
+
+    # Back up whatever is being replaced before anything is overwritten.
+    backup_path = os.path.join(analysis_path, ANALYSIS_BACKUP_DIR)
+    if any(action == "rewrite" for _, _, action, _ in to_write):
+        ensure_directory_exists(backup_path)
+    for _, path, action, backup in to_write:
+        if action == "rewrite":
+            shutil.copy2(path, os.path.join(backup_path, backup))
+
+    context = {
+        "project_id": pid,
+        "db_file": _latest_db_name(project_path),
+        "csv_file": csv_file,
+        "fields": selected_fields,
+        "autodetect_fields": autodetect_fields,
+        "package_version": package_version(),
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+    }
+
+    written = []
+    pending = {filename for filename, _, action, _ in to_write if action != "keep"}
+    if notebook_name in pending:
+        written.append(write_notebook("agreements", context, os.path.join(analysis_path, notebook_name)))
+    if pending & set(COPIED_MODULES):
+        written.extend(copy_analysis_modules(analysis_path))
+
+    cprint(f"Agreements analysis ready — {len(written)} file(s) written:\n  {analysis_path}")
+
+    notebook = os.path.join(analysis_path, notebook_name)
     cprint("\nNext step is to open Jupyter Notebook file and run all cells.")
     cprint(f"Jupyter Notebook: [bold yellow]{notebook}[/bold yellow]")

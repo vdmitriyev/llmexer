@@ -1,0 +1,14 @@
+# extensions
+*.html
+*.db
+*.7z
+
+# files
+experiment/data_backup_*.csv
+experiment/mapping_backup_*.csv
+
+# folders
+searches/jsons/*
+papers/*
+experiment/responses/*
+analysis/.backup/*

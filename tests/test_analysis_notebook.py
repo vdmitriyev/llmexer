@@ -12,6 +12,7 @@ import pytest  # noqa: E402
 from typer.testing import CliRunner  # noqa: E402
 
 from llmexer.base.analysis.notebook import (  # noqa: E402
+    ADDON_NOTEBOOKS,
     NOTEBOOKS,
     TEMPLATES,
     render_notebook,
@@ -32,6 +33,9 @@ CONTEXT = {
     "generated_at": "2026-09-08 12:00:00 UTC",
     "db_file": "experiment_20240101_01.db",
     "searches": [{"search": "s1.yaml", "results": "s1__results.csv", "filter": None}],
+    "csv_file": "experiment_20240101_01_flattened.csv",
+    "fields": ["verdict"],
+    "autodetect_fields": True,
 }
 
 
@@ -207,3 +211,64 @@ def test_scaffolded_notebook_runs_against_an_empty_project(projects_dir, monkeyp
     namespace = _run_notebook_cells(analysis_dir / NOTEBOOKS["experiment"], analysis_dir, monkeypatch)
 
     assert len(namespace["df"]) == 0
+
+
+def test_agreements_notebook_runs_after_the_experiment_notebook(projects_dir, monkeypatch):
+    """The agreements notebook reads the CSV the experiment notebook writes."""
+
+    project = _project_with_data(projects_dir)
+    assert runner.invoke(app, ["analysis", "init", "--pid", PID]).exit_code == 0
+    assert runner.invoke(app, ["analysis", "add-agreement", "--pid", PID]).exit_code == 0
+
+    analysis_dir = project / "analysis"
+    _run_notebook_cells(analysis_dir / NOTEBOOKS["experiment"], analysis_dir, monkeypatch)
+    namespace = _run_notebook_cells(analysis_dir / ADDON_NOTEBOOKS["agreements"], analysis_dir, monkeypatch)
+
+    assert namespace["PROJECT_ID"] == PID
+    assert len(namespace["answers"]) == 1
+    # One configuration answered, so there is no pair to score.
+    assert list(namespace["kappa"].columns) == [
+        "field",
+        "provider_a",
+        "model_a",
+        "profile_a",
+        "provider_b",
+        "model_b",
+        "profile_b",
+        "items",
+        "counter_same_answer",
+        "counter_different_answer",
+        "cohen_kappa",
+    ]
+    assert namespace["kappa"].empty
+
+
+def test_agreements_notebook_runs_without_the_experiment_notebook(projects_dir, monkeypatch):
+    """It loads and flattens the database itself, so it does not need the other notebook."""
+
+    project = _project_with_data(projects_dir)
+    assert runner.invoke(app, ["analysis", "add-agreement", "--pid", PID]).exit_code == 0
+
+    analysis_dir = project / "analysis"
+    assert not list(analysis_dir.glob("*_flattened.csv"))
+
+    namespace = _run_notebook_cells(analysis_dir / ADDON_NOTEBOOKS["agreements"], analysis_dir, monkeypatch)
+
+    assert len(namespace["df"]) == 1
+    assert len(namespace["df_flat"]) == 1
+    assert len(namespace["answers"]) == 1
+    assert "verdict" in namespace["answers"].columns
+
+
+def test_agreements_notebook_runs_against_an_empty_project(projects_dir, monkeypatch):
+    """No flattened CSV yet must still execute top to bottom."""
+
+    project = projects_dir / PID
+    os.makedirs(project)
+    assert runner.invoke(app, ["analysis", "add-agreement", "--pid", PID]).exit_code == 0
+
+    analysis_dir = project / "analysis"
+    namespace = _run_notebook_cells(analysis_dir / ADDON_NOTEBOOKS["agreements"], analysis_dir, monkeypatch)
+
+    assert len(namespace["answers"]) == 0
+    assert namespace["kappa"].empty

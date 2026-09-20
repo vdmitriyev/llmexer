@@ -4,6 +4,31 @@ import os
 from datetime import datetime, timezone
 from enum import Enum
 
+from llmexer.constants import PACKAGE_DATA_PATH
+from llmexer.exceptions import LLMExerException
+
+PACKAGE_PROJECT_DATA_PATH = PACKAGE_DATA_PATH / "project"
+
+SOURCE_GITIGNORE = "gitignore.txt"
+SOURCE_README = "README.md"
+
+README_VERSION_PLACEHOLDER = "{version}"
+
+
+def read_project_template(filename: str) -> str:
+    """Return one of the files bundled in ``llmexer/data/project/``.
+
+    Raises ``LLMExerException`` when the file is missing, which means the
+    package data did not travel with the install rather than anything the user
+    did wrong.
+    """
+
+    path = PACKAGE_PROJECT_DATA_PATH / filename
+    if not path.is_file():
+        raise LLMExerException(f"Bundled project template not found: '{path}'. Reinstall llmexer.")
+
+    return path.read_text(encoding="utf-8")
+
 
 class SortBy(str, Enum):
     alpha = "alpha"

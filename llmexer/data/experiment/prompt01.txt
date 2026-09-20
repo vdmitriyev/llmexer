@@ -1,0 +1,33 @@
+## Tasks
+
+- Count the number of words in both the title and abstract.
+- Check if the title explains the given abstract. Add "yes" or "no" as the value for `doesTitleDescribeAbstract` in the JSON.
+- Provide the output as JSON. No explanation. Refer to the JSON example for the expected output.
+
+## JSON Example as Output
+
+```json
+{
+    "paperTitle": "title placeholder",
+    "doi": "doi",
+    "year": "year",
+    "isTitleProvided": "yes",
+    "isAbstractProvided": "yes",
+    "wordsInTitle": 0,
+    "wordsInAbstract": 0,
+    "doesTitleDescribeAbstract": "yes"
+}
+```
+
+## Metadata of the paper
+
+DOI: {{doi}}
+Year: {{year}}
+
+## Title of the paper
+
+{{title}}
+
+## Abstract of the paper
+
+{{abstract}}

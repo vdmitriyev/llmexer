@@ -3,6 +3,9 @@ f"""Base methods and feature to be used in experiment CLI command."""
 import os
 import uuid
 
+from llmexer.constants import PACKAGE_DATA_PATH
+from llmexer.exceptions import LLMExerException
+
 DIR_EXPERIMENT = "experiment"
 DIR_RESPONSES = "responses"
 DIR_PROMPTS = "prompts"
@@ -12,6 +15,9 @@ FILE_DATA = "data.csv"
 FILE_MAPPING = "mapping.csv"
 FILE_LLM_PARAMS = "llm-params.csv"
 FILE_LLMS_FOR_EXPERIMENT = "llms-for-experiment.csv"
+
+PACKAGE_EXPERIMENT_DATA_PATH = PACKAGE_DATA_PATH / DIR_EXPERIMENT
+FILE_PROMPT_EXAMPLE = "prompt01.txt"
 
 # Identity triple shared by llms-for-experiment.csv and llm-params.csv. A model
 # row joins EXACTLY ONE profile row on these three columns; to run one model
@@ -134,6 +140,21 @@ def generate_project_id() -> str:
     formatted_datetime = now_utc.strftime("%Y%m%d")
     unique_id = str(uuid.uuid4())[:8]
     return f"{formatted_datetime}-{unique_id}"
+
+
+def read_prompt_example() -> str:
+    """Return the starter prompt shipped in ``llmexer/data/experiment/``.
+
+    Raises ``LLMExerException`` when the file is missing, which means the
+    package data did not travel with the install rather than anything the user
+    did wrong.
+    """
+
+    path = PACKAGE_EXPERIMENT_DATA_PATH / FILE_PROMPT_EXAMPLE
+    if not path.is_file():
+        raise LLMExerException(f"Bundled prompt template not found: '{path}'. Reinstall llmexer.")
+
+    return path.read_text(encoding="utf-8")
 
 
 def _is_experiment_initialized(experiment_path: str) -> bool:

@@ -17,6 +17,7 @@ from llmexer.base.analysis.transform import (
     flattened_only,
     list_papers,
     load_experiment_db,
+    load_flattened_csv,
     load_search_frame,
     parse_json_payload,
     strip_code_fence,
@@ -283,6 +284,36 @@ def test_export_as_csv_round_trips_the_flattened_frame(tmp_path, frame):
 
     assert len(back) == len(out)
     assert "score" in back.columns
+
+
+# ---------------------------------------------------------------------------
+# load_flattened_csv
+# ---------------------------------------------------------------------------
+
+
+def test_load_flattened_csv_reads_what_export_as_csv_wrote(tmp_path, frame):
+    path = export_as_csv(flattened_only(flatten_llm_response(frame)), tmp_path / "flat.csv")
+
+    back = load_flattened_csv(path)
+
+    assert len(back) == len(frame)
+    assert "score" in back.columns
+
+
+def test_load_flattened_csv_of_none_is_an_empty_frame():
+    """A notebook opened before the export has run must still reach the end."""
+
+    back = load_flattened_csv(None)
+
+    assert back.empty
+    assert list(back.columns) == list(IDENTITY_COLUMNS)
+
+
+def test_load_flattened_csv_of_a_missing_file_is_an_empty_frame(tmp_path):
+    back = load_flattened_csv(tmp_path / "not-there.csv")
+
+    assert back.empty
+    assert list(back.columns) == list(IDENTITY_COLUMNS)
 
 
 # ---------------------------------------------------------------------------

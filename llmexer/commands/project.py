@@ -7,38 +7,26 @@ from rich.table import Table
 
 from llmexer.base.experiment import DIR_EXPERIMENT, generate_project_id
 from llmexer.base.project import (
+    README_VERSION_PLACEHOLDER,
+    SOURCE_GITIGNORE,
+    SOURCE_README,
     SortBy,
     format_created,
     has_content,
     project_row,
+    read_project_template,
     scan_projects,
 )
 from llmexer.common import ensure_directory_exists
 from llmexer.configs import console, cprint, settings
 from llmexer.constants import ANALYSIS_DIR, PAPERS_DIR, PROJECTS_PATH, SEARCHES_DIR
 from llmexer.exceptions import LLMExerException, ProjectAlreadyExistsException
+from llmexer.version import package_version
 
 app = typer.Typer(help="Manage projects.")
 
 FILE_GITIGNORE = ".gitignore"
-
-# Dropped into every new project folder
-GITIGNORE_TEMPLATE = """\
-# extensions
-*.html
-*.db
-*.7z
-
-# files
-experiment/data_backup_*.csv
-experiment/mapping_backup_*.csv
-
-# folders
-searches/jsons/*
-papers/*
-experiment/responses/*
-analysis/.backup/*
-"""
+FILE_README = "README.md"
 
 
 @app.command()
@@ -60,7 +48,12 @@ def create(
 
     gitignore_path = os.path.join(project_path, FILE_GITIGNORE)
     with open(gitignore_path, "w", encoding="utf-8") as f:
-        f.write(GITIGNORE_TEMPLATE)
+        f.write(read_project_template(SOURCE_GITIGNORE))
+
+    readme = read_project_template(SOURCE_README).replace(README_VERSION_PLACEHOLDER, package_version())
+    readme_path = os.path.join(project_path, FILE_README)
+    with open(readme_path, "w", encoding="utf-8") as f:
+        f.write(readme)
 
     cprint(f"Created project: [bold yellow]{project_id}[/bold yellow]")
 

@@ -133,6 +133,29 @@ def test_init_creates_prompt_file(experiment, projects_dir):
     assert "{{abstract}}" in content
 
 
+def test_init_copies_the_bundled_prompt_example(experiment, projects_dir):
+    """The written prompt is the shipped file, byte for byte - not a Python literal."""
+    from llmexer.base.experiment import (
+        PACKAGE_EXPERIMENT_DATA_PATH,
+        read_prompt_example,
+    )
+
+    pid, exp_path = experiment
+    runner.invoke(app, ["experiment", "init", "--pid", pid])
+
+    written = (exp_path / "experiment" / "prompts" / "prompt01.txt").read_text(encoding="utf-8")
+    bundled = (PACKAGE_EXPERIMENT_DATA_PATH / "prompt01.txt").read_text(encoding="utf-8")
+
+    assert written == bundled == read_prompt_example()
+
+
+def test_the_bundled_prompt_example_ships_with_the_package():
+    """A missing data file is an install problem, so it is checked on its own."""
+    from llmexer.base.experiment import PACKAGE_EXPERIMENT_DATA_PATH
+
+    assert (PACKAGE_EXPERIMENT_DATA_PATH / "prompt01.txt").is_file()
+
+
 def test_init_prints_success_message(experiment, projects_dir):
     """init should print a success message containing the experiment ID."""
     pid, exp_path = experiment

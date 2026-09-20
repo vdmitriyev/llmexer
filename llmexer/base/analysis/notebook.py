@@ -31,12 +31,19 @@ logger = get_logger()
 TEMPLATES = {
     "experiment": "analyse_experiment.ipynb.j2",
     "searches": "analyse_searches.ipynb.j2",
+    "agreements": "analyse_experiment_agreements.ipynb.j2",
 }
 
-# Output file per kind, written into <project>/analysis/.
+# Output file per kind, written into <project>/analysis/ by ``analysis init``.
 NOTEBOOKS = {
     "experiment": "analyse_experiment.ipynb",
     "searches": "analyse_searches.ipynb",
+}
+
+# Notebooks added on request rather than by ``init``: each one answers a further
+# question about an experiment that has already been flattened.
+ADDON_NOTEBOOKS = {
+    "agreements": "analyse_experiment_agreements.ipynb",
 }
 
 # Where the copied modules come from: this package's own directory.

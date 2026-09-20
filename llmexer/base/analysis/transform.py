@@ -282,6 +282,24 @@ def export_as_csv(df: pd.DataFrame, path) -> Path:
     return target
 
 
+def load_flattened_csv(path) -> pd.DataFrame:
+    """Read a ``*_flattened.csv`` written by :func:`export_as_csv`.
+
+    ``None`` or a path that is not there yields an empty frame carrying the
+    identity columns, so a notebook opened before the export has run reaches its
+    last cell instead of dying on the first one.
+    """
+
+    if path is None:
+        return empty_frame(IDENTITY_COLUMNS)
+
+    target = Path(path)
+    if not target.exists():
+        return empty_frame(IDENTITY_COLUMNS)
+
+    return pd.read_csv(target, sep=CSV_SEPARATOR, encoding=CSV_ENCODING)
+
+
 def empty_frame(columns) -> pd.DataFrame:
     """An empty frame carrying ``columns``, so callers never branch on shape."""
 

@@ -18,4 +18,4 @@ on a plain install.
 
 # Copied verbatim into <project>/analysis/ by ``analysis init``. An explicit
 # tuple rather than a glob, so `notebook.py` is never copied.
-COPIED_MODULES = ("transform.py", "stats.py", "plots.py")
+COPIED_MODULES = ("transform.py", "stats.py", "plots.py", "agreement.py")

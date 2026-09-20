@@ -38,9 +38,11 @@ from llmexer.base.experiment import (
     FILE_LLM_PARAMS,
     FILE_LLMS_FOR_EXPERIMENT,
     FILE_MAPPING,
+    FILE_PROMPT_EXAMPLE,
     PARAMS_KEY_COLUMNS,
     _get_generated_experiment_files,
     _is_experiment_initialized,
+    read_prompt_example,
 )
 from llmexer.base.experiment_archive import compact_db_to_7z
 from llmexer.base.experiment_export import build_row_filter, export_db_to_html
@@ -411,14 +413,10 @@ def init(
         f.write("D01;prompt01\n")
         f.write("D02;prompt01\n")
 
-    # prompts/prompt01.txt
-    prompt_path = os.path.join(prompts_subdir, "prompt01.txt")
+    # prompts/prompt01.txt - the bundled example, copied as it is
+    prompt_path = os.path.join(prompts_subdir, FILE_PROMPT_EXAMPLE)
     with open(prompt_path, "w", encoding="utf-8") as f:
-        f.write(
-            "Here is the title: {{title}}.\n\n"
-            "Here is the abstract: {{abstract}}.\n\n"
-            "Count number of words in the both title and abstract."
-        )
+        f.write(read_prompt_example())
 
     # llm-params.csv
     llm_params_path = os.path.join(experiment_subdir_path, FILE_LLM_PARAMS)

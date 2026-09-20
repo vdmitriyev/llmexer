@@ -6,7 +6,10 @@ History
 -------------------
 
 * Add ``project list``: every project under ``.projects/`` with the parts it holds (search, experiment, analysis, papers) and its creation date. Takes ``--sort-by`` and ``--desc``.
+* Edit ``project create`` that now also writes a ``README.md`` describing what the project holds and the ``llmexer`` version that created it.
 * Add ``experiment fix``: repairs answers that hold JSON inside a fence or next to prose, logging every change to the new ``datafix_logs`` table. Writes only with ``--apply``.
+* Edit ``experiment init`` that now takes its starter prompt from the bundled ``data/experiment/prompt01.txt`` instead of a string in the code. The example now asks for a JSON answer with yes/no fields.
+* Add ``analysis add-agreement``: a notebook reporting Cohen's kappa between every pair of provider, model and profile, per yes/no field. It loads and flattens the experiment itself, so it runs without the other notebooks. Adds ``scikit-learn`` to the ``analysis`` dependency group.
 
 0.4.4 (2026-09-15)
 -------------------

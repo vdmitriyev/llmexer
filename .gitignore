@@ -233,3 +233,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Package data shipped inside the wheel (see [tool.setuptools.package-data]).
+# The extension rules above would otherwise drop these from the repository.
+!llmexer/data/**
