@@ -25,6 +25,35 @@ from llmexer.version import package_version
 
 app = typer.Typer(help="Manage projects.")
 
+
+def _print_current_project() -> None:
+    """Print the active project, saying so when its folder is not there."""
+
+    project_path = os.path.join(PROJECTS_PATH, settings.project_id)
+    if os.path.exists(project_path):
+        cprint(f"Current project: [bold yellow]{settings.project_id}[/bold yellow]")
+    else:
+        cprint(
+            f"Current project: [bold yellow]{settings.project_id}[/bold yellow] "
+            f"[bold red](not found in {PROJECTS_PATH})[/bold red]"
+        )
+
+
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context) -> None:
+    """Manage projects."""
+
+    # Bare `llmexer project` answers the question it looks like: which project
+    # am I working on? The help is still one `--help` away.
+    if ctx.invoked_subcommand is not None:
+        return
+
+    if settings.project_id:
+        _print_current_project()
+    else:
+        cprint("No default project has been set.")
+
+
 FILE_GITIGNORE = ".gitignore"
 FILE_README = "README.md"
 
@@ -145,13 +174,6 @@ def current() -> None:
     """Display the current project ID loaded from .env"""
 
     if settings.project_id:
-        project_path = os.path.join(PROJECTS_PATH, settings.project_id)
-        if os.path.exists(project_path):
-            cprint(f"Current project: [bold yellow]{settings.project_id}[/bold yellow]")
-        else:
-            cprint(
-                f"Current project: [bold yellow]{settings.project_id}[/bold yellow] "
-                f"[bold red](not found in {PROJECTS_PATH})[/bold red]"
-            )
+        _print_current_project()
     else:
         cprint("[bold red]No current project set.[/bold red] Set PROJECT_ID in .env file.")

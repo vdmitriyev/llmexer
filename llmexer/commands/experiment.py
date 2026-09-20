@@ -62,6 +62,43 @@ from llmexer.exceptions import LLMExerException, UnexpectedCLIParamsException
 app = typer.Typer(help="Manage LLM experiments.")
 
 
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context) -> None:
+    """Manage LLM experiments."""
+
+    if ctx.invoked_subcommand is not None:
+        return
+
+    if not settings.project_id:
+        cprint("No default project has been set.")
+        return
+
+    cprint(f"Current project: [bold yellow]{settings.project_id}[/bold yellow]")
+
+    project_path = os.path.join(PROJECTS_PATH, settings.project_id)
+    if not os.path.exists(project_path):
+        cprint(f"[bold red]Project not found in {PROJECTS_PATH}[/bold red]")
+        return
+
+    experiment_subdir_path = os.path.join(project_path, DIR_EXPERIMENT)
+    if not os.path.isdir(experiment_subdir_path):
+        cprint(
+            "No experiment set up yet. Run:\n"
+            f"[bold yellow]llmexer experiment init --pid {settings.project_id}[/bold yellow]"
+        )
+        return
+
+    db_path = latest_db(experiment_subdir_path)
+    if db_path is None:
+        cprint(
+            "No experiment database yet. Run\n"
+            f"[bold yellow]llmexer experiment generate --pid {settings.project_id}[/bold yellow]"
+        )
+        return
+
+    cprint(f"Current experiment database: [bold yellow]{os.path.basename(db_path)}[/bold yellow]")
+
+
 def _key_part(value: Any) -> str:
     """Normalise one join-key cell: a missing value becomes ``""``, else stripped.
 

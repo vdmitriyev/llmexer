@@ -26,6 +26,12 @@ uv pip install --upgrade llmexer
 
 Then set up your configuration, as described below.
 
+## 🏁 Documentation
+
+The current readme is used as documentation.
+
+[Documentation](https://vdmitriyev.github.io/llmexer/)
+
 ## ⚙️ Configuration
 
 `llmexer` needs access to a local or remote LLM. It reads your credentials and your current project from a `.env` file.
@@ -79,10 +85,6 @@ To use a different set of variables for one run, pass your own file:
 ```bash
 llmexer --env-file custom.env
 ```
-
-## Documentation
-
-[Documentation](https://vdmitriyev.github.io/llmexer/)
 
 ## 🚀 Getting Started
 

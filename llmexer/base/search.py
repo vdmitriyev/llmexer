@@ -283,6 +283,25 @@ def generate_search_id() -> str:
     return f"{formatted_datetime}-{unique_id}"
 
 
+class QuotedQuery(str):
+    """A query string that keeps its quotes in the YAML file.
+
+    A query carries ``"`` and ``|``, which PyYAML is happy to write as a plain,
+    line-wrapped scalar. It round-trips, but it reads as if the quoting were
+    accidental and invites a hand edit that changes the query. Wrapping it in
+    single quotes keeps the whole expression on one line and visibly one value.
+    """
+
+
+def _represent_quoted_query(dumper, data):
+    """Write a :class:`QuotedQuery` as a single-quoted YAML scalar."""
+
+    return dumper.represent_scalar("tag:yaml.org,2002:str", str(data), style="'")
+
+
+yaml.add_representer(QuotedQuery, _represent_quoted_query)
+
+
 def save_search_query(
     experiment_path: str,
     query: str,
@@ -301,10 +320,11 @@ def save_search_query(
     yaml_filename = f"{search_id}.yaml"
     yaml_path = os.path.join(searches_path, yaml_filename)
 
-    search_config = {"query": query, "year": year, "onlyOpenAccess": only_open_access}
+    search_config = {"query": QuotedQuery(query), "year": year, "onlyOpenAccess": only_open_access}
 
     with open(yaml_path, "w", encoding="utf-8") as f:
-        yaml.dump(search_config, f, default_flow_style=False, sort_keys=False)
+        # ``width`` keeps the query on one line instead of folding it mid-expression.
+        yaml.dump(search_config, f, default_flow_style=False, sort_keys=False, width=4096)
 
     return search_id, yaml_filename
 

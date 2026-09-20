@@ -43,8 +43,22 @@ logger = get_logger()
 
 app = typer.Typer(help="Search online digital libraries for papers and metadata.")
 
+
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context) -> None:
+    """Search online digital libraries for papers and metadata."""
+
+    # Bare `llmexer search` lists what the project already searched, which is
+    # the question it looks like. The help is still one `--help` away.
+    if ctx.invoked_subcommand is None:
+        list_searches(pid=None)
+
+
 # Default values
-DEFAULT_QUERY_PARAM = "influence of machine learning on computer science"
+DEFAULT_QUERY_PARAM = (
+    '("machine learning" | "statistical learning" | "data science") '
+    '+ "computer science" + influence + ("use case" | "case study")'
+)
 
 # Suffixes for the project-wide merged files: `<pid>__merged_results.csv` and
 # `<pid>__merged_filtered.csv`.

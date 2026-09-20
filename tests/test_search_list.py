@@ -131,3 +131,56 @@ def test_search_list_shows_stats_hint(projects_dir, mock_no_dotenv, monkeypatch)
     assert result.exit_code == 0
     assert "Example to view search stats:" in result.output
     assert "llmexer search stats --file 20260102-bbbbbbbb.yaml" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Bare `llmexer search`
+# ---------------------------------------------------------------------------
+
+
+def test_bare_search_lists_the_searches(projects_dir, mock_no_dotenv, monkeypatch):
+    """`search` on its own does what `search list` does."""
+    searches_dir = projects_dir / "test-exp" / "searches"
+    searches_dir.mkdir(parents=True)
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
+
+    _make_yaml(searches_dir, "20260101-aaaaaaaa", query="first query")
+    _make_yaml(searches_dir, "20260102-bbbbbbbb", query="second query")
+
+    bare = runner.invoke(app, ["search"])
+    listed = runner.invoke(app, ["search", "list"])
+
+    assert bare.exit_code == 0
+    assert bare.output == listed.output
+    assert "Usage:" not in bare.output
+
+
+def test_bare_search_without_any_search_says_so(projects_dir, mock_no_dotenv, monkeypatch):
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
+
+    result = runner.invoke(app, ["search"])
+
+    assert result.exit_code == 0
+    assert "No searches found" in result.output
+
+
+def test_bare_search_without_a_project_id_raises(projects_dir, mock_no_dotenv, monkeypatch):
+    """The same guard `search list` has, reached through the callback."""
+    from llmexer.configs import settings
+
+    monkeypatch.setattr(settings, "project_id", None)
+    monkeypatch.delenv("PROJECT_ID", raising=False)
+
+    result = runner.invoke(app, ["search"])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, ProjectIDRequiredException)
+
+
+def test_search_help_still_lists_the_commands(projects_dir, mock_no_dotenv):
+    result = runner.invoke(app, ["search", "--help"])
+
+    assert result.exit_code == 0
+    for command in ("create", "list", "run", "merge", "stats", "export"):
+        assert command in result.output

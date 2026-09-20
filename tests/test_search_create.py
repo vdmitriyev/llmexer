@@ -8,6 +8,7 @@ import yaml
 from typer.testing import CliRunner
 
 from llmexer.cli import app
+from llmexer.commands.search import DEFAULT_QUERY_PARAM
 from llmexer.exceptions import (
     ProjectIDRequiredException,
     ProjectNotExistsException,
@@ -69,9 +70,40 @@ def test_search_create_default_values(projects_dir, mock_no_dotenv, monkeypatch)
     with open(yaml_file, "r") as f:
         config = yaml.safe_load(f)
 
-    assert config["query"] == "influence of machine learning on computer science"
+    assert config["query"] == DEFAULT_QUERY_PARAM
+    assert config["query"].startswith('("machine learning"')
     assert config["year"] == "2020-2025"
     assert config["onlyOpenAccess"] is False
+
+
+def test_create_writes_the_query_single_quoted(projects_dir, mock_no_dotenv, monkeypatch):
+    """The query keeps its quotes on one line, so a hand edit sees one value."""
+    os.makedirs(projects_dir / "quoted-exp")
+    monkeypatch.setenv("PROJECT_ID", "quoted-exp")
+
+    result = runner.invoke(app, ["search", "create"])
+    assert result.exit_code == 0
+
+    yaml_file = next((projects_dir / "quoted-exp" / "searches").glob("*.yaml"))
+    query_line = next(line for line in yaml_file.read_text(encoding="utf-8").splitlines() if line.startswith("query:"))
+
+    assert query_line == f"query: '{DEFAULT_QUERY_PARAM}'"
+    assert yaml.safe_load(yaml_file.read_text(encoding="utf-8"))["query"] == DEFAULT_QUERY_PARAM
+
+
+def test_create_keeps_the_other_values_unquoted(projects_dir, mock_no_dotenv, monkeypatch):
+    """Only the query is force-quoted; the bool must stay a bool."""
+    os.makedirs(projects_dir / "plain-exp")
+    monkeypatch.setenv("PROJECT_ID", "plain-exp")
+
+    runner.invoke(app, ["search", "create"])
+
+    yaml_file = next((projects_dir / "plain-exp" / "searches").glob("*.yaml"))
+    text = yaml_file.read_text(encoding="utf-8")
+
+    assert "onlyOpenAccess: false" in text
+    assert "year: 2020-2025" in text
+    assert yaml.safe_load(text)["onlyOpenAccess"] is False
 
 
 def test_search_create_without_eid_raises(projects_dir, mock_no_dotenv, monkeypatch):

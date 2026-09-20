@@ -70,3 +70,61 @@ def test_current_with_verbose_flag(projects_dir, mock_no_dotenv, monkeypatch):
     result = runner.invoke(app, ["--verbose", "project", "current"])
     assert result.exit_code == 0
     assert "verbose-exp" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Bare `llmexer project`
+# ---------------------------------------------------------------------------
+
+
+def test_bare_project_reports_no_default(projects_dir, mock_no_dotenv, monkeypatch):
+    """With nothing in .env, the group says so instead of printing the help."""
+    from llmexer.configs import settings
+
+    monkeypatch.setattr(settings, "project_id", None)
+    monkeypatch.delenv("PROJECT_ID", raising=False)
+
+    result = runner.invoke(app, ["project"])
+
+    assert result.exit_code == 0
+    assert "No default project has been set." in result.output
+    assert "Usage:" not in result.output
+
+
+def test_bare_project_reports_the_current_project(projects_dir, mock_no_dotenv, monkeypatch):
+    os.makedirs(projects_dir / "bare-exp")
+    monkeypatch.setenv("PROJECT_ID", "bare-exp")
+
+    result = runner.invoke(app, ["project"])
+
+    assert result.exit_code == 0
+    assert "bare-exp" in result.output
+    assert "not found" not in result.output.lower()
+
+
+def test_bare_project_flags_a_missing_folder(projects_dir, mock_no_dotenv, monkeypatch):
+    monkeypatch.setenv("PROJECT_ID", "ghost-exp")
+
+    result = runner.invoke(app, ["project"])
+
+    assert result.exit_code == 0
+    assert "ghost-exp" in result.output
+    assert "not found" in result.output.lower()
+
+
+def test_bare_proj_alias_behaves_the_same(projects_dir, mock_no_dotenv, monkeypatch):
+    os.makedirs(projects_dir / "alias-exp")
+    monkeypatch.setenv("PROJECT_ID", "alias-exp")
+
+    result = runner.invoke(app, ["proj"])
+
+    assert result.exit_code == 0
+    assert "alias-exp" in result.output
+
+
+def test_project_help_still_lists_the_commands(projects_dir, mock_no_dotenv):
+    result = runner.invoke(app, ["project", "--help"])
+
+    assert result.exit_code == 0
+    for command in ("create", "list", "rename", "current"):
+        assert command in result.output
