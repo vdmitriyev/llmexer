@@ -16,15 +16,18 @@ from jinja2 import BaseLoader, DebugUndefined, Environment
 from rich.table import Table
 
 from llmexer.base.dao import (
+    DATAFIX_TABLE,
     ExperimentDAO,
     _clean_value,
     latest_db,
     list_db_files,
     next_db_filename,
     params_code_for,
+    table_name_for,
     try_params_table_name_for,
     try_table_name_for,
 )
+from llmexer.base.datafix import fixed_value, needs_fix
 from llmexer.base.experiment import (
     _PARAM_COLUMNS,
     CSV_JOIN_KEY_COLUMNS,
@@ -1550,6 +1553,183 @@ def try_one(
         f"[bold yellow]{os.path.basename(db_path)}[/bold yellow] "
         f"({', '.join((try_table_name_for(provider_name), try_params_table_name_for(provider_name)))}); "
         f"response saved to [bold yellow]{os.path.basename(json_path)}[/bold yellow]"
+    )
+
+
+def _print_fix_candidate(candidate: dict) -> None:
+    """Print one proposed repair: what identifies the row, then old and new value."""
+
+    header = Table(show_header=False, box=None, padding=(0, 1))
+    header.add_column(style="bold white", no_wrap=True)
+    header.add_column()
+    for label, key in (
+        ("id:", "id"),
+        ("table_name:", "table_name"),
+        ("row_id:", "row_id"),
+        ("code:", "code"),
+        ("params_code:", "params_code"),
+        ("profile_name:", "profile_name"),
+    ):
+        header.add_row(label, f"[bold blue]{candidate[key]}[/bold blue]")
+    console.print(header)
+
+    cprint("\nOriginal:\n")
+    cprint(f"[italic yellow]{candidate['old_value']}[/italic yellow]")
+    cprint("\nFixed:\n")
+    cprint(f"[green]{candidate['new_value']}[/green]\n")
+
+
+@app.command(name="fix")
+def fix(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    file: str = typer.Option(
+        None,
+        "--file",
+        help="Experiment database to repair. Defaults to the newest experiment_*.db.",
+    ),
+    json_in_response: bool = typer.Option(
+        True,
+        "--json-in-response",
+        help="Repair answers that should hold JSON but carry a fence or extra prose around it.",
+    ),
+    test: int = typer.Option(
+        1,
+        "--test",
+        help="How many proposed changes to print. 0 prints none. Ignored with --apply.",
+    ),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Write the repaired answers to the database. Without it nothing is changed.",
+    ),
+) -> None:
+    """Repair answers that hold JSON wrapped in a fence or followed by prose
+
+    A model asked for JSON often answers with the JSON inside a Markdown fence,
+    or with a sentence before or after it, which makes the whole
+    ``response_text`` cell unparseable. This extracts the JSON that is in there and writes it back,
+    recording the old and the new value in the ``datafix_logs`` table.
+
+    Nothing is written unless ``--apply`` is passed; ``--test`` only decides how
+    many of the proposed changes are printed while nothing is written. With
+    ``--apply`` no examples are shown - the row count is reported and the fixes
+    are applied.
+    """
+
+    if test < 0:
+        raise UnexpectedCLIParamsException("--test must be 0 or greater.")
+
+    pid = get_proper_pid(pid)
+    db_path, _ = _resolve_experiment_db(pid, file)
+    db_name = os.path.basename(db_path)
+
+    with ExperimentDAO(db_path) as dao:
+        rows = dao.fetch_rows()
+        next_id = dao.max_datafix_id() + 1
+
+        candidates: list[dict] = []
+        unfixable = 0
+        for row in rows:
+            if not json_in_response or not needs_fix(row.get("response_text")):
+                continue
+
+            new_value = fixed_value(row.get("response_text"))
+            if new_value is None:
+                unfixable += 1
+                continue
+
+            provider = row.get("_provider") or str(row["provider_name"]).lower()
+            candidates.append(
+                {
+                    "id": next_id + len(candidates),
+                    "table_name": table_name_for(provider),
+                    "row_id": row["ID"],
+                    "code": row.get("code"),
+                    "params_code": row.get("params_code"),
+                    "profile_name": row.get("profile_name"),
+                    "old_value": row.get("response_text"),
+                    "new_value": new_value,
+                    "_provider": provider,
+                }
+            )
+
+        if not candidates:
+            cprint(
+                f"Nothing to fix in [bold yellow]{db_name}[/bold yellow] "
+                f"([bold green]{len(rows)}[/bold green] row(s) checked, "
+                f"[bold yellow]{unfixable}[/bold yellow] without any JSON to recover)."
+            )
+            return
+
+        if settings.dry_run or not apply:
+            # The examples are what this mode is for: nothing is written, so the
+            # user reads the proposed changes and decides.
+            for candidate in candidates[:test]:
+                _print_fix_candidate(candidate)
+
+            if settings.dry_run:
+                cprint(
+                    f"[bold yellow]Dry run:[/bold yellow] would update "
+                    f"[bold green]{len(candidates)}[/bold green] row(s) in '{db_name}'"
+                )
+            else:
+                cprint(
+                    f"Nothing was written. Re-run with [bold yellow]--apply[/bold yellow] to fix "
+                    f"[bold green]{len(candidates)}[/bold green] row(s) of "
+                    f"[bold yellow]{db_name}[/bold yellow]."
+                )
+            _print_fix_summary(len(rows), len(candidates), unfixable)
+            return
+
+        # No examples here: the decision is already made, so the run reports how
+        # much work there is and then just does it.
+        cprint(
+            f"Fixing [bold green]{len(candidates)}[/bold green] row(s) of " f"[bold yellow]{db_name}[/bold yellow] ..."
+        )
+
+        created_at = datetime.now(timezone.utc).isoformat()
+        total = len(candidates)
+        # The spinner counts up instead of printing a line per row: the whole
+        # run is one unit of work, and a long one is worth watching.
+        with console.status(_fix_progress(0, total), spinner="dots") as status:
+            for done, candidate in enumerate(candidates, start=1):
+                dao.update_result(
+                    candidate["_provider"], candidate["row_id"], {"response_text": candidate["new_value"]}
+                )
+                dao.append_datafix_log(
+                    {**{k: v for k, v in candidate.items() if k != "_provider"}, "created_at": created_at}
+                )
+                status.update(_fix_progress(done, total))
+
+        cprint(
+            f"Fixed [bold green]{len(candidates)}[/bold green] row(s) of "
+            f"[bold yellow]{db_name}[/bold yellow]; every change is logged in "
+            f"[bold yellow]{DATAFIX_TABLE}[/bold yellow]."
+        )
+        _print_fix_summary(len(rows), len(candidates), unfixable)
+
+
+def _fix_progress(done: int, total: int) -> str:
+    """Spinner text of a fix run: how many of the repairable rows are done."""
+
+    return (
+        "[bold blue] Applying fixes ... [/bold blue] "
+        f"Repairable: [bold yellow] {total} [/bold yellow] "
+        f"Fixed: [bold green] {done} [/bold green]"
+    )
+
+
+def _print_fix_summary(checked: int, fixable: int, unfixable: int) -> None:
+    """Print the counts behind a fix run."""
+
+    cprint(
+        f"Rows checked: [bold green]{checked}[/bold green]; "
+        f"repairable: [bold green]{fixable}[/bold green]; "
+        f"without recoverable JSON: [bold yellow]{unfixable}[/bold yellow]."
     )
 
 

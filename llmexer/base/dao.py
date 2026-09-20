@@ -66,6 +66,9 @@ PARAMS_TABLE_PREFIX = "params_"
 # so a try is never mistaken for a generated row by run/stats/update.
 TRY_TABLE_PREFIX = "try_experiment_"
 TRY_PARAMS_TABLE_PREFIX = "try_param_"
+# `experiment fix` records every value it repairs here, one row per change, so
+# an edited answer can always be traced back to what the model actually said.
+DATAFIX_TABLE = "datafix_logs"
 DB_PREFIX = "experiment"
 DB_SUFFIX = ".db"
 
@@ -111,7 +114,27 @@ COLUMN_TYPES: Dict[str, Any] = {
     "elapsed_seconds": Float,
     "timestamp": String,
     "response_json": Text,
+    # datafix_logs
+    "id": Integer,
+    "table_name": String,
+    "row_id": Integer,
+    "old_value": Text,
+    "new_value": Text,
+    "created_at": String,
 }
+
+# Columns of ``datafix_logs``, in order.
+DATAFIX_COLUMNS = [
+    "id",
+    "table_name",
+    "row_id",
+    "code",
+    "params_code",
+    "profile_name",
+    "old_value",
+    "new_value",
+    "created_at",
+]
 
 
 def table_name_for(provider: str) -> str:
@@ -299,6 +322,7 @@ class ExperimentDAO:
         # reason: a try is not part of the generated experiment.
         self._try_tables: Dict[str, Table] = {}
         self._try_params_tables: Dict[str, Table] = {}
+        self._datafix_table: Optional[Table] = None
 
         if not create and not os.path.exists(db_path):
             raise LLMExerException(f"Experiment database not found: '{db_path}'.")
@@ -319,6 +343,8 @@ class ExperimentDAO:
                     self._params_tables[provider_from_params_table_name(table.name)] = table
                 elif table.name.startswith(TABLE_PREFIX):
                     self._tables[provider_from_table_name(table.name)] = table
+                elif table.name == DATAFIX_TABLE:
+                    self._datafix_table = table
             self._require_params_tables()
             self._require_current_result_columns()
 
@@ -698,6 +724,57 @@ class ExperimentDAO:
                     results.append(row)
         results.sort(key=lambda r: (r.get("ID") if r.get("ID") is not None else 0))
         return results
+
+    # ----------------------------------------------------------------- datafix
+    def _build_datafix_table(self) -> Table:
+        return Table(
+            DATAFIX_TABLE,
+            self.metadata,
+            *[Column(name, COLUMN_TYPES[name], primary_key=(name == "id")) for name in DATAFIX_COLUMNS],
+        )
+
+    def ensure_datafix_table(self) -> Table:
+        """Register and create ``datafix_logs``; return it.
+
+        Idempotent, so a database generated before this table existed simply
+        gains it the first time a fix is written - there is no migration.
+        """
+
+        if self._datafix_table is None:
+            self._datafix_table = self._build_datafix_table()
+        self.create_tables()
+        return self._datafix_table
+
+    def append_datafix_log(self, entry: dict) -> int:
+        """Append one repaired value to ``datafix_logs``; return its new ``id``."""
+
+        table = self.ensure_datafix_table()
+        payload = {k: _clean_value(v) for k, v in entry.items() if k in set(table.c.keys()) and k != "id"}
+
+        with self.engine.begin() as conn:
+            result = conn.execute(insert(table), payload)
+
+        return result.inserted_primary_key[0]
+
+    def fetch_datafix_logs(self) -> List[dict]:
+        """Return every ``datafix_logs`` row, oldest first. Empty if the table is absent."""
+
+        if self._datafix_table is None:
+            return []
+
+        with self.engine.connect() as conn:
+            stmt = select(self._datafix_table).order_by(self._datafix_table.c.id)
+            return [dict(mapping) for mapping in conn.execute(stmt).mappings()]
+
+    def max_datafix_id(self) -> int:
+        """Highest ``datafix_logs.id`` currently stored, or 0 when there is none."""
+
+        if self._datafix_table is None:
+            return 0
+
+        with self.engine.connect() as conn:
+            value = conn.execute(select(func.max(self._datafix_table.c.id))).scalar()
+        return int(value) if value is not None else 0
 
     # ------------------------------------------------------------------ update
     def fetch_params_rows(self, provider: str) -> List[dict]:

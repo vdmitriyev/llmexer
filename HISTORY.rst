@@ -6,6 +6,7 @@ History
 -------------------
 
 * Add ``project list``: every project under ``.projects/`` with the parts it holds (search, experiment, analysis, papers) and its creation date. Takes ``--sort-by`` and ``--desc``.
+* Add ``experiment fix``: repairs answers that hold JSON inside a fence or next to prose, logging every change to the new ``datafix_logs`` table. Writes only with ``--apply``.
 
 0.4.4 (2026-09-15)
 -------------------
