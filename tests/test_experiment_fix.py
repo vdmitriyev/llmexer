@@ -7,8 +7,17 @@ import pytest
 from typer.testing import CliRunner
 
 from llmexer.base.dao import DATAFIX_TABLE, ExperimentDAO
-from llmexer.base.datafix import extract_json, fixed_value, needs_fix
+from llmexer.base.datafix import (
+    SKIP_NAME_TAKEN,
+    SKIP_NO_SUCH_FIELD,
+    SKIP_NOT_AN_OBJECT,
+    extract_json,
+    fixed_value,
+    needs_fix,
+    rename_json_field,
+)
 from llmexer.cli import app
+from llmexer.exceptions import UnexpectedCLIParamsException
 from tests.db_helpers import OLLAMA_ROW, seed_db, try_table_names
 
 runner = CliRunner()
@@ -21,6 +30,7 @@ _FENCED = '```json\n{"relevant": false, "reason": "Off topic"}\n```'
 _TRAILING = '{"relevant": true, "score": 7}\n\nThis paper is clearly relevant because it evaluates attention.'
 _LEADING = 'Here is the analysis you asked for:\n\n```json\n{"relevant": true, "score": 3}\n```'
 _PROSE = "This paper is broadly relevant but does not answer the question directly."
+_FENCED_FIELD = '```json\n{"paperTitle": "B", "relevant": "no"}\n```'
 
 
 @pytest.fixture()
@@ -137,7 +147,7 @@ def test_fix_without_apply_writes_nothing(experiment_with_results):
     db_path = experiment_with_results / _DB_NAME
     before = _responses(db_path)
 
-    result = _fix()
+    result = _fix("--ensure-json-format")
 
     assert result.exit_code == 0, result.output
     assert _responses(db_path) == before
@@ -149,14 +159,14 @@ def test_fix_without_apply_writes_nothing_with_many_previews(experiment_with_res
     db_path = experiment_with_results / _DB_NAME
     before = _responses(db_path)
 
-    result = _fix("--test", "10")
+    result = _fix("--ensure-json-format", "--test", "10")
 
     assert result.exit_code == 0, result.output
     assert _responses(db_path) == before
 
 
 def test_test_zero_prints_no_preview_but_still_reports(experiment_with_results):
-    result = _fix("--test", "0")
+    result = _fix("--ensure-json-format", "--test", "0")
 
     assert result.exit_code == 0, result.output
     assert "Original:" not in result.output
@@ -164,7 +174,7 @@ def test_test_zero_prints_no_preview_but_still_reports(experiment_with_results):
 
 
 def test_apply_shows_no_examples(experiment_with_results):
-    result = _fix("--apply", "--test", "5")
+    result = _fix("--ensure-json-format", "--apply", "--test", "5")
 
     assert result.exit_code == 0, result.output
     assert "Original:" not in result.output
@@ -193,7 +203,7 @@ def test_apply_spinner_counts_the_fixed_rows(experiment_with_results, monkeypatc
 
     monkeypatch.setattr(experiment_module.console, "status", recording_status)
 
-    result = _fix("--apply")
+    result = _fix("--ensure-json-format", "--apply")
 
     assert result.exit_code == 0, result.output
     assert seen == [
@@ -206,7 +216,7 @@ def test_apply_spinner_counts_the_fixed_rows(experiment_with_results, monkeypatc
 def test_apply_repairs_every_broken_answer(experiment_with_results):
     db_path = experiment_with_results / _DB_NAME
 
-    result = _fix("--apply")
+    result = _fix("--ensure-json-format", "--apply")
 
     assert result.exit_code == 0, result.output
     responses = _responses(db_path)
@@ -224,7 +234,7 @@ def test_apply_repairs_every_broken_answer(experiment_with_results):
 def test_apply_logs_every_change(experiment_with_results):
     db_path = experiment_with_results / _DB_NAME
 
-    _fix("--apply")
+    _fix("--ensure-json-format", "--apply")
     logs = _logs(db_path)
 
     assert [log["row_id"] for log in logs] == [2, 3, 4]
@@ -241,10 +251,10 @@ def test_apply_logs_every_change(experiment_with_results):
 def test_apply_is_a_no_op_the_second_time(experiment_with_results):
     db_path = experiment_with_results / _DB_NAME
 
-    _fix("--apply")
+    _fix("--ensure-json-format", "--apply")
     after_first = _responses(db_path)
 
-    result = _fix("--apply")
+    result = _fix("--ensure-json-format", "--apply")
 
     assert result.exit_code == 0, result.output
     assert _responses(db_path) == after_first
@@ -253,7 +263,7 @@ def test_apply_is_a_no_op_the_second_time(experiment_with_results):
 
 
 def test_prose_only_row_is_reported_not_fixed(experiment_with_results):
-    result = _fix("--apply")
+    result = _fix("--ensure-json-format", "--apply")
 
     assert result.exit_code == 0, result.output
     assert "without recoverable JSON: " in result.output
@@ -264,7 +274,10 @@ def test_dry_run_with_apply_writes_nothing(experiment_with_results):
     db_path = experiment_with_results / _DB_NAME
     before = _responses(db_path)
 
-    result = runner.invoke(app, ["--dry-run", "experiment", "fix", "--pid", PID, "--file", _DB_NAME, "--apply"])
+    result = runner.invoke(
+        app,
+        ["--dry-run", "experiment", "fix", "--pid", PID, "--file", _DB_NAME, "--ensure-json-format", "--apply"],
+    )
 
     assert result.exit_code == 0, result.output
     assert _responses(db_path) == before
@@ -273,7 +286,7 @@ def test_dry_run_with_apply_writes_nothing(experiment_with_results):
 
 
 def test_preview_prints_the_row_identity(experiment_with_results):
-    result = _fix("--test", "1")
+    result = _fix("--ensure-json-format", "--test", "1")
 
     assert result.exit_code == 0, result.output
     for label in ("id:", "table_name:", "row_id:", "code:", "params_code:", "profile_name:"):
@@ -283,9 +296,220 @@ def test_preview_prints_the_row_identity(experiment_with_results):
 
 
 def test_negative_test_is_rejected(experiment_with_results):
-    from llmexer.exceptions import UnexpectedCLIParamsException
-
     result = _fix("--test", "-1")
 
     assert result.exit_code != 0
     assert isinstance(result.exception, UnexpectedCLIParamsException)
+
+
+# ----------------------------------------------------------- rename_json_field
+
+
+def test_rename_keeps_the_field_in_place():
+    text, skipped = rename_json_field('{"a": 1, "relevant": "yes", "z": 2}', "relevant", "isRelevant")
+
+    assert skipped == ""
+    assert list(json.loads(text)) == ["a", "isRelevant", "z"]
+    assert json.loads(text)["isRelevant"] == "yes"
+
+
+def test_rename_leaves_a_nested_field_of_the_same_name_alone():
+    """Only the outermost object is touched."""
+    source = '{"relevant": "yes", "scores": {"relevant": 3}}'
+
+    text, skipped = rename_json_field(source, "relevant", "isRelevant")
+
+    assert skipped == ""
+    parsed = json.loads(text)
+    assert "isRelevant" in parsed
+    assert parsed["scores"] == {"relevant": 3}
+
+
+@pytest.mark.parametrize(
+    "source, reason",
+    [
+        ('{"a": 1}', SKIP_NO_SUCH_FIELD),
+        ('{"relevant": 1, "isRelevant": 2}', SKIP_NAME_TAKEN),
+        ('[{"relevant": 1}]', SKIP_NOT_AN_OBJECT),
+        ('"relevant"', SKIP_NOT_AN_OBJECT),
+        ("no json at all", SKIP_NOT_AN_OBJECT),
+        (None, SKIP_NOT_AN_OBJECT),
+    ],
+)
+def test_rename_skips_and_says_why(source, reason):
+    text, skipped = rename_json_field(source, "relevant", "isRelevant")
+
+    assert text is None
+    assert skipped == reason
+
+
+# -------------------------------------------------------- --rename-json-field
+
+
+@pytest.fixture()
+def experiment_with_fields(projects_dir):
+    """Rows carrying the field to rename, one of them behind a fence."""
+    exp_subdir = projects_dir / PID / "experiment"
+    os.makedirs(exp_subdir)
+    seed_db(
+        exp_subdir / _DB_NAME,
+        {
+            "ollama": [
+                _ran_row(1, "01", '{"paperTitle": "A", "relevant": "yes"}'),
+                _ran_row(2, "02", _FENCED_FIELD),
+                _ran_row(3, "03", '{"paperTitle": "C"}'),
+                _ran_row(4, "04", _PROSE),
+            ]
+        },
+    )
+    return exp_subdir
+
+
+def test_rename_rewrites_only_the_rows_that_have_the_field(experiment_with_fields):
+    db_path = experiment_with_fields / _DB_NAME
+
+    result = _fix("--rename-json-field", "relevant", "isRelevant", "--apply")
+
+    assert result.exit_code == 0, result.output
+    responses = _responses(db_path)
+
+    assert json.loads(responses[1]) == {"paperTitle": "A", "isRelevant": "yes"}
+    # Row 2 is still fenced, so it is not JSON to rename yet; 3 has no such
+    # field and 4 is prose. All three are left exactly as they were.
+    assert responses[2] == _FENCED_FIELD
+    assert responses[3] == '{"paperTitle": "C"}'
+    assert responses[4] == _PROSE
+
+
+def test_a_fenced_row_takes_a_repair_run_then_a_rename_run(experiment_with_fields):
+    """One kind of fix per run: repair first, because a fence is not JSON."""
+    db_path = experiment_with_fields / _DB_NAME
+
+    _fix("--rename-json-field", "relevant", "isRelevant", "--apply")
+    assert _responses(db_path)[2] == _FENCED_FIELD
+
+    _fix("--ensure-json-format", "--apply")
+    assert json.loads(_responses(db_path)[2]) == {"paperTitle": "B", "relevant": "no"}
+
+    _fix("--rename-json-field", "relevant", "isRelevant", "--apply")
+    assert json.loads(_responses(db_path)[2]) == {"paperTitle": "B", "isRelevant": "no"}
+
+    # One log line per fix, in the order the runs happened.
+    logs = _logs(db_path)
+    assert [log["row_id"] for log in logs] == [1, 2, 2]
+    assert [log["id"] for log in logs] == [1, 2, 3]
+    assert logs[1]["old_value"].startswith("```json")
+
+
+def test_rename_reports_what_it_changed_and_skipped(experiment_with_fields):
+    result = _fix("--rename-json-field", "relevant", "isRelevant")
+
+    assert result.exit_code == 0, result.output
+    assert "fields renamed: 1" in result.output
+    assert SKIP_NO_SUCH_FIELD in result.output
+    # The fenced row and the prose row are both "not a JSON object" yet.
+    assert SKIP_NOT_AN_OBJECT in result.output
+    # A rename run says nothing about repairing.
+    assert "repairable" not in result.output
+
+
+def test_the_preview_names_the_fix_being_proposed(experiment_with_fields):
+    renaming = _fix("--rename-json-field", "relevant", "isRelevant", "--test", "5")
+
+    assert "change note:" in renaming.output
+    assert "renamed field 'relevant' -> 'isRelevant'" in renaming.output
+    assert "repaired JSON" not in renaming.output
+
+    repairing = _fix("--ensure-json-format", "--test", "5")
+
+    assert "repaired JSON" in repairing.output
+    assert "renamed" not in repairing.output
+
+
+def test_rename_without_apply_writes_nothing(experiment_with_fields):
+    db_path = experiment_with_fields / _DB_NAME
+    before = _responses(db_path)
+
+    result = _fix("--rename-json-field", "relevant", "isRelevant", "--test", "5")
+
+    assert result.exit_code == 0
+    assert _responses(db_path) == before
+    assert DATAFIX_TABLE not in try_table_names(db_path)
+
+
+def test_renaming_twice_is_a_no_op_the_second_time(experiment_with_fields):
+    db_path = experiment_with_fields / _DB_NAME
+
+    _fix("--rename-json-field", "relevant", "isRelevant", "--apply")
+    after_first = _responses(db_path)
+
+    result = _fix("--rename-json-field", "relevant", "isRelevant", "--apply")
+
+    assert result.exit_code == 0
+    assert _responses(db_path) == after_first
+    # Only the one row that was JSON with the field is ever renamed.
+    assert len(_logs(db_path)) == 1
+
+
+@pytest.mark.parametrize("names", [("a", "a"), ("", "b"), ("a", "  ")])
+def test_bad_rename_names_are_rejected(experiment_with_fields, names):
+    result = _fix("--rename-json-field", *names)
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, UnexpectedCLIParamsException)
+
+
+# --------------------------------------------------------------- the two fixes
+
+
+def test_naming_no_fix_is_rejected(experiment_with_results):
+    """The command has to be told which of the two fixes to run."""
+    db_path = experiment_with_results / _DB_NAME
+    before = _responses(db_path)
+
+    result = _fix()
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, UnexpectedCLIParamsException)
+    assert _responses(db_path) == before
+
+
+def test_naming_both_fixes_is_rejected(experiment_with_results):
+    result = _fix("--ensure-json-format", "--rename-json-field", "a", "b", "--apply")
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, UnexpectedCLIParamsException)
+    assert DATAFIX_TABLE not in try_table_names(experiment_with_results / _DB_NAME)
+
+
+# ------------------------------------------------------ datafix_logs.change_note
+
+
+def test_a_repair_run_notes_what_it_did(experiment_with_results):
+    db_path = experiment_with_results / _DB_NAME
+
+    _fix("--ensure-json-format", "--apply")
+
+    assert {log["change_note"] for log in _logs(db_path)} == {"repaired JSON"}
+
+
+def test_a_rename_run_notes_both_key_names(experiment_with_fields):
+    db_path = experiment_with_fields / _DB_NAME
+
+    _fix("--rename-json-field", "relevant", "isRelevant", "--apply")
+    logs = _logs(db_path)
+
+    assert len(logs) == 1
+    assert logs[0]["change_note"] == "renamed field 'relevant' -> 'isRelevant'"
+
+
+def test_each_run_keeps_its_own_note(experiment_with_fields):
+    """Two runs over one row leave two rows saying which fix each one was."""
+    db_path = experiment_with_fields / _DB_NAME
+
+    _fix("--ensure-json-format", "--apply")
+    _fix("--rename-json-field", "relevant", "isRelevant", "--apply")
+
+    notes = [(log["row_id"], log["change_note"]) for log in _logs(db_path)]
+    assert (2, "repaired JSON") in notes
+    assert (2, "renamed field 'relevant' -> 'isRelevant'") in notes

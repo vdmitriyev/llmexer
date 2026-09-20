@@ -17,6 +17,11 @@ _DECODER = json.JSONDecoder()
 # otherwise prose reply is a coincidence, not the answer.
 _OPENING_CHARS = "{["
 
+# Why a rename was skipped, for the caller to report.
+SKIP_NOT_AN_OBJECT = "answer is not a JSON object"
+SKIP_NO_SUCH_FIELD = "no such field"
+SKIP_NAME_TAKEN = "the new name is already used"
+
 
 def is_json(text: str) -> bool:
     """Tell whether ``text`` parses as JSON exactly as it stands."""
@@ -78,3 +83,38 @@ def fixed_value(value) -> str | None:
         return None
 
     return extract_json(value)
+
+
+def rename_json_field(value, old: str, new: str) -> tuple:
+    """Return the answer with the top-level key ``old`` renamed to ``new``.
+
+    Shaped like ``transform.parse_json_payload``: ``(text, "")`` when the rename
+    happened and ``(None, reason)`` when there was nothing to do.
+
+    Only the outermost object is touched. A key of the same name nested deeper
+    answers a different question and is left alone.
+
+    The result is re-serialised, so the model's own formatting does not survive
+    a rename - unlike :func:`extract_json`, which returns the matched span
+    verbatim. The text being replaced is what the caller stores as the old value.
+    """
+
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError, ValueError):
+        return None, SKIP_NOT_AN_OBJECT
+
+    if not isinstance(parsed, dict):
+        return None, SKIP_NOT_AN_OBJECT
+
+    if old not in parsed:
+        return None, SKIP_NO_SUCH_FIELD
+
+    if new in parsed:
+        # Renaming onto a name in use would drop one of the two answers.
+        return None, SKIP_NAME_TAKEN
+
+    # Rebuilt in order, so the field keeps its place among its siblings.
+    renamed = {(new if key == old else key): item for key, item in parsed.items()}
+
+    return json.dumps(renamed, ensure_ascii=False, indent=2), ""

@@ -8,7 +8,9 @@ History
 * Add ``project list``: every project under ``.projects/`` with the parts it holds (search, experiment, analysis, papers) and its creation date. Takes ``--sort-by`` and ``--desc``.
 * Edit ``project create`` that now also writes a ``README.md`` describing what the project holds and the ``llmexer`` version that created it.
 * Edit ``project create`` that now takes its ``.gitignore`` and ``README.md`` from the bundled ``data/project/`` files instead of strings in the code.
-* Add ``experiment fix``: repairs answers that hold JSON inside a fence or next to prose, logging every change to the new ``datafix_logs`` table. Writes only with ``--apply``.
+* Add ``experiment fix`` that makes JSON responses from LLM more processing-friendly by repairing them. Logging every change to the new ``datafix_logs`` table. Writes only with ``--apply``.
+* Add ``--ensure-json-format`` param to ``experiment fix``, fixes the format of the LLM response by removing prose and converting from markdown to JSON.
+* Add ``--rename-json-field OLD NEW`` param to ``experiment fix``, renaming a top-level field of the answer JSON instead of repairing it.
 * Edit ``experiment init`` that now takes its starter prompt from the bundled ``data/experiment/prompt01.txt`` instead of a string in the code. The example now asks for a JSON answer with yes/no fields.
 * Add ``analysis add-agreement``: a notebook reporting Cohen's kappa between every pair of provider, model and profile, per yes/no field. It loads and flattens the experiment itself, so it runs without the other notebooks.
 * Added a new dependency to ``analysis`` dependency group - ``scikit-learn``

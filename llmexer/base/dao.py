@@ -120,6 +120,7 @@ COLUMN_TYPES: Dict[str, Any] = {
     "row_id": Integer,
     "old_value": Text,
     "new_value": Text,
+    "change_note": String,
     "created_at": String,
 }
 
@@ -133,6 +134,7 @@ DATAFIX_COLUMNS = [
     "profile_name",
     "old_value",
     "new_value",
+    "change_note",
     "created_at",
 ]
 

@@ -27,7 +27,7 @@ from llmexer.base.dao import (
     try_params_table_name_for,
     try_table_name_for,
 )
-from llmexer.base.datafix import fixed_value, needs_fix
+from llmexer.base.datafix import fixed_value, needs_fix, rename_json_field
 from llmexer.base.experiment import (
     _PARAM_COLUMNS,
     CSV_JOIN_KEY_COLUMNS,
@@ -1591,6 +1591,119 @@ def try_one(
     )
 
 
+# What a fix run writes into ``datafix_logs.change_note``.
+CHANGE_NOTE_REPAIRED_JSON = "repaired JSON"
+CHANGE_NOTE_RENAMED_FIELD = "renamed field '{old}' -> '{new}'"
+
+
+def _validate_params__rename_json_field(rename_field) -> tuple:
+    """Validate ``--rename-json-field`` and return the pair, or ``(None, None)``.
+
+    Typer hands both values or neither, so only their content is checked here.
+    """
+
+    old, new = rename_field if rename_field else (None, None)
+    if old is None and new is None:
+        return None, None
+
+    old = (old or "").strip()
+    new = (new or "").strip()
+
+    if not old or not new:
+        raise UnexpectedCLIParamsException("--rename-json-field takes two non-empty names: OLD NEW.")
+
+    if old == new:
+        raise UnexpectedCLIParamsException("--rename-json-field was given the same name twice.")
+
+    return old, new
+
+
+def _validate_params__fix_kind(ensure_json_format: bool, rename_old) -> None:
+    """One fix per run: the command has to be told which one.
+
+    Neither flag leaves nothing to do, and both together would be two different
+    rewrites of the same cell.
+    """
+
+    if not ensure_json_format and not rename_old:
+        raise UnexpectedCLIParamsException("Name the fix to run: --ensure-json-format, or --rename-json-field OLD NEW.")
+
+    if ensure_json_format and rename_old:
+        raise UnexpectedCLIParamsException(
+            "--ensure-json-format and --rename-json-field are two different fixes; run one at a time."
+        )
+
+
+def _fix_candidate(row: dict, old_value, new_value: str, change_note: str) -> dict:
+    """One proposed change, shaped for both the preview and ``datafix_logs``.
+
+    ``change_note`` says which fix this is and is stored with the row. The
+    underscore key is for this command only; ``append_datafix_log`` keeps the
+    columns the table has and drops the rest.
+    """
+
+    provider = row.get("_provider") or str(row["provider_name"]).lower()
+
+    return {
+        "table_name": table_name_for(provider),
+        "row_id": row["ID"],
+        "code": row.get("code"),
+        "params_code": row.get("params_code"),
+        "profile_name": row.get("profile_name"),
+        "old_value": old_value,
+        "new_value": new_value,
+        "change_note": change_note,
+        "_provider": provider,
+    }
+
+
+def _repair_json_in_candidates(rows: list) -> tuple:
+    """Rows whose answer should be JSON but carries a fence or prose around it.
+
+    Returns ``(candidates, unfixable)`` - the second being the answers that hold
+    no JSON to recover at all.
+    """
+
+    candidates = []
+    unfixable = 0
+    for row in rows:
+        stored = row.get("response_text")
+        if not needs_fix(stored):
+            continue
+
+        repaired = fixed_value(stored)
+        if repaired is None:
+            unfixable += 1
+            continue
+
+        candidates.append(_fix_candidate(row, stored, repaired, CHANGE_NOTE_REPAIRED_JSON))
+
+    return candidates, unfixable
+
+
+def _rename_json_fields_candidates(rows: list, old: str, new: str) -> tuple:
+    """Rows whose answer JSON carries a top-level field under the old name.
+
+    Returns ``(candidates, skips)``, the second counting why a row was passed
+    over. An answer still wrapped in a fence is not JSON yet and is counted
+    there: repair it first, then rename.
+    """
+
+    candidates = []
+    skips: Counter = Counter()
+    change_note = CHANGE_NOTE_RENAMED_FIELD.format(old=old, new=new)
+    for row in rows:
+        stored = row.get("response_text")
+        renamed, skipped = rename_json_field(stored, old, new)
+        if renamed is None:
+            skips[skipped] += 1
+            continue
+
+        candidates.append(_fix_candidate(row, stored, renamed, change_note))
+
+    return candidates, skips
+
+
 def _print_fix_candidate(candidate: dict) -> None:
     """Print one proposed repair: what identifies the row, then old and new value."""
 
@@ -1604,6 +1717,7 @@ def _print_fix_candidate(candidate: dict) -> None:
         ("code:", "code"),
         ("params_code:", "params_code"),
         ("profile_name:", "profile_name"),
+        ("change note:", "change_note"),
     ):
         header.add_row(label, f"[bold blue]{candidate[key]}[/bold blue]")
     console.print(header)
@@ -1626,10 +1740,15 @@ def fix(
         "--file",
         help="Experiment database to repair. Defaults to the newest experiment_*.db.",
     ),
-    json_in_response: bool = typer.Option(
-        True,
-        "--json-in-response",
+    ensure_json_format: bool = typer.Option(
+        False,
+        "--ensure-json-format",
         help="Repair answers that should hold JSON but carry a fence or extra prose around it.",
+    ),
+    rename_field: tuple[str, str] = typer.Option(
+        (None, None),
+        "--rename-json-field",
+        help="Rename a top-level field of the answer JSON. Takes two values: OLD NEW.",
     ),
     test: int = typer.Option(
         1,
@@ -1642,12 +1761,22 @@ def fix(
         help="Write the repaired answers to the database. Without it nothing is changed.",
     ),
 ) -> None:
-    """Repair answers that hold JSON wrapped in a fence or followed by prose
+    """Fix the stored answers: make them valid JSON, or rename a field in them
 
-    A model asked for JSON often answers with the JSON inside a Markdown fence,
+    Two fixes, one per run, and the run is told which one:
+
+    ``--ensure-json-format`` repairs an answer that should hold JSON but does
+    not. A model asked for JSON often answers with it inside a Markdown fence,
     or with a sentence before or after it, which makes the whole
-    ``response_text`` cell unparseable. This extracts the JSON that is in there and writes it back,
-    recording the old and the new value in the ``datafix_logs`` table.
+    ``response_text`` cell unparseable; this extracts the JSON that is in there
+    and writes it back.
+
+    ``--rename-json-field OLD NEW`` renames a top-level field of that JSON, for
+    a prompt whose wording changed after part of the experiment had already run.
+
+    A database needing both takes two runs - repair first, because an answer
+    still wrapped in a fence is not JSON to rename. Either way the old value,
+    the new one and a note saying which fix it was land in ``datafix_logs``.
 
     Nothing is written unless ``--apply`` is passed; ``--test`` only decides how
     many of the proposed changes are printed while nothing is written. With
@@ -1658,6 +1787,9 @@ def fix(
     if test < 0:
         raise UnexpectedCLIParamsException("--test must be 0 or greater.")
 
+    rename_old, rename_new = _validate_params__rename_json_field(rename_field)
+    _validate_params__fix_kind(ensure_json_format, rename_old)
+
     pid = get_proper_pid(pid)
     db_path, _ = _resolve_experiment_db(pid, file)
     db_name = os.path.basename(db_path)
@@ -1666,31 +1798,18 @@ def fix(
         rows = dao.fetch_rows()
         next_id = dao.max_datafix_id() + 1
 
+        # One kind of fix per run, named by the caller and already validated.
         candidates: list[dict] = []
         unfixable = 0
-        for row in rows:
-            if not json_in_response or not needs_fix(row.get("response_text")):
-                continue
+        rename_skips: Counter = Counter()
 
-            new_value = fixed_value(row.get("response_text"))
-            if new_value is None:
-                unfixable += 1
-                continue
+        if rename_old:
+            candidates, rename_skips = _rename_json_fields_candidates(rows, rename_old, rename_new)
+        else:
+            candidates, unfixable = _repair_json_in_candidates(rows)
 
-            provider = row.get("_provider") or str(row["provider_name"]).lower()
-            candidates.append(
-                {
-                    "id": next_id + len(candidates),
-                    "table_name": table_name_for(provider),
-                    "row_id": row["ID"],
-                    "code": row.get("code"),
-                    "params_code": row.get("params_code"),
-                    "profile_name": row.get("profile_name"),
-                    "old_value": row.get("response_text"),
-                    "new_value": new_value,
-                    "_provider": provider,
-                }
-            )
+        for offset, candidate in enumerate(candidates):
+            candidate["id"] = next_id + offset
 
         if not candidates:
             cprint(
@@ -1717,7 +1836,7 @@ def fix(
                     f"[bold green]{len(candidates)}[/bold green] row(s) of "
                     f"[bold yellow]{db_name}[/bold yellow]."
                 )
-            _print_fix_summary(len(rows), len(candidates), unfixable)
+            _print_fix_summary(len(rows), len(candidates), unfixable, rename_skips if rename_old else None)
             return
 
         # No examples here: the decision is already made, so the run reports how
@@ -1745,7 +1864,7 @@ def fix(
             f"[bold yellow]{db_name}[/bold yellow]; every change is logged in "
             f"[bold yellow]{DATAFIX_TABLE}[/bold yellow]."
         )
-        _print_fix_summary(len(rows), len(candidates), unfixable)
+        _print_fix_summary(len(rows), len(candidates), unfixable, rename_skips if rename_old else None)
 
 
 def _fix_progress(done: int, total: int) -> str:
@@ -1758,14 +1877,24 @@ def _fix_progress(done: int, total: int) -> str:
     )
 
 
-def _print_fix_summary(checked: int, fixable: int, unfixable: int) -> None:
-    """Print the counts behind a fix run."""
+def _print_fix_summary(checked: int, changed: int, unfixable: int, rename_skips=None) -> None:
+    """Print the counts behind a fix run.
 
-    cprint(
-        f"Rows checked: [bold green]{checked}[/bold green]; "
-        f"repairable: [bold green]{fixable}[/bold green]; "
-        f"without recoverable JSON: [bold yellow]{unfixable}[/bold yellow]."
-    )
+    ``rename_skips`` tells the two kinds of run apart: ``None`` is a repair run,
+    a Counter (however empty) is a rename run.
+    """
+
+    if rename_skips is None:
+        cprint(
+            f"Rows checked: [bold green]{checked}[/bold green]; "
+            f"repairable: [bold green]{changed}[/bold green]; "
+            f"without recoverable JSON: [bold yellow]{unfixable}[/bold yellow]."
+        )
+        return
+
+    cprint(f"Rows checked: [bold green]{checked}[/bold green]; " f"fields renamed: [bold green]{changed}[/bold green].")
+    for reason, count in sorted(rename_skips.items()):
+        cprint(f"  not renamed - {reason}: [bold yellow]{count}[/bold yellow]")
 
 
 @app.command()
