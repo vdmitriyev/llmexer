@@ -6,6 +6,9 @@
 # files
 experiment/data_backup_*.csv
 experiment/mapping_backup_*.csv
+papers/*.[pP][dD][fF]
+papers/*.[tT][xX][tT]
+papers/*.[mM][dD]
 
 # folders
 searches/jsons/*
