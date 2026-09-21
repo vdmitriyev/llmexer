@@ -6,7 +6,7 @@
 
 `llmexer` is a CLI tool for LLM experiments. Use it to build datasets (publications, metadata, prompts) and to design, run and evaluate experiments on them.
 
-> 🪄 The idea behind the tool: `everything` is a `file`. Projects, experiments, searches and configs are all stored as files. The CLI edits them for you, but you can also edit them by hand — add a model, change a search, drop in a PDF, or open the generated SQLite database and inspect it yourself.
+> 🪄 The idea behind the tool: `everything` is a `file`. Projects, experiments, searches, and configs are all stored as files. The CLI edits them for you, but you can also edit them manually. Anything could be changed or viewed via the files—a model name, a search string, a new PDF, or the generated SQLite database.
 
 ## ✨ Early `beta` warning
 
@@ -19,7 +19,7 @@ Install with `pip`:
 pip install --upgrade llmexer
 ```
 
-Or with `uv`:
+Install with `uv`:
 ```bash
 uv pip install --upgrade llmexer
 ```
