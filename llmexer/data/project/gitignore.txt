@@ -12,3 +12,4 @@ searches/jsons/*
 papers/*
 experiment/responses/*
 analysis/.backup/*
+analysis/kappa_values/*

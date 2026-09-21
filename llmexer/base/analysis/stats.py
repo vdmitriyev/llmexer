@@ -33,7 +33,7 @@ GROUP_COLUMNS = ("provider_name", "model_name")
 # Mirror of ``transform.IDENTITY_COLUMNS``. The copied modules may not import
 # each other, so the tuple is duplicated and `tests/test_analysis_stats.py`
 # asserts the two stay in step - the same arrangement as `strip_code_fence`.
-IDENTITY_COLUMNS = ("code", "model_name", "provider_name", "profile_name")
+IDENTITY_COLUMNS = ("code", "data_id", "prompt_id", "model_name", "provider_name", "profile_name")
 
 TRUNCATED_STATE = "maxtokenreached"
 RUNNING_STATE = "running"

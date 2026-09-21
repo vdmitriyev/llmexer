@@ -23,8 +23,12 @@
     "` |\n",
     "\n",
     "Cohen's kappa between every pair of configurations, for each yes/no field of\n",
-    "the answers. Kappa discounts the agreement chance alone would produce, so it\n",
-    "is the number to report rather than a raw match rate.\n",
+    "the answers, within each prompt. Kappa discounts the agreement chance alone\n",
+    "would produce, so it is the number to report rather than a raw match rate.\n",
+    "\n",
+    "`prompt_id` is the set each pair is scored within and `data_id` is the item\n",
+    "they have to share to be compared, so one prompt's disagreement is never\n",
+    "averaged away into another's.\n",
     "\n",
     "This notebook loads and flattens the experiment itself, so it runs on its own.\n",
     "The logic lives in `transform.py` and `agreement.py` next to it. Feel free to\n",
@@ -44,6 +48,7 @@
     "| `CSV_FILE` | flattened answers, used only when there is no database |\n",
     "| `FIELDS` | yes/no fields to compare; empty means detect them |\n",
     "| `AUTODETECT_FIELDS` | find the yes/no fields when `FIELDS` is empty |\n",
+    "| `INTERMEDIATE_VALUES_DIR` | folder for the per-item CSVs; `None` writes none |\n",
     "\n",
     "`DB_FILE` points at the newest `experiment_*.db` when this notebook was\n",
     "created, **no updates** after creation — change it by hand and re-run the cell.\n"
@@ -114,13 +119,18 @@
     {{ autodetect_fields | pyliteral | tojson }},
     "\n",
     "\n",
+    "# Set to a folder to also write the rows behind every kappa, one CSV per\n",
+    "# prompt and pair, for checking a suspicious number by hand. None writes none.\n",
+    "INTERMEDIATE_VALUES_DIR = None  # e.g. ANALYSIS_DIR / 'kappa_values'\n",
+    "\n",
     "DB_PATH = DIR_EXPERIMENT / DB_FILE if DB_FILE else None\n",
     "CSV_PATH = ANALYSIS_DIR / CSV_FILE if CSV_FILE else None\n",
     "\n",
     "print(f'project   : {PROJECT_ID}')\n",
     "print(f'database  : {DB_PATH}')\n",
     "print(f'fields    : {FIELDS}')\n",
-    "print(f'autodetect: {AUTODETECT_FIELDS}')"
+    "print(f'autodetect: {AUTODETECT_FIELDS}')\n",
+    "print(f'values dir: {INTERMEDIATE_VALUES_DIR}')"
    ]
   },
   {
@@ -176,7 +186,8 @@
    "source": [
     "## The answers to compare\n",
     "\n",
-    "One row per combination: `code`, `model_name`, `provider_name`, `profile_name`\n",
+    "One row per combination: `code`, `data_id`, `prompt_id`, `model_name`,\n",
+    "`provider_name`, `profile_name`\n",
     "and one column per key the models answered with — the same frame\n",
     "`analyse_experiment.ipynb` exports as `*_flattened.csv`.\n",
     "\n",
@@ -240,25 +251,19 @@
    "cell_type": "markdown",
    "metadata": {},
    "source": [
-    "## Pairwise Cohen's kappa\n",
-    "\n",
-    "One row per field and pair of configurations. A pair is scored on the items\n",
-    "both of them answered — `items` — split into `counter_same_answer` and\n",
-    "`counter_different_answer`, the plain counts behind the chance-corrected\n",
-    "`cohen_kappa`.\n",
-    "\n",
-    "`cohen_kappa` is `NaN` where the statistic says nothing: no shared items, or\n",
-    "both configurations answering one and the same label throughout.\n"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "metadata": {},
-   "source": [
     "### Working with `Cohens Kappa`\n",
     "\n",
     "`cohen_kappa` is computed with\n",
     "[`sklearn.metrics.cohen_kappa_score`](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.cohen_kappa_score.html).\n",
+    "\n",
+    "<details>\n",
+    "<summary>Paper from Landis & Koch</summary>\n",
+    "\n",
+    "Landis, J. R. and Koch, G. G. (1977). The measurement of observer agreement for\n",
+    "categorical data. *Biometrics*, 33(1), 159-174.\n",
+    "[doi:10.2307/2529310](https://doi.org/10.2307/2529310)\n",
+    "\n",
+    "</details>\n",
     "\n",
     "Landis & Koch read kappa as:\n",
     "\n",
@@ -269,29 +274,31 @@
     "| `0.21 - 0.40` | fair |\n",
     "| `0.41 - 0.60` | moderate |\n",
     "| `0.61 - 0.80` | substantial |\n",
-    "| `0.81 - 1.00` | almost perfect |\n",
+    "| `0.81 - 1.00` | almost perfect |\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
     "\n",
-    "Bands, not thresholds — report the number and the item count with it.\n",
+    "### Further usage examples\n",
     "\n",
     "```python\n",
     "# the pairs that agree least, whatever the field\n",
     "kappa.sort_values('cohen_kappa').head(10)\n",
     "\n",
     "# one field as a configuration x configuration matrix\n",
-    "kappa_matrix(kappa, fields[0])\n",
+    "kappa_matrix(kappa, fields[0], kappa['prompt_id'].iloc[0])\n",
     "\n",
     "# average agreement per field\n",
-    "kappa.groupby('field')['cohen_kappa'].mean().sort_values()\n",
+    "kappa.groupby(['prompt_id', 'field'])['cohen_kappa'].mean().sort_values()\n",
     "\n",
     "# only the pairs that share the same model, i.e. profile against profile\n",
     "kappa[kappa['model_a'] == kappa['model_b']]\n",
     "```\n",
     "\n",
-    "---\n",
-    "\n",
-    "Landis, J. R. and Koch, G. G. (1977). The measurement of observer agreement for\n",
-    "categorical data. *Biometrics*, 33(1), 159-174.\n",
-    "[doi:10.2307/2529310](https://doi.org/10.2307/2529310)\n"
+    "\n"
    ]
   },
   {
@@ -307,7 +314,7 @@
    "metadata": {},
    "outputs": [],
    "source": [
-    "kappa = pairwise_cohen_kappa(answers, fields)\n",
+    "kappa = pairwise_cohen_kappa(answers, fields, intermediate_values_dir=INTERMEDIATE_VALUES_DIR)\n",
     "\n",
     "kappa\n"
    ]

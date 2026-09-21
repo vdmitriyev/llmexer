@@ -71,6 +71,8 @@ def identified_frame():
         {
             "ID": [1, 2],
             "code": ["D01_P1_m1_default", "D02_P1_m1_default"],
+            "data_id": ["D01", "D02"],
+            "prompt_id": ["P1", "P1"],
             "prompt": ["rendered", "rendered"],
             "model_name": ["m1", "m1"],
             "provider_name": ["ollama", "openai"],
@@ -593,10 +595,13 @@ def test_exported_csv_holds_the_answers_and_their_identity(tmp_path, identified_
     path = export_as_csv(out, tmp_path / "flat.csv")
     header = path.read_text(encoding="utf-8").splitlines()[0]
 
+    columns = header.split(";")
     assert header.startswith(";".join(IDENTITY_COLUMNS))
     assert "score" in header
-    assert "prompt" not in header
-    assert "response_text" not in header.replace("response_text_items", "")
+    # Exact names: `prompt_id` is an identity column and legitimately contains
+    # "prompt", while the rendered `prompt` itself must stay out.
+    assert "prompt" not in columns
+    assert "response_text" not in columns
 
 
 def test_flattened_only_leads_with_the_identity_columns(identified_frame):

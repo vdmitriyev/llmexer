@@ -228,6 +228,7 @@ def test_agreements_notebook_runs_after_the_experiment_notebook(projects_dir, mo
     assert len(namespace["answers"]) == 1
     # One configuration answered, so there is no pair to score.
     assert list(namespace["kappa"].columns) == [
+        "prompt_id",
         "field",
         "provider_a",
         "model_a",

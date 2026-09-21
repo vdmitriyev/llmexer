@@ -36,7 +36,7 @@ FLATTENED_COLUMNS_KEY = "llmexer_flattened_columns"
 # frame by :func:`flattened_only`. DB spelling on purpose: ``stats.GROUP_COLUMNS``
 # and ``plots._model_label()`` already group on these names, so the exported
 # answers can be crosstabbed by model and provider without a rename.
-IDENTITY_COLUMNS = ("code", "model_name", "provider_name", "profile_name")
+IDENTITY_COLUMNS = ("code", "data_id", "prompt_id", "model_name", "provider_name", "profile_name")
 
 # `experiment generate` writes one pair of tables per provider.
 EXPERIMENT_TABLE_PREFIX = "experiment_"
