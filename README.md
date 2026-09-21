@@ -169,7 +169,9 @@ Not sure what to try? `--suggest` picks a data row, a prompt and a model at rand
 
 ```bash
 llmexer experiment try --pid my-project --suggest
-``` Add `--dry-run` to print the rendered prompt without calling anything.
+```
+
+Add `--dry-run` to print the rendered prompt without calling anything.
 
 **7. Run the experiment**
 
