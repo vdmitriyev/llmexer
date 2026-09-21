@@ -98,12 +98,17 @@ def format_timestamp(value) -> str:
         return str(value)
 
 
-def build_try_command(row: dict, project_id: str, db_name: str) -> str:
-    """The ``experiment try`` invocation that re-runs this row, or '' if unknown.
+def build_try_command(row: dict, project_id: str, db_name: str | None = None) -> str:
+    """The ``experiment try`` invocation that runs this row, or '' if unknown.
 
     Every argument is spelled out so the command runs whatever ``.env`` holds and
     records the try in the same database. ``--model`` / ``--provider`` are always
     passed because one profile name can cover several models.
+
+    ``db_name`` is left out when it is ``None``, and ``try`` then picks the
+    newest database itself. The export always names one, so a row's command
+    lands back in the database it came from; `experiment try --suggest` does
+    not, because it suggests a combination rather than re-running a stored row.
     """
 
     model_name = str(row.get("model_name") or "")
@@ -125,8 +130,10 @@ def build_try_command(row: dict, project_id: str, db_name: str) -> str:
         "try",
         "--pid",
         project_id,
-        "--file",
-        db_name,
+    ]
+    if db_name is not None:
+        parts += ["--file", db_name]
+    parts += [
         "--data-id",
         data_id,
         "--prompt",

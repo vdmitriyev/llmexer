@@ -2,6 +2,7 @@
 
 import json
 import os
+import shlex
 from unittest.mock import Mock
 
 import pytest
@@ -9,7 +10,7 @@ from typer.testing import CliRunner
 
 from llmexer.base.dao import ExperimentDAO
 from llmexer.cli import app
-from llmexer.exceptions import LLMExerException
+from llmexer.exceptions import LLMExerException, UnexpectedCLIParamsException
 from tests.db_helpers import find_db, read_experiment_df, read_try_rows, try_table_names
 
 runner = CliRunner()
@@ -404,8 +405,9 @@ def test_try_model_option_disambiguates(generated_experiment, mock_ollama):
     assert row["temperature"] == 0.2
 
 
-def test_try_without_database_aborts(projects_dir, mock_no_dotenv):
-    """A project with no generated database points the user at `generate`."""
+@pytest.fixture()
+def initialised_without_database(projects_dir):
+    """An initialised project that `generate` was never run against."""
     pid = "no-db"
     exp_subdir = projects_dir / pid / "experiment"
     os.makedirs(exp_subdir / "prompts")
@@ -415,11 +417,65 @@ def test_try_without_database_aborts(projects_dir, mock_no_dotenv):
     (exp_subdir / "prompts" / "prompt01.txt").write_text("Title: {{title}}.", encoding="utf-8")
     _write_params(exp_subdir, _OLLAMA_PARAMS_ROW)
 
+    return pid, exp_subdir
+
+
+def test_try_without_database_warns_and_still_runs(initialised_without_database, mock_ollama, mock_no_dotenv):
+    """The call is the point of a try, so a missing database only costs the history."""
+    pid, _exp_subdir = initialised_without_database
+
     result = _try(pid)
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert "Warning:" in output
+    assert "experiment generate" in output
+    assert "mocked response" in output
+
+
+def test_try_without_database_writes_the_response_json(initialised_without_database, mock_ollama, mock_no_dotenv):
+    """With nothing stored, the per-call payload is the only record - so it is kept."""
+    pid, exp_subdir = initialised_without_database
+
+    assert _try(pid).exit_code == 0
+
+    files = list((exp_subdir / "responses").glob("*.json"))
+    assert len(files) == 1
+    payload = json.loads(files[0].read_text(encoding="utf-8"))
+    assert payload["response_text"] == "mocked response"
+
+
+def test_try_without_database_creates_no_database(initialised_without_database, mock_ollama, mock_no_dotenv):
+    """A try never generates an experiment; it only ever appends to one."""
+    pid, exp_subdir = initialised_without_database
+
+    assert _try(pid).exit_code == 0
+
+    assert list(exp_subdir.glob("experiment*.db")) == []
+
+
+def test_try_without_database_dry_run_writes_nothing(initialised_without_database, mock_ollama, mock_no_dotenv):
+    """The dry-run branch names no database and still touches nothing."""
+    pid, exp_subdir = initialised_without_database
+
+    result = _try(pid, "--dry-run")
+
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert "Dry run:" in output
+    assert "without storing it" in output
+    assert not (exp_subdir / "responses").exists()
+
+
+def test_try_missing_file_still_aborts(initialised_without_database, mock_no_dotenv):
+    """Naming a database and misspelling it is a typo, not a project without one."""
+    pid, _exp_subdir = initialised_without_database
+
+    result = _try(pid, "--file", "nope.db")
 
     assert result.exit_code != 0
     assert isinstance(result.exception, LLMExerException)
-    assert "experiment generate" in str(result.exception)
+    assert "not found" in str(result.exception)
 
 
 # ---------------------------------------------------------------------------
@@ -487,3 +543,132 @@ def test_dao_append_try_row_assigns_increasing_ids(tmp_path):
     assert [r["ID"] for r in rows] == [1, 2]
     assert rows[0]["params_code"] == "llama3.3:latest_ollama"
     assert rows[0]["temperature"] == 0.7
+
+
+# ---------------------------------------------------------------------------
+# --suggest
+# ---------------------------------------------------------------------------
+
+
+def _suggested(result):
+    """The command line out of a `--suggest` run, rejoined across the wrap."""
+    return " ".join(result.output.splitlines()[1:]).strip()
+
+
+def test_suggest_prints_a_runnable_command(generated_experiment):
+    """The headline, then one `experiment try` invocation naming all three parts."""
+    pid, _exp_subdir, _db_path = generated_experiment
+
+    result = runner.invoke(app, ["experiment", "try", "--pid", pid, "--suggest"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines()[0] == "Suggesting a random experiment to try:"
+    command = _suggested(result)
+    assert command.startswith(f"llmexer experiment try --pid {pid}")
+    for option in ("--data-id", "--prompt", "--profile", "--model", "--provider"):
+        assert option in command
+
+
+def test_suggest_round_trips(generated_experiment, mock_ollama):
+    """A suggestion is only useful if pasting it back actually runs."""
+    pid, _exp_subdir, _db_path = generated_experiment
+
+    suggestion = _suggested(runner.invoke(app, ["experiment", "try", "--pid", pid, "--suggest"]))
+
+    result = runner.invoke(app, shlex.split(suggestion)[1:])
+
+    assert result.exit_code == 0, result.output
+    assert "mocked response" in result.output
+
+
+def test_suggest_only_offers_values_the_project_has(generated_experiment):
+    """Every part is drawn from data.csv, llms-for-experiment.csv and prompts/."""
+    pid, _exp_subdir, _db_path = generated_experiment
+
+    seen = set()
+    for _ in range(25):
+        parts = shlex.split(_suggested(runner.invoke(app, ["experiment", "try", "--pid", pid, "--suggest"])))
+        chosen = dict(zip(parts, parts[1:]))
+        assert chosen["--data-id"] in {"D01", "D02"}
+        assert chosen["--prompt"] in {"prompt01", "prompt02"}
+        assert chosen["--profile"] == "ollama-default"
+        assert chosen["--model"] == "llama3.3:latest"
+        assert chosen["--provider"] == "ollama"
+        seen.add((chosen["--data-id"], chosen["--prompt"]))
+
+    # Both axes really are random, not the first row every time.
+    assert len({data_id for data_id, _ in seen}) == 2
+    assert len({prompt_id for _, prompt_id in seen}) == 2
+
+
+def test_suggest_names_no_database(generated_experiment):
+    """A suggestion is about what could be run, so it pins no database."""
+    pid, _exp_subdir, _db_path = generated_experiment
+
+    assert "--file" not in _suggested(runner.invoke(app, ["experiment", "try", "--pid", pid, "--suggest"]))
+
+
+def test_suggest_works_without_a_database(initialised_without_database):
+    """No database is needed to suggest, and none of the warning is printed."""
+    pid, _exp_subdir = initialised_without_database
+
+    result = runner.invoke(app, ["experiment", "try", "--pid", pid, "--suggest"])
+
+    assert result.exit_code == 0, result.output
+    assert "Warning:" not in result.output
+    assert _suggested(result).startswith("llmexer experiment try")
+
+
+def test_suggest_needs_no_other_option(generated_experiment):
+    """`--suggest` invents the three names, so it stands alone on the command line."""
+    pid, _exp_subdir, _db_path = generated_experiment
+
+    assert runner.invoke(app, ["experiment", "try", "--pid", pid, "--suggest"]).exit_code == 0
+
+
+def test_the_three_names_are_required_without_suggest(generated_experiment):
+    """Dropping the Typer requirement must not let a nameless try through."""
+    pid, _exp_subdir, _db_path = generated_experiment
+
+    result = runner.invoke(app, ["experiment", "try", "--pid", pid])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, UnexpectedCLIParamsException)
+    message = str(result.exception)
+    for option in ("--prompt", "--profile", "--data-id"):
+        assert option in message
+
+
+def test_only_the_missing_names_are_reported(generated_experiment):
+    """The message names what is missing, not the whole trio every time."""
+    pid, _exp_subdir, _db_path = generated_experiment
+
+    result = runner.invoke(app, ["experiment", "try", "--pid", pid, "--prompt", "prompt01"])
+
+    message = str(result.exception)
+    assert "--prompt" not in message
+    assert "--profile" in message and "--data-id" in message
+
+
+def test_suggest_with_no_prompts_is_reported(initialised_without_database):
+    """An empty prompts/ folder has nothing to suggest, and says so."""
+    pid, exp_subdir = initialised_without_database
+    (exp_subdir / "prompts" / "prompt01.txt").unlink()
+
+    result = runner.invoke(app, ["experiment", "try", "--pid", pid, "--suggest"])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, LLMExerException)
+    assert "No prompt templates found" in str(result.exception)
+
+
+def test_suggest_with_no_data_rows_is_reported(initialised_without_database):
+    """An empty data.csv has nothing to suggest, and says so."""
+    pid, exp_subdir = initialised_without_database
+    (exp_subdir / "data.csv").write_text("ID;Title;Abstract\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["experiment", "try", "--pid", pid, "--suggest"])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, LLMExerException)
+    assert "no rows to suggest from" in str(result.exception)

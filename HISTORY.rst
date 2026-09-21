@@ -9,6 +9,8 @@ History
 * An older database without the two columns is refused on open: re-run ``experiment generate``, or add and fill the columns in place manually using SQL (check ```migrations.md``` for details on the manual migration)
 * **Breaking:** ``analysis add-agreement`` now scores Cohen's kappa per prompt and pairs profiles rather than provider/model/profile triples.
 * Add ``intermediate_values_dir`` to ``pairwise_cohen_kappa``, writing the rows behind each kappa to one CSV per prompt
+* Edit ``experiment try`` that no longer needs a generated database: it warns that the try will not be stored, then runs and saves the response file as usual. A ``--file`` naming a missing database still aborts.
+* Add ``--suggest`` to ``experiment try``: prints one randomly chosen combination of ``data.csv``, ``prompts/`` and ``llms-for-experiment.csv`` as a ready command, and runs nothing.
 
 
 0.4.5 (2026-09-20)

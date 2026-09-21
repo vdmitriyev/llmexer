@@ -4,8 +4,10 @@ import hashlib
 import json
 import math
 import os
+import random
 import shutil
 from collections import Counter, defaultdict
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -45,7 +47,11 @@ from llmexer.base.experiment import (
     read_prompt_example,
 )
 from llmexer.base.experiment_archive import compact_db_to_7z
-from llmexer.base.experiment_export import build_row_filter, export_db_to_html
+from llmexer.base.experiment_export import (
+    build_row_filter,
+    build_try_command,
+    export_db_to_html,
+)
 from llmexer.base.project import SortBy, format_created, project_row, scan_projects
 from llmexer.common import (
     ensure_directory_exists,
@@ -203,12 +209,18 @@ def _format_hms(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
-def _resolve_experiment_db(pid: str, file: str) -> tuple[str, str]:
+def _resolve_experiment_db(pid: str, file: str, required: bool = True) -> tuple[str | None, str]:
     """Resolve and validate a generated experiment database path for a project.
 
     Returns ``(db_path, experiment_subdir_path)``. When ``file`` is omitted the
     newest ``experiment*.db`` (highest counter) is used. Raises
     ``LLMExerException`` if the project is not initialised or no database exists.
+
+    ``required=False`` relaxes exactly one of those: a project with no database
+    at all gives ``(None, experiment_subdir_path)`` instead of raising. Only
+    `experiment try` passes it - a try still runs without a database, it is
+    simply not kept. A ``--file`` that does not exist still raises either way:
+    naming a database and misspelling it is a typo, not a project without one.
     """
 
     experiment_subdir_path = get_experiment_subdir_path(pid)
@@ -216,6 +228,8 @@ def _resolve_experiment_db(pid: str, file: str) -> tuple[str, str]:
     if file is None:
         db_path = latest_db(experiment_subdir_path)
         if db_path is None:
+            if not required:
+                return None, experiment_subdir_path
             raise LLMExerException(
                 f"No experiment database found for project '{pid}'. " f"Run `experiment generate --pid {pid}` first."
             )
@@ -1450,6 +1464,71 @@ def _print_try_header(model_name: str, provider: str, experiment: Any = None) ->
     console.print(header)
 
 
+def _suggest_try_command(pid: str, data_df: pd.DataFrame, models_df: pd.DataFrame, prompts_subdir: str) -> str:
+    """Build one `experiment try` invocation from random inputs of the project.
+
+    The three choices come from the three files that describe an experiment: a
+    data row from ``data.csv``, a model row from ``llms-for-experiment.csv``
+    (which carries the provider and profile that go with it) and a template
+    from ``prompts/``. No database is read - a suggestion is about what could be
+    run, not about what has been.
+
+    Raises:
+        LLMExerException: if any of the three has nothing to choose from.
+    """
+
+    if "ID" not in data_df.columns:
+        raise LLMExerException(f"'{FILE_DATA}' of project '{pid}' is missing the required 'ID' column.")
+
+    data_ids = [_key_part(value) for value in data_df["ID"]]
+    data_ids = [value for value in data_ids if value]
+    if not data_ids:
+        raise LLMExerException(f"'{FILE_DATA}' of project '{pid}' has no rows to suggest from.")
+
+    if models_df.empty:
+        raise LLMExerException(f"'{FILE_LLMS_FOR_EXPERIMENT}' of project '{pid}' has no rows to suggest from.")
+
+    # Raises on an empty prompts/ folder, with the message `map` and `generate`
+    # already use for it.
+    prompt_ids = _resolve_prompt_ids(prompts_subdir, None)
+
+    # Pseudo-random is the point here: this picks an example to look at, and
+    # nothing depends on it being unguessable.
+    data_id = random.choice(data_ids)  # nosec B311 - a suggestion, not a secret
+    prompt_id = random.choice(prompt_ids)  # nosec B311 - a suggestion, not a secret
+    model_row = models_df.iloc[random.randrange(len(models_df))]  # nosec B311 - a suggestion, not a secret
+
+    provider_name, model_name, profile_name = _row_join_key(model_row)
+
+    return build_try_command(
+        {
+            "data_id": data_id,
+            "prompt_id": prompt_id,
+            "model_name": model_name,
+            "profile_name": profile_name,
+            "_provider": provider_name,
+        },
+        pid,
+    )
+
+
+def _validate_params__try_names(prompt, profile, data_id) -> None:
+    """The three names are required unless the run is only suggesting one.
+
+    They cannot be Typer-required options any more: `--suggest` invents all
+    three, so `experiment try --suggest` has to be a complete command line.
+    """
+
+    missing = [
+        name for name, value in (("--prompt", prompt), ("--profile", profile), ("--data-id", data_id)) if value is None
+    ]
+    if missing:
+        raise UnexpectedCLIParamsException(
+            f"{', '.join(missing)} {'is' if len(missing) == 1 else 'are'} required. "
+            "Run `experiment try --suggest` for a combination to start from."
+        )
+
+
 @app.command(name="try")
 def try_one(
     pid: str = typer.Option(
@@ -1458,17 +1537,17 @@ def try_one(
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
     prompt: str = typer.Option(
-        ...,
+        None,
         "--prompt",
         help="Prompt template from prompts/ to render (the '.txt' extension is optional).",
     ),
     profile: str = typer.Option(
-        ...,
+        None,
         "--profile",
         help="Profile name from llm-params.csv, matched in full (case-sensitive).",
     ),
     data_id: str = typer.Option(
-        ...,
+        None,
         "--data-id",
         help="ID of the data.csv row to render the prompt with.",
     ),
@@ -1493,6 +1572,11 @@ def try_one(
         "-d",
         help="Only render and print the prompt; nothing is sent to the LLM provider.",
     ),
+    suggest: bool = typer.Option(
+        False,
+        "--suggest",
+        help="Print one randomly chosen `experiment try` command to copy, and run nothing.",
+    ),
 ) -> None:
     """Performs a single experiment `try` run, where custom data x prompt x profile combination is tested once
 
@@ -1501,12 +1585,42 @@ def try_one(
     provider, and then appended to the ``try_experiment_<provider>`` and
     ``try_param_<provider>`` tables of the database.
 
+    ``--suggest`` prints one randomly chosen combination as a ready command and
+    runs nothing, for when you want to see the shape of a try without picking
+    the three names yourself.
+
+    A project with no generated database is not an error here. The run is what
+    matters, so it goes ahead after a warning; only the history is lost, and the
+    per-call JSON still lands in ``responses/``. A ``--file`` naming a database
+    that is not there does still abort.
+
     Under ``--dry-run`` (either as this option or as the global flag) the prompt
     is rendered and printed and nothing is called, written or appended.
     """
 
     pid = get_proper_pid(pid)
-    db_path, experiment_subdir_path = _resolve_experiment_db(pid, file)
+    db_path, experiment_subdir_path = _resolve_experiment_db(pid, file, required=False)
+
+    if suggest:
+        # Ahead of the no-database warning: a suggestion stores nothing either
+        # way, so the warning would be noise.
+        models_df, data_df, _mapping_df, _params_df, prompts_subdir = _load_experiment_inputs(
+            pid, experiment_subdir_path
+        )
+        cprint("Suggesting a random experiment to try:")
+        cprint(f"[bold yellow]{_suggest_try_command(pid, data_df, models_df, prompts_subdir)}[/bold yellow]\n")
+        return
+
+    _validate_params__try_names(prompt, profile, data_id)
+
+    # Said before anything is rendered or sent, so the run is not kept waiting on
+    # a provider before the user learns it will not be stored.
+    if db_path is None:
+        cprint(
+            f"[bold yellow]Warning:[/bold yellow] No experiment database found for project '{pid}' — "
+            f"this try will not be stored. Run `experiment generate --pid {pid}` first to keep tries "
+            "as history."
+        )
 
     prompt = prompt.strip()
     profile = profile.strip()
@@ -1533,10 +1647,11 @@ def try_one(
     row = _combination_row(data_id, prompt_id, key, param_row, rendered)
 
     if dry_run:
+        destination = f"and append it to '{os.path.basename(db_path)}'" if db_path else "without storing it"
         _print_try_header(model_name, provider_name)
         cprint(
             f"[bold yellow]Dry run:[/bold yellow] would run [bold yellow]{row['code']}[/bold yellow] "
-            f"and append it to '{os.path.basename(db_path)}'. \n\nRendered prompt:\n"
+            f"{destination}. \n\nRendered prompt:\n"
         )
         cprint(f'[green]{row["prompt"]}[/green]')
         return
@@ -1554,8 +1669,11 @@ def try_one(
             "Missing required packages for LLM calls. " "Install them with: pip install openai pydantic"
         ) from exc
 
-    # Opened before the call so a database this version cannot write to aborts
-    with ExperimentDAO(db_path) as dao:
+    with ExitStack() as stack:
+        # Opened before the call so a database this version cannot write to
+        # aborts. There may be none to open: the run then happens all the same.
+        dao = stack.enter_context(ExperimentDAO(db_path)) if db_path is not None else None
+
         cprint(f"Trying [bold yellow]{row['code']}[/bold yellow] against [bold yellow]{provider_name}[/bold yellow]")
 
         cprint("\nRendered prompt:\n")
@@ -1574,7 +1692,9 @@ def try_one(
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(build_response_payload(experiment, provider_name), f, indent=2, ensure_ascii=False)
 
-        try_id = dao.append_try_row(provider_name, {**row, **result_values(experiment, provider_name)})
+        try_id = None
+        if dao is not None:
+            try_id = dao.append_try_row(provider_name, {**row, **result_values(experiment, provider_name)})
 
     cprint("")
     _print_try_header(model_name, provider_name, experiment)
@@ -1584,6 +1704,13 @@ def try_one(
         cprint(f"[green]{experiment.response_text}[/green]")
     else:
         cprint(f"[bold red]{experiment.status}[/bold red]")
+
+    if try_id is None:
+        cprint(
+            f"\nTry not stored. Project has no experiment database: '{pid}'.\n"
+            f"Response saved as JSON to: [bold yellow]{os.path.basename(json_path)}[/bold yellow]"
+        )
+        return
 
     cprint(
         f"\nTry [bold green]{try_id}[/bold green] appended to "
