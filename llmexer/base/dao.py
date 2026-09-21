@@ -51,6 +51,7 @@ from llmexer.base.experiment import (
     COMMON_IDENTITY_COLUMNS,
     COMMON_PARAM_COLUMNS,
     HASH_COLUMNS,
+    IDENTITY_ID_COLUMNS,
     PARAMS_KEY_COLUMNS,
     PROVIDER_PARAM_COLUMNS,
     RESULT_COLUMNS,
@@ -78,6 +79,8 @@ COLUMN_TYPES: Dict[str, Any] = {
     # identity / prompt
     "ID": Integer,
     "code": String,
+    "data_id": String,
+    "prompt_id": String,
     "prompt": Text,
     "tokens_estimate": Integer,
     "original_data": Text,
@@ -349,6 +352,7 @@ class ExperimentDAO:
                     self._datafix_table = table
             self._require_params_tables()
             self._require_current_result_columns()
+            self._require_identity_id_columns()
 
     def _require_params_tables(self) -> None:
         """Reject databases written before parameters moved to their own table.
@@ -389,6 +393,30 @@ class ExperimentDAO:
             "'usage_tokens' column was replaced by the prompt/completion/total split -- "
             "re-run `experiment generate` for a database in the current format, or convert "
             "this one in place with scripts/migrate_usage_tokens.py."
+        )
+
+    def _require_identity_id_columns(self) -> None:
+        """Reject databases written before ``data_id`` / ``prompt_id`` existed.
+
+        There is no migration path, as for the two guards above: the values were
+        only ever welded into ``code``. Left unchecked, such a database would
+        keep opening and ``experiment update`` would append rows whose two new
+        values are dropped by the column filter in :meth:`_split_rows` -- half a
+        database populated, without a word.
+
+        The params tables are not checked: these are identity, not parameters.
+        """
+
+        tables = list(self._tables.values()) + list(self._try_tables.values())
+        stale = sorted(table.name for table in tables if any(name not in table.c for name in IDENTITY_ID_COLUMNS))
+        if not stale:
+            return
+        names = ", ".join(f"'{name}'" for name in stale)
+        raise LLMExerException(
+            f"Experiment database '{self.db_path}' predates the 'data_id' / 'prompt_id' "
+            f"columns: no such column on {names}. The two halves of 'code' are stored "
+            "as columns of their own now -- re-run `experiment generate` for a database in the "
+            "current format, or add and fill the columns in place with the SQL in migrations.md."
         )
 
     # ----------------------------------------------------------------- schema

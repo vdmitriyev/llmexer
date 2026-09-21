@@ -123,6 +123,8 @@ def test_generate_ollama_table_has_correct_columns(initialised_experiment, proje
     assert cols == [
         "ID",
         "code",
+        "data_id",
+        "prompt_id",
         "prompt",
         "tokens_estimate",
         "original_data",
@@ -157,6 +159,18 @@ def test_generate_ollama_table_has_correct_columns(initialised_experiment, proje
         "gemini_thinking_level",
     ):
         assert absent not in cols
+
+
+def test_generate_fills_the_two_id_columns(initialised_experiment, projects_dir):
+    """data_id and prompt_id come from mapping.csv, not from parsing `code` back."""
+    pid, exp_subdir = initialised_experiment
+
+    runner.invoke(app, ["experiment", "generate", "--pid", pid])
+
+    row = read_experiment_df(find_db(exp_subdir)).iloc[0]
+    assert row["data_id"] == "D01"
+    assert row["prompt_id"] == "prompt01"
+    assert row["code"].startswith(f"{row['data_id']}_{row['prompt_id']}_")
 
 
 def test_generate_code_field_format(initialised_experiment, projects_dir):

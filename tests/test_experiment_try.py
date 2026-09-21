@@ -195,6 +195,17 @@ def test_try_uses_the_selected_prompt(generated_experiment, mock_ollama):
     assert row["code"] == "D01_prompt02_llama3.3:latest_ollama-default"
 
 
+def test_try_row_carries_the_two_id_columns(generated_experiment, mock_ollama):
+    """A try is a generated row too: it stores data_id and prompt_id like one."""
+    pid, _exp_subdir, db_path = generated_experiment
+
+    assert _try(pid, "--data-id", "D02", "--prompt", "prompt02").exit_code == 0
+
+    row = read_try_rows(db_path, "ollama")[0]
+    assert row["data_id"] == "D02"
+    assert row["prompt_id"] == "prompt02"
+
+
 def test_try_appends_each_run(generated_experiment, mock_ollama):
     """A second try appends a second row to both tables, keeping the first."""
     pid, _exp_subdir, db_path = generated_experiment

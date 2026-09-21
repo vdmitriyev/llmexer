@@ -355,6 +355,19 @@ def test_update_without_database_raises(projects_dir, mock_no_dotenv):
     assert "experiment generate" in str(result.exception)
 
 
+def test_update_fills_the_two_id_columns_on_appended_rows(generated_experiment):
+    """An appended combination stores data_id / prompt_id like a generated one."""
+    pid, exp_subdir, db_path = generated_experiment
+
+    _write_mapping(exp_subdir, ("D01", "prompt01"), ("D02", "prompt02"))
+
+    assert runner.invoke(app, ["experiment", "update", "--pid", pid]).exit_code == 0
+
+    appended = read_experiment_df(db_path).set_index("code").loc["D02_prompt02_llama3.3:latest_ollama-default"]
+    assert appended["data_id"] == "D02"
+    assert appended["prompt_id"] == "prompt02"
+
+
 def test_update_rejects_legacy_database(generated_experiment):
     """A database predating the params table is rejected, as it is for `run`."""
     pid, exp_subdir, _db_path = generated_experiment

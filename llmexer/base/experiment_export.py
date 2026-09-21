@@ -15,6 +15,7 @@ import shlex
 from datetime import datetime
 
 from llmexer.base.dao import ExperimentDAO
+from llmexer.base.experiment import split_code
 from llmexer.base.html_export import (
     LONG_TEXT_PREVIEW,
     LONG_TEXT_THRESHOLD,
@@ -97,32 +98,6 @@ def format_timestamp(value) -> str:
         return str(value)
 
 
-def _split_code(code: str, model_name: str, profile_name: str) -> tuple:
-    """Recover ``(data_id, prompt_id)`` from a generated ``code``.
-
-    ``_combination_row`` builds it as
-    ``f"{data_id}_{prompt_id}_{model_name}_{profile_name}"``, so the known suffix
-    comes off first and what remains splits on its **first** underscore: a prompt
-    file may well be called ``screening_v2``, while the data IDs the tool
-    generates (``D01`` / ``P01`` / ``S01``) carry none.
-
-    Returns ``("", "")`` when the code does not have that shape, so the caller
-    can leave the cell empty instead of emitting a command for the wrong
-    combination.
-    """
-
-    suffix = f"_{model_name}_{profile_name}"
-    if not code or not model_name or not profile_name or not code.endswith(suffix):
-        return "", ""
-
-    head = code[: -len(suffix)]
-    data_id, separator, prompt_id = head.partition("_")
-    if not separator or not data_id or not prompt_id:
-        return "", ""
-
-    return data_id, prompt_id
-
-
 def build_try_command(row: dict, project_id: str, db_name: str) -> str:
     """The ``experiment try`` invocation that re-runs this row, or '' if unknown.
 
@@ -135,7 +110,12 @@ def build_try_command(row: dict, project_id: str, db_name: str) -> str:
     profile_name = str(row.get("profile_name") or "")
     provider = str(row.get("_provider") or row.get("provider_name") or "")
 
-    data_id, prompt_id = _split_code(str(row.get("code") or ""), model_name, profile_name)
+    # The columns are the source of truth; a row expanded from a `code` that did
+    # not parse carries neither, and falls back to reading the code again.
+    data_id = str(row.get("data_id") or "")
+    prompt_id = str(row.get("prompt_id") or "")
+    if not data_id or not prompt_id:
+        data_id, prompt_id = split_code(str(row.get("code") or ""), model_name, profile_name)
     if not data_id:
         return ""
 

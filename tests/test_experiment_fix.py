@@ -2,6 +2,7 @@
 
 import json
 import os
+import sqlite3
 
 import pytest
 from typer.testing import CliRunner
@@ -16,8 +17,9 @@ from llmexer.base.datafix import (
     needs_fix,
     rename_json_field,
 )
+from llmexer.base.experiment import split_code
 from llmexer.cli import app
-from llmexer.exceptions import UnexpectedCLIParamsException
+from llmexer.exceptions import LLMExerException, UnexpectedCLIParamsException
 from tests.db_helpers import OLLAMA_ROW, seed_db, try_table_names
 
 runner = CliRunner()
@@ -66,6 +68,9 @@ def _ran_row(row_id, code_suffix, response, **overrides):
         }
     )
     row.update(overrides)
+    # Keep the two id columns in step with whatever `code` the caller asked for:
+    # `generate` writes all three from the same pair of values.
+    row["data_id"], row["prompt_id"] = split_code(row["code"], row["model_name"], row["profile_name"])
     return row
 
 
@@ -513,3 +518,51 @@ def test_each_run_keeps_its_own_note(experiment_with_fields):
     notes = [(log["row_id"], log["change_note"]) for log in _logs(db_path)]
     assert (2, "repaired JSON") in notes
     assert (2, "renamed field 'relevant' -> 'isRelevant'") in notes
+
+
+# ------------------------------------------- the data_id / prompt_id columns
+
+
+def _drop_identity_id_columns(db_path):
+    """Turn a current database into one generated before data_id / prompt_id.
+
+    Rebuilding the tables by hand would only restate the schema; dropping the
+    two columns leaves everything else exactly as `generate` wrote it.
+    """
+    connection = sqlite3.connect(db_path)
+    names = [
+        name
+        for (name,) in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        if name.startswith(("experiment_", "try_experiment_"))
+    ]
+    for name in names:
+        connection.execute(f'ALTER TABLE "{name}" DROP COLUMN "data_id"')
+        connection.execute(f'ALTER TABLE "{name}" DROP COLUMN "prompt_id"')
+    connection.commit()
+    connection.close()
+    return names
+
+
+def test_a_legacy_database_is_refused(experiment_with_results):
+    """A database predating the two id columns is rejected, with no way back.
+
+    There is no migration: `code` alone is what such a database has, and the
+    user re-runs `experiment generate`.
+    """
+    _drop_identity_id_columns(experiment_with_results / _DB_NAME)
+
+    result = runner.invoke(app, ["experiment", "stats", "--pid", PID, "--file", _DB_NAME])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, LLMExerException)
+    message = str(result.exception)
+    assert "experiment_ollama" in message
+    assert "experiment generate" in message
+
+
+def test_a_current_database_carries_both_columns(experiment_with_results):
+    """The fix command's own fixtures are generated in the current format."""
+    with ExperimentDAO(str(experiment_with_results / _DB_NAME)) as dao:
+        row = dao.fetch_rows(id_experiment=2)[0]
+
+    assert (row["data_id"], row["prompt_id"]) == ("D02", "prompt01")

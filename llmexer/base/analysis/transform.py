@@ -58,6 +58,8 @@ CSV_ENCODING = "utf-8"
 EXPERIMENT_COLUMNS = (
     "ID",
     "code",
+    "data_id",
+    "prompt_id",
     "prompt",
     "original_data",
     "model_name",

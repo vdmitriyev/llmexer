@@ -66,11 +66,23 @@ _PARAM_COLUMNS = [
 COMMON_IDENTITY_COLUMNS = [
     "ID",
     "code",
+    "data_id",
+    "prompt_id",
     "prompt",
     "tokens_estimate",
     "original_data",
     "model_name",
     "provider_name",
+]
+
+# The two halves of ``code`` that identify what was asked, kept as columns of
+# their own so nothing downstream has to take the string apart again:
+# ``data_id`` is the ``ID`` of the ``data.csv`` row, ``prompt_id`` the stem of
+# the ``prompts/<name>.txt`` template. :func:`split_code` recovers them from a
+# ``code`` written before these columns existed.
+IDENTITY_ID_COLUMNS = [
+    "data_id",
+    "prompt_id",
 ]
 
 # Join key shared by BOTH tables: ``experiment_<provider>`` carries it so a row
@@ -125,6 +137,31 @@ HASH_COLUMNS = [
     "prompt_hash",
     "original_data_hash",
 ]
+
+
+def split_code(code: str, model_name: str, profile_name: str) -> tuple:
+    """Recover ``(data_id, prompt_id)`` from a generated ``code``.
+
+    ``_combination_row`` builds it as
+    ``f"{data_id}_{prompt_id}_{model_name}_{profile_name}"``, so the known suffix
+    comes off first and what remains splits on its **first** underscore: a prompt
+    file may well be called ``screening_v2``, while the data IDs the tool
+    generates (``D01`` / ``P01`` / ``S01``) carry none.
+
+    Returns ``("", "")`` when the code does not have that shape, so the caller
+    can leave the value empty instead of guessing at the wrong combination.
+    """
+
+    suffix = f"_{model_name}_{profile_name}"
+    if not code or not model_name or not profile_name or not code.endswith(suffix):
+        return "", ""
+
+    head = code[: -len(suffix)]
+    data_id, separator, prompt_id = head.partition("_")
+    if not separator or not data_id or not prompt_id:
+        return "", ""
+
+    return data_id, prompt_id
 
 
 def generate_project_id() -> str:

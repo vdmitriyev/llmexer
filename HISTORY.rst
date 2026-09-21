@@ -2,6 +2,13 @@
 History
 =======
 
+0.4.6 (2026-09-21)
+-------------------
+
+* **Breaking:** add ``data_id`` and ``prompt_id`` columns to every ``experiment_<provider>`` / ``try_experiment_<provider>`` table, written from ``mapping.csv`` by ``generate``, ``update`` and ``try``.
+* An older database without the two columns is refused on open: re-run ``experiment generate``, or add and fill the columns in place with the SQL in the new ``migrations.md``. Check `migrations.md` for details on the manual migration
+
+
 0.4.5 (2026-09-20)
 -------------------
 

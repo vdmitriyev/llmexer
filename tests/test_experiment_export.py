@@ -8,6 +8,7 @@ from unittest.mock import Mock
 import pytest
 from typer.testing import CliRunner
 
+from llmexer.base.experiment import split_code
 from llmexer.base.experiment_export import (
     CODE_PREVIEW_LENGTH,
     EXPORT_COLUMNS,
@@ -82,6 +83,9 @@ def _ran_row(row_id, code_suffix, response, **overrides):
         }
     )
     row.update(overrides)
+    # Keep the two id columns in step with whatever `code` the caller asked for:
+    # `generate` writes all three from the same pair of values.
+    row["data_id"], row["prompt_id"] = split_code(row["code"], row["model_name"], row["profile_name"])
     return row
 
 
@@ -439,6 +443,40 @@ def test_export_try_cell_is_empty_for_an_unparseable_code(projects_dir):
     html = (exp_subdir / _HTML_NAME).read_text(encoding="utf-8")
     assert "llmexer experiment try" not in html
     assert '<span class="cell-value"></span>' in _cell_of(html, "try")
+
+
+def test_build_try_command_prefers_the_stored_columns():
+    """The columns are the source of truth; `code` is only the fallback."""
+    row = {
+        "code": "D01_prompt01_llama3.3:latest_ollama-default",
+        "data_id": "D42",
+        "prompt_id": "screening_v2",
+        "model_name": "llama3.3:latest",
+        "profile_name": "ollama-default",
+        "_provider": "ollama",
+    }
+
+    command = build_try_command(row, "proj", "experiment_1.db")
+
+    assert "--data-id D42" in command
+    assert "--prompt screening_v2" in command
+
+
+def test_build_try_command_falls_back_to_the_code():
+    """A row the expand fix could not fill in is still read out of `code`."""
+    row = {
+        "code": "D01_prompt01_llama3.3:latest_ollama-default",
+        "data_id": None,
+        "prompt_id": None,
+        "model_name": "llama3.3:latest",
+        "profile_name": "ollama-default",
+        "_provider": "ollama",
+    }
+
+    command = build_try_command(row, "proj", "experiment_1.db")
+
+    assert "--data-id D01" in command
+    assert "--prompt prompt01" in command
 
 
 def test_build_try_command_quotes_values_that_need_it():

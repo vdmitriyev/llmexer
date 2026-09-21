@@ -8,6 +8,8 @@ from llmexer.base.dao import ExperimentDAO
 OLLAMA_ROW = {
     "ID": 1,
     "code": "D01_prompt01_llama3.3:latest_ollama-default",
+    "data_id": "D01",
+    "prompt_id": "prompt01",
     "prompt": "Hello world",
     "tokens_estimate": 2,
     "original_data": '{"ID":"D01"}',
@@ -26,6 +28,8 @@ OLLAMA_ROW = {
 OPENAI_ROW = {
     "ID": 2,
     "code": "D01_prompt01_gpt-4o_openai-default",
+    "data_id": "D01",
+    "prompt_id": "prompt01",
     "prompt": "Hello world",
     "tokens_estimate": 2,
     "original_data": '{"ID":"D01"}',
@@ -44,6 +48,8 @@ OPENAI_ROW = {
 LITELLM_ROW = {
     "ID": 3,
     "code": "D01_prompt01_gpt-oss:120b_litellm-default",
+    "data_id": "D01",
+    "prompt_id": "prompt01",
     "prompt": "Hello world",
     "tokens_estimate": 2,
     "original_data": '{"ID":"D01"}',

@@ -824,6 +824,8 @@ def _combination_row(
 
     return {
         "code": f"{data_id}_{prompt_id}_{model_name}_{profile_name}",
+        "data_id": data_id,
+        "prompt_id": prompt_id,
         "prompt": rendered_prompt,
         "tokens_estimate": len(rendered_prompt) // 4,
         "original_data": original_data_str,
