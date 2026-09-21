@@ -6,7 +6,7 @@ History
 -------------------
 
 * **Breaking:** add ``data_id`` and ``prompt_id`` columns to every ``experiment_<provider>`` / ``try_experiment_<provider>`` table, written from ``mapping.csv`` by ``generate``, ``update`` and ``try``.
-* An older database without the two columns is refused on open: re-run ``experiment generate``, or add and fill the columns in place with the SQL in the new ``migrations.md``. Check `migrations.md` for details on the manual migration
+* An older database without the two columns is refused on open: re-run ``experiment generate``, or add and fill the columns in place manually using SQL (check ```migrations.md``` for details on the manual migration)
 * **Breaking:** ``analysis add-agreement`` now scores Cohen's kappa per prompt and pairs profiles rather than provider/model/profile triples.
 * Add ``intermediate_values_dir`` to ``pairwise_cohen_kappa``, writing the rows behind each kappa to one CSV per prompt
 
