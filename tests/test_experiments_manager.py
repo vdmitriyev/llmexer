@@ -655,6 +655,24 @@ def test_cli_stats_models_table_names_the_provider(projects_dir):
     assert result.output.count("litellm") >= 2
 
 
+def test_cli_stats_shortens_token_counts(projects_dir):
+    """Tokens are shown through `format_number_console_ui`, not raw."""
+    pid = "stats-big-tokens"
+    exp_subdir = projects_dir / pid / "experiment"
+    os.makedirs(exp_subdir)
+    seed_db(
+        exp_subdir / _DB_NAME,
+        {"ollama": [dict(OLLAMA_ROW, ID=1, status="success", state="finished", total_tokens=2_500_000)]},
+    )
+
+    result = runner.invoke(app, ["experiment", "stats", "--pid", pid, "--file", _DB_NAME])
+
+    assert result.exit_code == 0, result.exception
+    # Once in the summary row, once on the model's row of the Models table.
+    assert result.output.count("2.50M") == 2
+    assert "2500000" not in result.output
+
+
 def test_cli_stats_defaults_to_single_db(projects_dir, mock_providers):
     """With no --file, stats auto-discovers the single database."""
     pid = "stats-default-exp"

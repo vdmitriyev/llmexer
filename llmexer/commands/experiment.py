@@ -16,6 +16,7 @@ import pandas as pd
 import typer
 from jinja2 import BaseLoader, DebugUndefined, Environment
 from rich.table import Table
+from rich.text import Text
 
 from llmexer.base.dao import (
     COST_TABLE,
@@ -56,6 +57,7 @@ from llmexer.base.experiment_export import (
 from llmexer.base.project import SortBy, format_created, project_row, scan_projects
 from llmexer.common import (
     ensure_directory_exists,
+    format_number_console_ui,
     get_experiment_subdir_path,
     get_project_directory_path,
     get_proper_pid,
@@ -2139,8 +2141,14 @@ def stats(
     summary = Table(title=f"Experiment stats — {pid}")
     summary.add_column("Metric", style="cyan")
     summary.add_column("Value", justify="right", style="green")
-    for key in ("total", "finished", "running", "errors", "total_tokens"):
+    for key in ("total", "finished", "running", "errors"):
         summary.add_row(key, str(data[key]))
+    # Token counts run into the millions, so they are shortened for the console.
+    summary.add_row("total_tokens", format_number_console_ui(data["total_tokens"]))
+
+    el_total_costs_ = Text(format_usd_console(data["total_costs"]), style="bold yellow")
+
+    summary.add_row("total_costs", el_total_costs_)
     console.print(summary)
 
     providers = data["providers"]
@@ -2177,7 +2185,7 @@ def stats(
                 str(agg["open"]),
                 _format_hms(agg["elapsed_seconds"]),
                 _format_hms(agg["avg_elapsed_seconds"]),
-                str(agg["tokens"]),
+                format_number_console_ui(agg["tokens"]),
             )
         console.print(table)
 

@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
+from llmexer.base.dao import ExperimentDAO
 from llmexer.cli import app
 from tests.db_helpers import (
     OPENROUTER_ROW,
@@ -300,6 +301,25 @@ def test_the_spend_is_reported(experiment_with_rows, paid_provider, monkeypatch)
     assert "cost_logs" in output
 
 
+def test_stats_sums_the_logged_costs(experiment_with_rows, paid_provider, monkeypatch):
+    """`experiment stats` reports total_costs as the sum of cost_logs.cost_usd."""
+    monkeypatch.setenv("PROVIDER_OPENROUTER_MAX_SPEND", _CAP)
+    pid, exp_subdir = experiment_with_rows
+
+    _run_with(pid)
+
+    with ExperimentDAO(find_db(exp_subdir)) as dao:
+        data = dao.stats()
+    assert data["total_costs"] == pytest.approx(3 * _COST_PER_CALL)
+
+    result = runner.invoke(app, ["experiment", "stats", "--pid", pid, "--file", _EXPERIMENT_DB_NAME])
+
+    assert result.exit_code == 0, result.output
+    # Rich draws a box, so compare on the cell values with the borders removed.
+    cells = " ".join(result.output.replace("\u2502", " ").split())
+    assert "total_costs $3.00" in cells
+
+
 def test_a_free_provider_writes_no_cost_log(experiment_with_rows, free_provider, monkeypatch):
     monkeypatch.setenv("PROVIDER_OPENROUTER_MAX_SPEND", "1000")
     pid, exp_subdir = experiment_with_rows
@@ -307,6 +327,17 @@ def test_a_free_provider_writes_no_cost_log(experiment_with_rows, free_provider,
     _run_with(pid)
 
     assert read_cost_logs(find_db(exp_subdir)) == []
+
+
+def test_stats_without_a_cost_log_reports_zero(experiment_with_rows, free_provider, monkeypatch):
+    """A database with no cost_logs table sums to 0.0 instead of failing."""
+    monkeypatch.setenv("PROVIDER_OPENROUTER_MAX_SPEND", "1000")
+    pid, exp_subdir = experiment_with_rows
+
+    _run_with(pid)
+
+    with ExperimentDAO(find_db(exp_subdir)) as dao:
+        assert dao.stats()["total_costs"] == 0.0
 
 
 def test_the_cost_reaches_the_response_json(experiment_with_rows, paid_provider, monkeypatch):

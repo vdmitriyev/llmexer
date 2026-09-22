@@ -194,3 +194,72 @@ def safe_filename_part(value: str, max_length: int = 40) -> str:
     cleaned = cleaned[:max_length].strip("-._")
 
     return cleaned or "unnamed"
+
+
+# Unit steps of ``format_number_console_ui``, smallest first.
+_CONSOLE_UI_UNITS = (
+    (1_000, "K"),
+    (1_000_000, "M"),
+    (1_000_000_000, "B"),
+    (1_000_000_000_000, "T"),
+)
+
+# Decimals kept above K, where the scale hides the most digits.
+_CONSOLE_UI_DECIMALS = 2
+
+
+def _console_ui_decimals(scaled: float, unit: str) -> int:
+    """How many decimals a scaled number keeps. M, B and T always keep two."""
+
+    if unit != "K":
+        return _CONSOLE_UI_DECIMALS
+
+    return 2 if scaled < 10 else 1
+
+
+def _console_ui_step(magnitude: float, index: int):
+    """Scale ``magnitude`` by one unit step.
+
+    Returns the rounded value, its unit and the decimals it was rounded to.
+    """
+
+    threshold, unit = _CONSOLE_UI_UNITS[index]
+    scaled = magnitude / threshold
+    decimals = _console_ui_decimals(scaled, unit)
+
+    return round(scaled, decimals), unit, decimals
+
+
+def format_number_console_ui(value) -> str:
+    """Format a count the way the console shows it: ``15400`` -> ``15.4K``.
+
+    Under 1,000 the raw number is shown. From 1,000 on it is scaled to K, M, B
+    or T. M, B and T always keep two decimals, so ``2500000`` is ``2.50M`` and
+    ``70000000000`` is ``70.00B``. K keeps three digits (``15.4K``) and drops
+    its decimals on a whole number (``1K``).
+    """
+
+    number = float(value)
+    sign = "-" if number < 0 else ""
+    magnitude = abs(number)
+
+    if magnitude < 1000:
+        raw = int(magnitude) if magnitude.is_integer() else magnitude
+        return f"{sign}{raw}"
+
+    # The largest step the number reaches: K for 15,400, M from a million on.
+    index = 0
+    for position, (threshold, _) in enumerate(_CONSOLE_UI_UNITS):
+        if magnitude >= threshold:
+            index = position
+
+    rounded, unit, decimals = _console_ui_step(magnitude, index)
+
+    # Rounding can carry into the next step: 999,999 reads as 1.00M, not 1000.0K.
+    if rounded >= 1000 and index + 1 < len(_CONSOLE_UI_UNITS):
+        rounded, unit, decimals = _console_ui_step(magnitude, index + 1)
+
+    if unit == "K" and rounded.is_integer():
+        return f"{sign}{int(rounded)}{unit}"
+
+    return f"{sign}{rounded:.{decimals}f}{unit}"

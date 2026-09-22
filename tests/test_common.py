@@ -2,7 +2,7 @@
 
 import pytest
 
-from llmexer.common import safe_filename_part
+from llmexer.common import format_number_console_ui, safe_filename_part
 
 
 @pytest.mark.parametrize(
@@ -58,3 +58,44 @@ def test_safe_filename_part_accepts_a_non_string():
     """The helper is used on CLI values, which may arrive as None or a number."""
     assert safe_filename_part(42) == "42"
     assert safe_filename_part(None) == "None"
+
+
+# ---------------------------------------------------------------------------
+# format_number_console_ui
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        # The four steps, as the console shows them.
+        (15_400, "15.4K"),
+        (2_500_000, "2.50M"),
+        (70_000_000_000, "70.00B"),
+        (15_000_000_000_000, "15.00T"),
+        # Under 1,000 the raw number is shown.
+        (0, "0"),
+        (1, "1"),
+        (999, "999"),
+        # M, B and T always keep two decimals, whole or not.
+        (1_234_567, "1.23M"),
+        (2_000_000, "2.00M"),
+        (15_420_000_000_000, "15.42T"),
+        (123_456_789_012_345, "123.46T"),
+        # K keeps three digits, and drops its decimals on a whole number.
+        (1_500, "1.50K"),
+        (1_000, "1K"),
+        # Rounding carries into the next step instead of reading as 1000.0K.
+        (999_999, "1.00M"),
+        # A negative count keeps its sign.
+        (-15_400, "-15.4K"),
+        (-2_500_000, "-2.50M"),
+    ],
+)
+def test_format_number_console_ui(value, expected):
+    assert format_number_console_ui(value) == expected
+
+
+def test_format_number_console_ui_accepts_a_float():
+    assert format_number_console_ui(42.0) == "42"
+    assert format_number_console_ui(15_400.0) == "15.4K"

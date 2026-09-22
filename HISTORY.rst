@@ -8,8 +8,7 @@ History
 * Add the ``openrouter`` LLM provider, reaching the `OpenRouter <https://openrouter.ai/>`_ gateway over its OpenAI-compatible endpoint. Only ``PROVIDER_OPENROUTER_KEY`` is required; the URL defaults to ``https://openrouter.ai/api/v1``. Adds the ``openrouter_provider_order`` and ``openrouter_reasoning_effort`` hyperparameters in the ``experiment init`` templates.
 * Add a spending cap to ``experiment run``: OpenRouter call costs are read from ``usage.cost``, logged to a new ``cost_logs`` table and counted against ``PROVIDER_OPENROUTER_MAX_SPEND`` (default 5.00 USD). Reaching it pauses the run gracefully, leaving the remaining rows pending. The tally is per run and resets when the command exits.
 * Edit the ``litellm`` example profile of the ``experiment init`` template: ``deepseek-ai/DeepSeek-V4-Flash-0731`` replaces ``minimax-m2.7:229b``.
-
-
+* Add a ``total_costs`` metric to ``experiment stats``: the sum of ``cost_logs.cost_usd``, shown as USD.
 0.4.6 (2026-09-21)
 -------------------
 

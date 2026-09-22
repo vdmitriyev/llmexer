@@ -867,6 +867,21 @@ class ExperimentDAO:
             stmt = select(self._cost_table).order_by(self._cost_table.c.id)
             return [dict(mapping) for mapping in conn.execute(stmt).mappings()]
 
+    def total_costs(self) -> float:
+        """Sum of ``cost_logs.cost_usd``. 0.0 when the table is absent or empty.
+
+        A database whose calls were all free, or that ran before the table
+        existed, simply has nothing to sum.
+        """
+
+        if self._cost_table is None:
+            return 0.0
+
+        with self.engine.connect() as conn:
+            stmt = select(func.sum(func.coalesce(self._cost_table.c.cost_usd, 0.0)))
+            total = conn.execute(stmt).scalar()
+        return float(total or 0.0)
+
     # ------------------------------------------------------------------ update
     def fetch_params_rows(self, provider: str) -> List[dict]:
         """Return every ``params_<provider>`` row, ordered by the key pair.
@@ -1022,6 +1037,7 @@ class ExperimentDAO:
             "running": running,
             "errors": errors,
             "total_tokens": total_tokens,
+            "total_costs": self.total_costs(),
             "providers": providers,
             "models": model_rows,
         }
