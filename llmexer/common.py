@@ -196,16 +196,13 @@ def safe_filename_part(value: str, max_length: int = 40) -> str:
     return cleaned or "unnamed"
 
 
-# Unit steps of ``format_number_console_ui``, smallest first.
+_CONSOLE_UI_DECIMALS = 2
 _CONSOLE_UI_UNITS = (
     (1_000, "K"),
     (1_000_000, "M"),
     (1_000_000_000, "B"),
     (1_000_000_000_000, "T"),
 )
-
-# Decimals kept above K, where the scale hides the most digits.
-_CONSOLE_UI_DECIMALS = 2
 
 
 def _console_ui_decimals(scaled: float, unit: str) -> int:
@@ -247,7 +244,6 @@ def format_number_console_ui(value) -> str:
         raw = int(magnitude) if magnitude.is_integer() else magnitude
         return f"{sign}{raw}"
 
-    # The largest step the number reaches: K for 15,400, M from a million on.
     index = 0
     for position, (threshold, _) in enumerate(_CONSOLE_UI_UNITS):
         if magnitude >= threshold:
