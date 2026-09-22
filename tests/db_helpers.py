@@ -66,6 +66,27 @@ LITELLM_ROW = {
 }
 
 
+OPENROUTER_ROW = {
+    "ID": 4,
+    "code": "D01_prompt01_google/gemini-3.8-flash_openrouter-gemini-default",
+    "data_id": "D01",
+    "prompt_id": "prompt01",
+    "prompt": "Hello world",
+    "tokens_estimate": 2,
+    "original_data": '{"ID":"D01"}',
+    "model_name": "google/gemini-3.8-flash",
+    "provider_name": "openrouter",
+    "prompt_hash": "abc123",
+    "original_data_hash": "def456",
+    "profile_name": "openrouter-gemini-default",
+    "temperature": 0.7,
+    "top_p": 1.0,
+    "max_tokens": 512,
+    "openrouter_provider_order": "Google",
+    "openrouter_reasoning_effort": "low",
+}
+
+
 def seed_db(db_path, rows_by_provider):
     """Create a database at ``db_path`` and insert rows per provider.
 
@@ -86,6 +107,13 @@ def read_experiment_df(db_path):
     if "_provider" in df.columns:
         df = df.drop(columns=["_provider"])
     return df
+
+
+def read_cost_logs(db_path):
+    """Return every ``cost_logs`` row, oldest first. Empty if the table is absent."""
+
+    with ExperimentDAO(str(db_path)) as dao:
+        return dao.fetch_cost_logs()
 
 
 def table_columns(db_path, provider):

@@ -316,7 +316,7 @@ def test_execute_keeps_full_raw_completion():
 def test_is_known_provider_accepts_built_ins():
     from llmexer.base.llm_provider import is_known_provider
 
-    for name in ("ollama", "vllm", "litellm", "openai", "gemini"):
+    for name in ("ollama", "vllm", "litellm", "openai", "gemini", "openrouter"):
         assert is_known_provider(name) is True
 
 

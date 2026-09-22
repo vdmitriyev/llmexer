@@ -22,6 +22,7 @@ from llmexer.base.llm_provider import (
     OllamaProvider,
     OpenAICompatibleProvider,
     OpenAIProvider,
+    OpenRouterProvider,
     ProviderAuth,
     VLLMProvider,
     _is_set,
@@ -141,6 +142,7 @@ def test_no_extra_body_when_the_provider_specific_columns_are_blank():
         (VLLMProvider, "vllm"),
         (GeminiProvider, "gemini"),
         (LiteLLMProvider, "litellm"),
+        (OpenRouterProvider, "openrouter"),
     ],
 )
 def test_unset_common_params_are_omitted_not_sent_as_null(provider_class, provider):
@@ -160,6 +162,7 @@ def test_unset_common_params_are_omitted_not_sent_as_null(provider_class, provid
         (VLLMProvider, "vllm"),
         (GeminiProvider, "gemini"),
         (LiteLLMProvider, "litellm"),
+        (OpenRouterProvider, "openrouter"),
     ],
 )
 def test_default_base_url_matches_the_url_map(provider_class, provider):
@@ -262,6 +265,7 @@ def test_execute_records_an_error_without_raising():
         (VLLMProvider, "vllm"),
         (GeminiProvider, "gemini"),
         (LiteLLMProvider, "litellm"),
+        (OpenRouterProvider, "openrouter"),
     ],
 )
 def test_a_truncated_answer_is_flagged_on_every_provider(provider_class, provider):

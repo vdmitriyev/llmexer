@@ -43,48 +43,79 @@ Create a `.env` file in the project root and add the settings you need. All of t
 PROJECT_ID=20260330-3a9adf70
 ```
 
-**LLM providers** — used by `experiment run` and `experiment try`:
-```env
-# Base URL of a provider
-PROVIDER_OLLAMA_URL=http://localhost:11434/v1
-PROVIDER_VLLM_URL=http://localhost:8000/v1
-
-# API key of a provider
-PROVIDER_OPENAI_KEY=sk-...
-```
-Name each variable `PROVIDER_<PROVIDER>_URL` or `PROVIDER_<PROVIDER>_KEY`, where `<PROVIDER>` is the provider name in uppercase: `OLLAMA`, `VLLM`, `LITELLM`, `OPENAI` or `GEMINI`.
-
-The `litellm` provider talks to a [LiteLLM](https://docs.litellm.ai/) proxy. It has no default URL and always needs a token, so set both. If either is missing, `experiment run` stops straight away with a clear message instead of failing later with an opaque `401`:
-```env
-PROVIDER_LITELLM_URL=https://your-litellm-proxy.example.org/v1
-PROVIDER_LITELLM_KEY=sk-...
-```
-
-**Literature search** — `search run` queries Semantic Scholar first, then OpenAlex if you set a key:
-```env
-OPENALEX_API_KEY=...
-# Cap on OpenAlex results per query (default 5000)
-MAX_OPEN_ALEX_RESPONSES=5000
-# Used for DOI downloads via Unpaywall, and as the OpenAlex polite-pool address
-UNPAYWALL_EMAIL=you@example.com
-```
-
-**PDF text extraction** — used by `papers extract --processor docling`:
-```env
-DOCLING_URL=http://localhost:5001/
-DOCLING_USER=myuser
-DOCLING_PASSWORD=mypassword
-```
-
-**Where files are stored** — by default the CLI writes into the current directory:
-```env
-LLMEXER_BASEDIR=my-projects
-```
-
 To use a different set of variables for one run, pass your own file:
 ```bash
 llmexer --env-file custom.env
 ```
+
+## 🪸 `.env` Configurations
+
+Every variable below is optional unless marked **required**.
+
+Provider category: **ollama**
+
+| NAME | Default | Explanation |
+|---|---|---|
+| `PROVIDER_OLLAMA_URL` | `http://localhost:11434/v1` | Base URL of the local Ollama server. |
+
+Provider category: **vllm**
+
+| NAME | Default | Explanation |
+|---|---|---|
+| `PROVIDER_VLLM_URL` | `http://localhost:8000/v1` | Base URL of the local vLLM server. |
+
+Provider category: **openai**
+
+| NAME | Default | Explanation |
+|---|---|---|
+| `PROVIDER_OPENAI_URL` | *none* — **required** | Route the `openai` provider from anywhere. |
+| `PROVIDER_OPENAI_KEY` | `na` placeholder | API key for the `openai` provider. |
+
+Provider category: **gemini**
+
+| NAME | Default | Explanation |
+|---|---|---|
+| `PROVIDER_GEMINI_URL` | `https://generativelanguage.googleapis.com/v1beta/openai/` | Gemini's OpenAI-compatible endpoint |
+| `PROVIDER_GEMINI_KEY` | `na` placeholder | API key for the `gemini` provider. |
+
+Provider category: **litellm**
+
+| NAME | Default | Explanation |
+|---|---|---|
+| `PROVIDER_LITELLM_URL` | *none* — **required** | [LiteLLM](https://docs.litellm.ai/) proxy endpoint |
+| `PROVIDER_LITELLM_KEY` | *none* — **required** | The proxy always authenticates|
+
+Provider category: **openrouter**
+
+| NAME | Default | Explanation |
+|---|---|---|
+| `PROVIDER_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | [OpenRouter](https://openrouter.ai/) gateway, which fronts many upstream providers behind one endpoint |
+| `PROVIDER_OPENROUTER_KEY` | *none* — **required** | The gateway always authenticates|
+| `PROVIDER_OPENROUTER_MAX_SPEND` | `5.0` (USD) | Ceiling on what **one** `experiment run` may spend through OpenRouter. Re-run will reset budget counter, so it caps per run/session, not cumulative.|
+
+Provider variables follow one naming rule: `PROVIDER_<PROVIDER-NAME>_URL` or `PROVIDER_<PROVIDER-NAME>_KEY` (`<PROVIDER-NAME>` is the provider in uppercase`OLLAMA`, `VLLM`, `LITELLM`, `OPENAI`, `GEMINI` or `OPENROUTER`).
+
+Category: **search**
+
+| NAME | Default | Explanation |
+|---|---|---|
+| `OPENALEX_API_KEY` | *unset* | Enables OpenAlex as a second source in `search run`, after Semantic Scholar. Unset, OpenAlex is skipped. |
+| `MAX_OPEN_ALEX_RESPONSES` | `5000` | Cap on the works processed per OpenAlex query. |
+| `UNPAYWALL_EMAIL` | `llmexer.openalex@local.local` | Contact address for DOI downloads via Unpaywall, and the OpenAlex polite-pool `mailto`. |
+
+Category: **docling**
+
+| NAME | Default | Explanation |
+|---|---|---|
+| `DOCLING_URL` | `http://localhost:5001/` | Remote `docling-serve` used by `papers extract --processor docling`. |
+| `DOCLING_USER` | *empty* | Username for the docling server. |
+| `DOCLING_PASSWORD` | *empty* | Password for the docling server. |
+
+Category: **CLI**
+
+| NAME | Default | Explanation |
+|---|---|---|
+| `LLMEXER_BASEDIR` | the current directory | Where the CLI writes `.projects/`, `temp/` and `llmexer.log`. |
 
 ## 🚀 Getting Started
 

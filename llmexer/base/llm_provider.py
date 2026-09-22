@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple
 
+from llmexer.base.budget import as_cost
 from llmexer.base.experiment import FILE_LLM_PARAMS, FILE_LLMS_FOR_EXPERIMENT
 from llmexer.common import get_user_agent
 from llmexer.configs import logger
@@ -19,6 +20,7 @@ URL_MAP: Dict[str, Optional[str]] = {
     "openai": None,
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
     "litellm": None,
+    "openrouter": "https://openrouter.ai/api/v1",
 }
 
 
@@ -150,6 +152,9 @@ class ProviderResponse:
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
     total_tokens: Optional[int] = None
+    # USD charged for this call. None when the provider reports no cost at all,
+    # which is every provider but the paid gateways.
+    cost_usd: Optional[float] = None
     raw: Optional[Any] = field(default=None, repr=False)
 
 
@@ -162,6 +167,7 @@ class CallerStats:
     completion_tokens: Optional[int] = None
     total_tokens: int = 0
     elapsed_seconds: float = 0.0
+    cost_usd: float = 0.0
 
 
 @dataclass
@@ -223,6 +229,15 @@ class OpenAICompatibleProvider(LLMProviderBase):
         a misconfiguration aborts the run instead of being recorded as a per-row
         error. Providers reachable on their default URL need nothing.
         """
+
+    def _extract_cost(self, completion: Any) -> Optional[float]:
+        """USD charged for this call, or ``None`` when the provider reports none.
+
+        Overridden only by providers that bill per call and say so in their
+        response; a local or self-hosted endpoint has no cost to report.
+        """
+
+        return None
 
     def build_session(self) -> None:
         from openai import OpenAI  # lazy import — openai is an optional dependency
@@ -296,6 +311,7 @@ class OpenAICompatibleProvider(LLMProviderBase):
                 prompt_tokens=getattr(usage, "prompt_tokens", None),
                 completion_tokens=getattr(usage, "completion_tokens", None),
                 total_tokens=getattr(usage, "total_tokens", None),
+                cost_usd=self._extract_cost(completion),
                 raw=completion,
             )
         except Exception as exc:
@@ -315,6 +331,8 @@ class OpenAICompatibleProvider(LLMProviderBase):
                     value = getattr(self.response, name)
                     if value is not None:
                         setattr(self.stats, name, (getattr(self.stats, name) or 0) + value)
+                if self.response.cost_usd is not None:
+                    self.stats.cost_usd += self.response.cost_usd
         return self.response
 
 
@@ -434,4 +452,81 @@ class LiteLLMProvider(OpenAICompatibleProvider):
             }.items()
             if _is_set(v)
         }
+        return self._make_request(prompt, row, params, extra_body)
+
+
+@dataclass
+class OpenRouterProvider(OpenAICompatibleProvider):
+    """Models reached through the OpenRouter gateway.
+
+    OpenRouter fronts many upstream providers behind one OpenAI-compatible
+    endpoint, so a model carries its vendor (``google/gemini-3.8-flash``). The
+    endpoint is a single public host and has a default URL, but the gateway
+    always authenticates, so the token is checked up front by
+    :meth:`validate_config` instead of surfacing later as an opaque ``401``.
+    """
+
+    base_url: Optional[str] = URL_MAP["openrouter"]
+
+    def _extract_cost(self, completion: Any) -> Optional[float]:
+        """USD charged for this call, as OpenRouter reports it.
+
+        The amount arrives in the response body, on ``usage.cost``. A response
+        header is checked first so that an ``X-OpenRouter-Cost`` would win the
+        moment the gateway starts sending one; today it sends none, and the
+        parsed SDK model carries no headers anyway.
+
+        A call whose cost cannot be read is logged, not swallowed: the spend cap
+        can only hold back what it can measure, so a silent ``None`` here would
+        quietly turn the cap off.
+        """
+
+        headers = getattr(completion, "headers", None)
+        getter = getattr(headers, "get", None)
+        if callable(getter):
+            header_cost = as_cost(getter("X-OpenRouter-Cost"))
+            if header_cost is not None:
+                return header_cost
+
+        usage = getattr(completion, "usage", None)
+        cost = as_cost(getattr(usage, "cost", None))
+        if cost is None:
+            logger.warning(
+                "No usable cost on the %s response; it counts as 0.00 USD against the spend cap.",
+                self.provider,
+            )
+        return cost
+
+    def validate_config(self) -> None:
+        """Ensure the API token is configured.
+
+        Raises:
+            ProviderConfigException: if the API token is missing.
+        """
+
+        if not self.auth.api_key or self.auth.api_key == "na":
+            raise ProviderConfigException(
+                f"Provider '{self.provider}' requires an API token. "
+                f"Set PROVIDER_{self.provider.upper()}_KEY in your .env."
+            )
+
+    def build_request(self, prompt: str, row: dict) -> ProviderRequest:
+        params = self._base_params(row)
+        if _is_set(row.get("max_tokens")):
+            params["max_tokens"] = row["max_tokens"]
+
+        extra_body: Dict[str, Any] = {}
+
+        provider_order = row.get("openrouter_provider_order")
+        if _is_set(provider_order):
+            # A comma-separated cell: "Google,DeepInfra" -> ["Google", "DeepInfra"].
+            names = str(provider_order).split(",")
+            upstreams = [name.strip() for name in names if name.strip()]
+            if upstreams:
+                extra_body["provider"] = {"order": upstreams}
+
+        reasoning_effort = row.get("openrouter_reasoning_effort")
+        if _is_set(reasoning_effort):
+            extra_body["reasoning"] = {"effort": reasoning_effort}
+
         return self._make_request(prompt, row, params, extra_body)

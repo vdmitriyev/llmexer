@@ -18,6 +18,7 @@ from jinja2 import BaseLoader, DebugUndefined, Environment
 from rich.table import Table
 
 from llmexer.base.dao import (
+    COST_TABLE,
     DATAFIX_TABLE,
     ExperimentDAO,
     _clean_value,
@@ -449,6 +450,7 @@ def init(
         f.write("ollama;gemma4:31b;ollama-gemma4-default;local model\n")
         f.write("ollama;phi4:14b;ollama-phi4-creative;local model\n")
         f.write("litellm;gemma4:31b;litellm-gemma4-default;local model\n")
+        f.write("openrouter;google/gemini-3.8-flash;openrouter-gemini-default;via the OpenRouter gateway\n")
 
     # data.csv
     data_path = os.path.join(experiment_subdir_path, FILE_DATA)
@@ -475,15 +477,16 @@ def init(
         f.write(
             "provider;model_name;profile_name;temperature;top_p;max_tokens;"
             "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level;"
-            "litellm_min_p;litellm_best_of\n"
+            "litellm_min_p;litellm_best_of;openrouter_provider_order;openrouter_reasoning_effort\n"
         )
-        f.write("ollama;gemma4:31b;ollama-gemma4-default;0.7;1.0;512;4096;1.1;;;;;;\n")
-        f.write("ollama;phi4:14b;ollama-phi4-creative;1.2;0.95;512;4096;1.0;;;;;;\n")
-        f.write("openai;gpt-4o;openai-default;0.7;1.0;512;;;;;42;;;\n")
-        f.write("vllm;meta-llama/Llama-3-8b;vllm-default;0.7;0.9;512;;;0.05;1;;;;\n")
-        f.write("gemini;gemini-2.0-flash;gemini-default;0.7;1.0;512;;;;;;standard;;\n")
-        f.write("litellm;minimax-m2.7:229b;litellm-minimax-m2-default;0.7;0.9;4096;;;;;;;0.05;1\n")
-        f.write("litellm;gemma4:31b;litellm-gemma4-default;0.7;0.9;512;;;;;;;;1\n")
+        f.write("ollama;gemma4:31b;ollama-gemma4-default;0.7;1.0;512;4096;1.1;;;;;;;;\n")
+        f.write("ollama;phi4:14b;ollama-phi4-creative;1.2;0.95;512;4096;1.0;;;;;;;;\n")
+        f.write("openai;gpt-4o;openai-default;0.7;1.0;512;;;;;42;;;;;\n")
+        f.write("vllm;meta-llama/Llama-3-8b;vllm-default;0.7;0.9;512;;;0.05;1;;;;;;\n")
+        f.write("gemini;gemini-2.0-flash;gemini-default;0.7;1.0;512;;;;;;standard;;;;\n")
+        f.write("litellm;deepseek-ai/DeepSeek-V4-Flash-0731;litellm-minimax-m2-default;0.7;0.9;4096;;;;;;;0.05;1;;\n")
+        f.write("litellm;gemma4:31b;litellm-gemma4-default;0.7;0.9;512;;;;;;;;1;;\n")
+        f.write("openrouter;google/gemini-3.8-flash;openrouter-gemini-default;0.7;1.0;512;;;;;;;;;Google;low\n")
 
     cprint(f"Initialize project with standard configurations: [bold yellow]{pid}[/bold yellow]")
 
@@ -1208,6 +1211,55 @@ def _report_no_rows_to_run(active_filters: list[str], code: str | None) -> None:
     cprint("[bold yellow]Warning:[/bold yellow] Experiment database is empty — " "nothing to run.")
 
 
+def format_usd_console(amount: float) -> str:
+    """Format a USD amount for the console.
+
+    To the cent, which is the useful precision for a cap and a run total. An
+    amount below a cent keeps four decimals instead: a single call costs a
+    fraction of a cent, and rounding a real figure down to ``$0.00`` reads as
+    "nothing was spent".
+    """
+
+    if 0 < amount < 0.01:
+        return f"${amount:.4f}"
+    return f"${amount:.2f}"
+
+
+def _cost_entry(row: dict, provider: str, cost_usd: float) -> dict:
+    """Build one ``cost_logs`` row for a call that reported a cost."""
+
+    return {
+        "table_name": table_name_for(provider),
+        "row_id": row["ID"],
+        "code": row.get("code"),
+        "data_id": row.get("data_id"),
+        "prompt_id": row.get("prompt_id"),
+        "params_code": row.get("params_code"),
+        "profile_name": row.get("profile_name"),
+        "cost_usd": cost_usd,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _report_budget_pause(budget, not_run: int) -> None:
+    """Report a run stopped by the spending cap, if that is what happened.
+
+    Says what was actually spent rather than the cap: a call's cost is only known
+    once it has returned, so the total can exceed the cap by the calls that were
+    already in flight. Silent when the cap was reached on the very last row, since
+    nothing was then left to pause.
+    """
+
+    if not_run <= 0 or not budget.is_exhausted():
+        return
+
+    cprint(
+        f"[bold yellow]Budget reached:[/bold yellow] spent {format_usd_console(budget.spent_usd)} "
+        f"of the {format_usd_console(budget.limit_usd)} cap."
+    )
+    cprint(f"Paused with [bold yellow]{not_run}[/bold yellow] row(s) not run. " "Re-run the same command to continue.")
+
+
 def _partition_rows_to_run(rows: list[dict], total_runs: int) -> tuple[list[dict], list[str]]:
     """Split fetched rows into the ones ``run`` still has to call, and their labels.
 
@@ -1299,6 +1351,7 @@ def run(
     # Lazy import to keep openai optional
     try:
         import llmexer.base.llm_provider  # noqa: F401  (validates LLM deps importable)
+        from llmexer.base.budget import SessionBudget, resolve_max_spend
         from llmexer.base.llm_manager import (
             build_response_payload,
             result_values,
@@ -1332,6 +1385,11 @@ def run(
         if parallel_calls > 1:
             cprint(f"Parallel LLM calls: [bold yellow]{parallel_calls}[/bold yellow]")
 
+        # Spent only for as long as this command runs: the tally starts at zero
+        # every time, and a paused run resumes with the full cap available again.
+        budget = SessionBudget(limit_usd=resolve_max_spend())
+        cprint(f"Spending cap for this run: [bold yellow]{format_usd_console(budget.limit_usd)}[/bold yellow]")
+
         pending, prefixes = _partition_rows_to_run(rows, total_runs)
 
         def on_start(position: int, _row: dict) -> None:
@@ -1355,6 +1413,10 @@ def run(
 
             dao.update_result(provider, row["ID"], result_values(experiment, provider))
 
+            if experiment.cost_usd is not None:
+                budget.add(experiment.cost_usd)
+                dao.append_cost_log(_cost_entry(row, provider, experiment.cost_usd))
+
             status = experiment.status
             status_color = "green" if status == "success" else "red"
             run_status_info = f"[bold {status_color}]{status} [/bold {status_color}]"
@@ -1365,7 +1427,16 @@ def run(
             persist=persist,
             parallel_calls=parallel_calls,
             on_start=on_start,
+            should_run=lambda _position, _row: not budget.is_exhausted(),
         )
+
+        _report_budget_pause(budget, len(pending) - ran)
+
+        if budget.spent_usd > 0:
+            cprint(
+                f"Spent [bold green]{format_usd_console(budget.spent_usd)}[/bold green] on this run; "
+                f"every paid call is logged in [bold yellow]{COST_TABLE}[/bold yellow]."
+            )
 
         if not settings.dry_run:
             cprint(

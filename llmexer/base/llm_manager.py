@@ -50,12 +50,12 @@ class Experiment:
     status: Optional[str] = None
     state: Optional[str] = None
     call_count: int = 0
-    # Left None when the provider reports no split, so an unknown prompt cost is
-    # never rounded down to zero.
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
     total_tokens: int = 0
     elapsed_seconds: float = 0.0
+    # USD charged for the call. None when the provider reports no cost
+    cost_usd: Optional[float] = None
     timestamp: Optional[str] = None
 
     # The full serialized backend response (all provider fields), if available.
@@ -162,6 +162,7 @@ def build_response_payload(experiment: Experiment, provider: str) -> Dict[str, A
         "prompt_tokens": experiment.prompt_tokens,
         "completion_tokens": experiment.completion_tokens,
         "total_tokens": experiment.total_tokens,
+        "cost_usd": experiment.cost_usd,
         "status": experiment.status,
         "timestamp": experiment.timestamp,
         "raw_response": experiment.raw_response,
@@ -197,6 +198,7 @@ PROVIDER_CLASS_NAMES: Dict[str, str] = {
     "vllm": "VLLMProvider",
     "gemini": "GeminiProvider",
     "litellm": "LiteLLMProvider",
+    "openrouter": "OpenRouterProvider",
 }
 
 
@@ -214,6 +216,7 @@ def _apply_provider_result(experiment: Experiment, caller: Any, resp: Any) -> No
     experiment.completion_tokens = getattr(stats, "completion_tokens", None) or resp.completion_tokens
     experiment.total_tokens = getattr(stats, "total_tokens", resp.total_tokens or 0)
     experiment.elapsed_seconds = getattr(stats, "elapsed_seconds", 0.0)
+    experiment.cost_usd = resp.cost_usd
     experiment.timestamp = datetime.now(timezone.utc).isoformat()
 
 
@@ -265,17 +268,24 @@ def run_experiment_row(row: Dict[str, Any]) -> Experiment:
 PersistCallback = Callable[[int, Dict[str, Any], Experiment], None]
 # Type of the callback invoked just before a row's call, off the write lock.
 StartCallback = Callable[[int, Dict[str, Any]], None]
+# Type of the gate consulted before each row. Returning False stops the run:
+# the row is left untouched, so it stays pending and a later run picks it up.
+ShouldRunCallback = Callable[[int, Dict[str, Any]], bool]
 
 
 def _run_rows_sequentially(
     rows: Sequence[Dict[str, Any]],
     persist: PersistCallback,
     on_start: Optional[StartCallback],
+    should_run: Optional[ShouldRunCallback] = None,
 ) -> int:
     """Run every row in order on the calling thread. No pool, no lock."""
 
     persisted = 0
     for position, row in enumerate(rows):
+        # Checked before on_start, so a row that is not run is not announced either.
+        if should_run is not None and not should_run(position, row):
+            break
         if on_start is not None:
             on_start(position, row)
         persist(position, row, run_experiment_row(row))
@@ -288,6 +298,7 @@ def run_experiment_rows(
     persist: PersistCallback,
     parallel_calls: int = 1,
     on_start: Optional[StartCallback] = None,
+    should_run: Optional[ShouldRunCallback] = None,
 ) -> int:
     """Run generated rows through :func:`run_experiment_row`, at most N at a time.
 
@@ -305,9 +316,15 @@ def run_experiment_rows(
             the rows sequentially on the calling thread, with no pool and no lock.
         on_start: optional ``on_start(position, row)``, called just before a row's
             call and *not* under the lock.
+        should_run: optional gate consulted before each row, ahead of ``on_start``.
+            Returning ``False`` stops the run: that row and the ones behind it are
+            left untouched, so they stay pending for a later run. Already queued
+            workers still wake, but each returns without calling.
 
     Returns:
-        int: the number of rows whose result was persisted.
+        int: the number of rows whose result was persisted. Counted where
+            ``persist`` is called, so a row stopped by ``should_run`` is never
+            counted however the run is executed.
 
     Raises:
         Exception: the first exception raised by a row is re-raised after the
@@ -319,18 +336,25 @@ def run_experiment_rows(
     """
 
     if parallel_calls <= 1:
-        return _run_rows_sequentially(rows, persist, on_start)
+        return _run_rows_sequentially(rows, persist, on_start, should_run)
 
     write_lock = threading.Lock()
     persisted = 0
 
     def work(position: int, row: Dict[str, Any]) -> None:
+        nonlocal persisted
+        # Checked before on_start, so a row that is not run is not announced either.
+        if should_run is not None and not should_run(position, row):
+            return
         if on_start is not None:
             on_start(position, row)
         experiment = run_experiment_row(row)
         # Serialised on purpose: the calls overlap, the result writing does not.
         with write_lock:
             persist(position, row, experiment)
+            # Counted here rather than per finished future: a row stopped by
+            # should_run returns without persisting and must not be counted.
+            persisted += 1
 
     executor = ThreadPoolExecutor(max_workers=parallel_calls)
     try:
@@ -338,7 +362,6 @@ def run_experiment_rows(
         for future in as_completed(futures):
             # Re-raises the row's exception here, on the calling thread.
             future.result()
-            persisted += 1
     finally:
         # On the way out -- normally or through an exception -- drop whatever has
         # not started yet. Calls already in flight are paid for and left to finish.

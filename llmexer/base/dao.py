@@ -63,13 +63,12 @@ logger = get_logger()
 
 TABLE_PREFIX = "experiment_"
 PARAMS_TABLE_PREFIX = "params_"
-# `experiment try` records single ad-hoc combinations in their own table family,
-# so a try is never mistaken for a generated row by run/stats/update.
+# `experiment try` records single ad-hoc combinations in their own table family
 TRY_TABLE_PREFIX = "try_experiment_"
 TRY_PARAMS_TABLE_PREFIX = "try_param_"
-# `experiment fix` records every value it repairs here, one row per change, so
-# an edited answer can always be traced back to what the model actually said.
+# `experiment fix` records every value it repairs in table
 DATAFIX_TABLE = "datafix_logs"
+COST_TABLE = "cost_logs"
 DB_PREFIX = "experiment"
 DB_SUFFIX = ".db"
 
@@ -106,6 +105,10 @@ COLUMN_TYPES: Dict[str, Any] = {
     "gemini_thinking_level": String,
     "litellm_min_p": Float,
     "litellm_best_of": Integer,
+    "openrouter_provider_order": String,
+    "openrouter_reasoning_effort": String,
+    # cost_logs
+    "cost_usd": Float,
     # results
     "response_text": Text,
     "status": String,
@@ -127,7 +130,7 @@ COLUMN_TYPES: Dict[str, Any] = {
     "created_at": String,
 }
 
-# Columns of ``datafix_logs``, in order.
+# Columns of ``datafix_logs`` table
 DATAFIX_COLUMNS = [
     "id",
     "table_name",
@@ -138,6 +141,20 @@ DATAFIX_COLUMNS = [
     "old_value",
     "new_value",
     "change_note",
+    "created_at",
+]
+
+# Columns of ``cost_logs`` table
+COST_COLUMNS = [
+    "id",
+    "table_name",
+    "row_id",
+    "code",
+    "data_id",
+    "prompt_id",
+    "params_code",
+    "profile_name",
+    "cost_usd",
     "created_at",
 ]
 
@@ -328,6 +345,7 @@ class ExperimentDAO:
         self._try_tables: Dict[str, Table] = {}
         self._try_params_tables: Dict[str, Table] = {}
         self._datafix_table: Optional[Table] = None
+        self._cost_table: Optional[Table] = None
 
         if not create and not os.path.exists(db_path):
             raise LLMExerException(f"Experiment database not found: '{db_path}'.")
@@ -350,6 +368,8 @@ class ExperimentDAO:
                     self._tables[provider_from_table_name(table.name)] = table
                 elif table.name == DATAFIX_TABLE:
                     self._datafix_table = table
+                elif table.name == COST_TABLE:
+                    self._cost_table = table
             self._require_params_tables()
             self._require_current_result_columns()
             self._require_identity_id_columns()
@@ -805,6 +825,47 @@ class ExperimentDAO:
         with self.engine.connect() as conn:
             value = conn.execute(select(func.max(self._datafix_table.c.id))).scalar()
         return int(value) if value is not None else 0
+
+    # -------------------------------------------------------------------- cost
+    def _build_cost_table(self) -> Table:
+        return Table(
+            COST_TABLE,
+            self.metadata,
+            *[Column(name, COLUMN_TYPES[name], primary_key=(name == "id")) for name in COST_COLUMNS],
+        )
+
+    def ensure_cost_table(self) -> Table:
+        """Register and create ``cost_logs``; return it.
+
+        Idempotent, so a database generated before this table existed simply
+        gains it the first time a cost is written - there is no migration.
+        """
+
+        if self._cost_table is None:
+            self._cost_table = self._build_cost_table()
+        self.create_tables()
+        return self._cost_table
+
+    def append_cost_log(self, entry: dict) -> int:
+        """Append one call's cost to ``cost_logs``; return its new ``id``."""
+
+        table = self.ensure_cost_table()
+        payload = {k: _clean_value(v) for k, v in entry.items() if k in set(table.c.keys()) and k != "id"}
+
+        with self.engine.begin() as conn:
+            result = conn.execute(insert(table), payload)
+
+        return result.inserted_primary_key[0]
+
+    def fetch_cost_logs(self) -> List[dict]:
+        """Return every ``cost_logs`` row, oldest first. Empty if the table is absent."""
+
+        if self._cost_table is None:
+            return []
+
+        with self.engine.connect() as conn:
+            stmt = select(self._cost_table).order_by(self._cost_table.c.id)
+            return [dict(mapping) for mapping in conn.execute(stmt).mappings()]
 
     # ------------------------------------------------------------------ update
     def fetch_params_rows(self, provider: str) -> List[dict]:

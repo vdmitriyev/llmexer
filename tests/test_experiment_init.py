@@ -243,11 +243,12 @@ def test_init_creates_llm_params_csv(experiment, projects_dir):
     assert lines[0] == (
         "provider;model_name;profile_name;temperature;top_p;max_tokens;"
         "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level;"
-        "litellm_min_p;litellm_best_of"
+        "litellm_min_p;litellm_best_of;openrouter_provider_order;openrouter_reasoning_effort"
     )
     assert len(lines) >= 2
     assert any("ollama" in line for line in lines[1:])
     assert any(line.startswith("litellm;") for line in lines[1:])
+    assert any(line.startswith("openrouter;") for line in lines[1:])
     # Every example row must have exactly as many fields as the header,
     # otherwise values silently land in the wrong (provider's) column.
     expected_fields = len(lines[0].split(";"))
@@ -293,6 +294,8 @@ def test_init_llm_params_values_land_in_their_own_columns(experiment, projects_d
     assert df.loc["gemini-default", "gemini_thinking_level"] == "standard"
     assert df.loc["litellm-minimax-m2-default", "litellm_min_p"] == 0.05
     assert df.loc["litellm-minimax-m2-default", "litellm_best_of"] == 1
+    assert df.loc["openrouter-gemini-default", "openrouter_provider_order"] == "Google"
+    assert df.loc["openrouter-gemini-default", "openrouter_reasoning_effort"] == "low"
 
     # A provider's values must not bleed into another provider's columns: those
     # are silently ignored at run time, so only this check catches a stray value

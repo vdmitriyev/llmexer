@@ -46,6 +46,8 @@ _PARAM_COLUMNS = [
     "gemini_thinking_level",
     "litellm_min_p",
     "litellm_best_of",
+    "openrouter_provider_order",
+    "openrouter_reasoning_effort",
 ]
 
 # --------------------------------------------------------------------- SQLite
@@ -112,6 +114,7 @@ PROVIDER_PARAM_COLUMNS = {
     "openai": ["openai_seed"],
     "gemini": ["gemini_thinking_level"],
     "litellm": ["litellm_min_p", "litellm_best_of"],
+    "openrouter": ["openrouter_provider_order", "openrouter_reasoning_effort"],
 }
 
 # Result columns written back once a row has been run. ``response_json`` stores

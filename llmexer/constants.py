@@ -34,6 +34,12 @@ PROJECTS_PATH = os.path.join(BASEDIR, PROJECTS_DIR)
 # Overridable at runtime via the MAX_OPEN_ALEX_RESPONSES environment variable.
 DEFAULT_MAX_OPENALEX_RESPONSES = 5000
 
+# Default ceiling on what one `experiment run` may spend through OpenRouter, in USD.
+# Overridable at runtime via the PROVIDER_OPENROUTER_MAX_SPEND environment variable.
+# The tally lives in memory for the duration of a single run: when the command
+# exits, the amount spent resets to zero and the next run starts from the full cap.
+DEFAULT_OPENROUTER_MAX_SPEND_USD = 5.0
+
 DEFAULT_DOCLING_URL = "http://localhost:5001/"
 # DEFAULT_DOCLING_USER = "docling"
 # DEFAULT_DOCLING_PASSWORD = "docling"
