@@ -8,6 +8,17 @@
 
 > 🪄 The idea behind the tool: `everything` is a `file`. Projects, experiments, searches, and configs are all stored as files. The CLI edits them for you, but you can also edit them manually. Anything could be changed or viewed via the files—a model name, a search string, a new PDF, or the generated SQLite database.
 
+## 💎 Core features
+
+- **Easy start**: `llmexer` is a Python package that can be installed and run anywhere.
+- **Transparency**: each project keeps related files in one folder (e.g., experiments, papers, searches, analysis, etc.) using plain formats (CSV, text, SQLite). Add these files to git and track progress and retain history.
+- **Literature search and papers**: search Semantic Scholar and OpenAlex, download papers by DOI, extract text from PDFs as markdown.
+- **Experiment design**: combine data with custom and configurable LLM prompts, LLM models and LLM parameter into one reproducible experiment.
+- **Multiple LLM providers**: run the same experiment using different LLMs (supports: `ollama`, `vLLM`, `LiteLLM`, `OpenAI`, and `OpenRouter`).
+- **Controlled runs**: run experiment in parallel to save time, test prompts using `experiment try` to find a proper prompt, add new LLM configurations ad-hoc.
+- **Results and export**: view stats per model and provider, export search and experiment results to HTML reports for ad-hoc analysis.
+- **Analysis**: generate Jupyter notebooks using pre-defined templates. It help with analysis of search and LLM experiments (e.g., measure agreement between LLMs with Cohen's kappa).
+
 ## ✨ Early `beta` warning
 
 The package is in early beta. Breaking changes may arrive at short notice.

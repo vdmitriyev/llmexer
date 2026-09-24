@@ -2,7 +2,7 @@
 History
 =======
 
-0.4.7 (2026-09-22)
+0.4.7 (2026-09-24)
 -------------------
 
 * Add the ``openrouter`` LLM provider, reaching the `OpenRouter <https://openrouter.ai/>`_ gateway over its OpenAI-compatible endpoint. Only ``PROVIDER_OPENROUTER_KEY`` is required; the URL defaults to ``https://openrouter.ai/api/v1``. Adds the ``openrouter_provider_order`` and ``openrouter_reasoning_effort`` hyperparameters in the ``experiment init`` templates.
