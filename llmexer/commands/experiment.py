@@ -15,6 +15,7 @@ from typing import Any
 import pandas as pd
 import typer
 from jinja2 import BaseLoader, DebugUndefined, Environment
+from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
@@ -34,6 +35,7 @@ from llmexer.base.dao import (
 from llmexer.base.datafix import fixed_value, needs_fix, rename_json_field
 from llmexer.base.experiment import (
     _PARAM_COLUMNS,
+    COMMON_PARAM_COLUMNS,
     CSV_JOIN_KEY_COLUMNS,
     DIR_EXPERIMENT,
     DIR_PROMPTS,
@@ -44,6 +46,7 @@ from llmexer.base.experiment import (
     FILE_MAPPING,
     FILE_PROMPT_EXAMPLE,
     PARAMS_KEY_COLUMNS,
+    PROVIDER_PARAM_COLUMNS,
     _get_generated_experiment_files,
     _is_experiment_initialized,
     read_prompt_example,
@@ -65,7 +68,7 @@ from llmexer.common import (
     safe_filename_part,
 )
 from llmexer.configs import console, cprint, settings
-from llmexer.constants import PAPERS_DIR, PROJECTS_PATH, SEARCHES_DIR
+from llmexer.constants import PAPERS_DIR, PROJECTS_DIR, PROJECTS_PATH, SEARCHES_DIR
 from llmexer.exceptions import LLMExerException, UnexpectedCLIParamsException
 
 app = typer.Typer(help="Manage LLM experiments.")
@@ -449,7 +452,6 @@ def init(
     models_path = os.path.join(experiment_subdir_path, FILE_LLMS_FOR_EXPERIMENT)
     with open(models_path, "w", encoding="utf-8") as f:
         f.write("provider;model_name;profile_name;notes\n")
-        f.write("ollama;gemma4:31b;ollama-gemma4-default;local model\n")
         f.write("ollama;phi4:14b;ollama-phi4-creative;local model\n")
         f.write("litellm;gemma4:31b;litellm-gemma4-default;local model\n")
         f.write("openrouter;google/gemini-3.8-flash;openrouter-gemini-default;via the OpenRouter gateway\n")
@@ -2346,6 +2348,171 @@ def compact(
     ratio = (archive_bytes / source_bytes * 100) if source_bytes else 100.0
 
     cprint(f"File with archive ([magenta]7z[/magenta]) — {ratio:.1f}% of the original:\n  {archive_path}")
+
+
+def _read_view_csv(experiment_subdir_path: str, filename: str, pid: str) -> pd.DataFrame:
+    """Read one experiment CSV for ``experiment view``, raising if it is missing."""
+
+    path = os.path.join(experiment_subdir_path, filename)
+    if not os.path.exists(path):
+        raise LLMExerException(f"Required file or directory not found for project '{pid}': {filename}")
+
+    # Read as text, so a whole number in a column with blanks is not shown as ``4096.0``.
+    return pd.read_csv(path, sep=";", encoding="utf-8", dtype=str)
+
+
+def _view_cell(value: Any) -> str:
+    """Display text of one CSV cell: an empty cell becomes ``-``."""
+
+    text = _key_part(value)
+    return text if text else "-"
+
+
+def _print_edit_hint(pid: str, *filenames: str) -> None:
+    """Print the command that opens each of ``filenames`` in an editor."""
+
+    commands = []
+    for filename in filenames:
+        relative_path = os.path.join(PROJECTS_DIR, pid, DIR_EXPERIMENT, filename)
+        commands.append(f"[bold yellow]nano {relative_path}[/bold yellow]")
+
+    cprint("To edit use:\n" + "\n".join(commands) + "\n")
+
+
+def _format_view_params(pid: str, experiment_subdir_path: str) -> None:
+    """Print ``llm-params.csv`` as one table per provider.
+
+    Each table holds the join key, the parameters shared by every provider and
+    the columns of that provider only. A column missing from the file is skipped.
+    """
+
+    params_df = _read_view_csv(experiment_subdir_path, FILE_LLM_PARAMS, pid)
+
+    if params_df.empty or "provider" not in params_df.columns:
+        cprint(f"[dim]{FILE_LLM_PARAMS} has no rows.[/dim]")
+        _print_edit_hint(pid, FILE_LLM_PARAMS)
+        return
+
+    provider_keys = params_df["provider"].map(lambda value: _key_part(value).lower())
+    providers = list(dict.fromkeys(provider_keys))
+
+    for provider in providers:
+        provider_df = params_df[provider_keys == provider]
+        provider_columns = PROVIDER_PARAM_COLUMNS.get(provider, [])
+        wanted_columns = CSV_JOIN_KEY_COLUMNS + COMMON_PARAM_COLUMNS + provider_columns
+        columns = [column for column in wanted_columns if column in provider_df.columns]
+
+        table = Table(title=f"Provider: [bold cyan]{provider or '-'}[/bold cyan]", title_justify="left")
+        for column in columns:
+            if column in COMMON_PARAM_COLUMNS:
+                style = "green"
+            elif column in provider_columns:
+                style = "yellow"
+            else:
+                style = "cyan"
+            table.add_column(column, style=style)
+
+        for _, row in provider_df.iterrows():
+            cells = [_view_cell(row[column]) for column in columns]
+            table.add_row(*cells)
+
+        console.print(table)
+
+    _print_edit_hint(pid, FILE_LLM_PARAMS)
+
+
+def _format_view_llms(pid: str, experiment_subdir_path: str) -> None:
+    """Print ``llms-for-experiment.csv`` as one table, columns in file order."""
+
+    models_df = _read_view_csv(experiment_subdir_path, FILE_LLMS_FOR_EXPERIMENT, pid)
+
+    if models_df.empty:
+        cprint(f"[dim]{FILE_LLMS_FOR_EXPERIMENT} has no rows.[/dim]")
+        _print_edit_hint(pid, FILE_LLMS_FOR_EXPERIMENT)
+        return
+
+    table = Table(title=f"[bold cyan]{FILE_LLMS_FOR_EXPERIMENT}[/bold cyan]", title_justify="left")
+    table.add_column("#", justify="right", style="dim", no_wrap=True)
+    for column in models_df.columns:
+        table.add_column(str(column), style="cyan" if column in CSV_JOIN_KEY_COLUMNS else "white")
+
+    for i, (_, row) in enumerate(models_df.iterrows(), start=1):
+        cells = [_view_cell(row[column]) for column in models_df.columns]
+        table.add_row(str(i), *cells)
+
+    console.print(table)
+    _print_edit_hint(pid, FILE_LLMS_FOR_EXPERIMENT)
+
+
+def _format_view_data(pid: str, experiment_subdir_path: str) -> None:
+    """Print a summary of ``data.csv``, ``prompts/`` and ``mapping.csv``.
+
+    Shows the number of unique data IDs, the number of prompt templates and,
+    per prompt in ``mapping.csv``, how many unique data IDs are mapped to it.
+    """
+
+    data_df = _read_view_csv(experiment_subdir_path, FILE_DATA, pid)
+    mapping_df = _read_view_csv(experiment_subdir_path, FILE_MAPPING, pid)
+
+    data_ids = data_df["ID"].map(_key_part) if "ID" in data_df.columns else pd.Series(dtype=str)
+    unique_data_ids = data_ids[data_ids != ""].nunique()
+
+    prompts_subdir = os.path.join(experiment_subdir_path, DIR_PROMPTS)
+    prompt_files = []
+    if os.path.isdir(prompts_subdir):
+        prompt_files = [fname for fname in os.listdir(prompts_subdir) if fname.lower().endswith(".txt")]
+
+    table = Table(title="[bold cyan]Experiment data[/bold cyan]", title_justify="left")
+    table.add_column("Item")
+    table.add_column("Count", justify="right", style="bold green")
+    table.add_row(f"Unique IDs in [bold cyan]{FILE_DATA}[/bold cyan]", str(unique_data_ids))
+    table.add_row(f"Prompts in [bold cyan]{DIR_PROMPTS}/[/bold cyan]", str(len(prompt_files)))
+
+    has_mapping_columns = {"data_id", "prompt_id"}.issubset(mapping_df.columns)
+    if has_mapping_columns and not mapping_df.empty:
+        mapped_prompt_ids = mapping_df["prompt_id"].map(_key_part)
+        mapped_data_ids = mapping_df["data_id"].map(_key_part)
+        table.add_section()
+        for prompt_id in dict.fromkeys(mapped_prompt_ids):
+            mapped_count = mapped_data_ids[mapped_prompt_ids == prompt_id].nunique()
+            table.add_row(f"Mapping: [bold cyan]{escape(prompt_id) or '-'}[/bold cyan]", str(mapped_count))
+    else:
+        table.add_row(f"Mapping in [bold cyan]{FILE_MAPPING}[/bold cyan]", "[dim]-[/dim]")
+
+    console.print(table)
+    _print_edit_hint(pid, FILE_DATA, FILE_MAPPING)
+
+
+@app.command(name="show", hidden=True)
+@app.command(name="view")
+def view(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    params: bool = typer.Option(
+        False, "--params", help=f"Show {FILE_LLM_PARAMS}, one table per provider (the default)."
+    ),
+    llms: bool = typer.Option(False, "--llms", help=f"Show {FILE_LLMS_FOR_EXPERIMENT}."),
+    data: bool = typer.Option(
+        False, "--data", help="Show the number of data IDs, prompts and mapped data IDs per prompt."
+    ),
+) -> None:
+    """Show the experiment setup files as tables (alias: show)"""
+
+    pid = get_proper_pid(pid)
+    experiment_subdir_path = get_experiment_subdir_path(pid)
+
+    if not (params or llms or data):
+        params = True
+
+    if params:
+        _format_view_params(pid, experiment_subdir_path)
+    if llms:
+        _format_view_llms(pid, experiment_subdir_path)
+    if data:
+        _format_view_data(pid, experiment_subdir_path)
 
 
 @app.command(name="list")

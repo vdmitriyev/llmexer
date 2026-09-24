@@ -78,7 +78,7 @@ def test_init_creates_models_csv(experiment, projects_dir):
     assert models_file.exists()
     lines = models_file.read_text(encoding="utf-8").splitlines()
     assert lines[0] == "provider;model_name;profile_name;notes"
-    assert "gemma4:31b" in lines[1]
+    assert "phi4:14b" in lines[1]
     assert "ollama" in lines[1]
     # Every example row must have exactly as many fields as the header,
     # otherwise values silently land in the wrong column.
