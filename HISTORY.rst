@@ -2,7 +2,7 @@
 History
 =======
 
-0.4.8 (2026-09-25)
+0.4.8 (2026-09-26)
 -------------------
 
 * Add ``experiment view`` (alias ``show``): shows ``llm-params.csv`` per provider (``--params``, the default), ``llms-for-experiment.csv`` (``--llms``) and a summary of data, prompts and mapping (``--data``).
