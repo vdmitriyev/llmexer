@@ -283,6 +283,62 @@ uv pip install -e . --group analysis
 
 > 💡 The CLI has many more options than this guide shows. Run `llmexer --help`, or `llmexer <category> <command> --help`, to see them all.
 
+## ✏️ CLI UI
+
+An overview of the CLI:
+```bash
+llmexer --help
+```
+
+![help CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui.png)
+
+The statistics of a search, shown in the terminal:
+```bash
+llmexer search stats --file <filename>
+```
+![search CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui-search-stats.png)
+
+Your projects, with the current one highlighted:
+```bash
+llmexer experiment list
+```
+![experiment CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui-experiment-list.png)
+
+Search results exported as a static HTML page, which makes screening easier (shown in `darkmode`):
+```bash
+llmexer search export
+```
+
+![experiment CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/search-export.png)
+
+Experiment results exported as a static HTML page (filtered by provider), which makes screening easier:
+```bash
+llmexer experiment export --filter-provider litellm
+```
+
+![experiment CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/experiment-export.png)
+
+## 💡 Additional: Rename PDFs with `pdf-renamer`
+
+Before you add papers to a project, you can rename them by their bibliographic metadata — year, journal, authors and title — with the external [`pdf-renamer`](https://github.com/MicheleCotrufo/pdf-renamer) tool. You do not need to install it; run it with `uvx`.
+
+Rename as year, authors, title:
+```bash
+uvx --from pdf-renamer pdfrenamer -f "{YYYY}_{A3etal}_{T}" /path/to/pdfs
+```
+
+Include subdirectories:
+```bash
+uvx --from pdf-renamer pdfrenamer /path/to/pdfs -sf
+```
+
+## 💡 Additional: Extract BibTeX
+
+You can also extract the BibTeX entry of a publication:
+```bash
+uvx --from pdf2bib pdf2bib -s bibtex.bib /path/to/pdfs
+```
+
 ## 📢 Scenario 1: Add papers to a project
 
 From a local file:
@@ -534,54 +590,6 @@ The `self` category reports on the CLI itself.
 |-----------|-------------|-----------------|
 | `version` | Prints the installed version. | `llmexer self version` |
 | `envs` | Lists the environment variables `llmexer` uses, with passwords masked. | `llmexer self envs` |
-
-## 💡 Additional: Rename PDFs with `pdf-renamer`
-
-Before you add papers to a project, you can rename them by their bibliographic metadata — year, journal, authors and title — with the external [`pdf-renamer`](https://github.com/MicheleCotrufo/pdf-renamer) tool. You do not need to install it; run it with `uvx`.
-
-Rename as year, authors, title:
-```bash
-uvx --from pdf-renamer pdfrenamer -f "{YYYY}_{A3etal}_{T}" /path/to/pdfs
-```
-
-Include subdirectories:
-```bash
-uvx --from pdf-renamer pdfrenamer /path/to/pdfs -sf
-```
-
-## 💡 Additional: Extract BibTeX
-
-You can also extract the BibTeX entry of a publication:
-```bash
-uvx --from pdf2bib pdf2bib -s bibtex.bib /path/to/pdfs
-```
-
-## ✏️ CLI UI
-
-An overview of the CLI:
-```bash
-llmexer --help
-```
-
-![help CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui.png)
-
-The statistics of a search, shown in the terminal:
-```bash
-llmexer search stats --file <filename>
-```
-![search CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui-search-stats.png)
-
-Your projects, with the current one highlighted:
-```bash
-llmexer experiment list
-```
-![experiment CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/cli-ui-experiment-list.png)
-
-Search results exported as a static HTML page, which makes screening easier:
-```bash
-llmexer search export
-```
-![experiment CLI](https://raw.githubusercontent.com/vdmitriyev/llmexer/refs/heads/main/docs/search-export.png)
 
 ## 🧩 Development Setup
 
