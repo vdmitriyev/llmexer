@@ -17,7 +17,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-09-12T14:11:19.9506031Z"
+exclude-newer = "2026-09-19T10:39:17.6344531Z"
 exclude-newer-span = "P8D"
 
 [[package]]
@@ -1661,7 +1661,7 @@ wheels = [
 
 [[package]]
 name = "llmexer"
-version = "0.4.5"
+version = "0.4.8"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
