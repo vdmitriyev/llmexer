@@ -2,6 +2,12 @@
 History
 =======
 
+0.4.8 (2026-10-01)
+-------------------
+
+* Bumping minimum version of some packages
+* Improve documentation of the project
+
 0.4.8 (2026-09-26)
 -------------------
 
