@@ -43,6 +43,10 @@ The current readme is used as documentation.
 
 [Documentation](https://vdmitriyev.github.io/llmexer/)
 
+## 🔗 Tutorials and articles
+
+* [llmexer Tutorial - From a Literature Search to Reproducible LLM Experiments with Search Results](https://vdmitriyev.github.io/blog/llmexer-tutorial-from-a-literature-search-to-reproducible-llm-experiments-with-search-results.html)
+
 ## ⚙️ Configuration
 
 `llmexer` needs access to a local or remote LLM. It reads your credentials and your current project from a `.env` file.
@@ -128,7 +132,7 @@ Category: **CLI**
 |---|---|---|
 | `LLMEXER_BASEDIR` | the current directory | Where the CLI writes `.projects/`, `temp/` and `llmexer.log`. |
 
-## 🚀 Getting Started
+## 🚀 Getting started
 
 This is the usual path from an empty project to analysed results.
 
