@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+title: llmexer
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+abstract: >-
+  llmexer is a CLI tool for LLM experiments. Use it to build datasets (publications, metadata, prompts) and to design, run and evaluate experiments on them.
+authors:
+  - given-names: Viktor
+    family-names: Dmitriyev
+    affiliation: OFFIS - Institute for Information Technology
+    city: Oldenburg
+    country: DE
+    orcid: 'https://orcid.org/0000-0001-5661-4587'
+  - given-names: Danila
+    family-names: Valko
+    affiliation: OFFIS - Institute for Information Technology
+    city: Oldenburg
+    country: DE
+    orcid: 'https://orcid.org/0000-0002-8058-7539'
+doi: 10.5281/zenodo.23646932
+repository-code: 'https://github.com/vdmitriyev/llmexer'
+keywords:
+  - large language models
+  - LLM evaluation
+  - LLM experiments
+  - experiment management
+  - research reproducibility
+  - research transparency
+  - literature review
+  - literature search
+  - abstract screening
+  - command-line tool
+  - scientific software tool
+license: MIT
+# Both bumped by release-please on release;
+# The date matcher only understands YYYY-MM-DD, so keep that shape.
+version: 0.5.0 # x-release-please-version
+date-released: 2026-10-25 # x-release-please-date

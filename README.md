@@ -623,6 +623,23 @@ To work on `llmexer` itself, set it up locally with `uv`.
     uv pip install -e . --group analysis
     ```
 
+## 📝 Cite this software
+
+If you use `llmexer` in your research, please cite it. The metadata is in [CITATION.cff](https://github.com/vdmitriyev/llmexer/blob/main/CITATION.cff), and GitHub also offers it under **Cite this repository**.
+
+```bibtex
+@software{dmitriyev_llmexer_2026,
+  author    = {Dmitriyev, Viktor and Valko, Danila},
+  title     = {llmexer},
+  version   = {0.5.0},
+  year      = {2026},
+  month     = {10},
+  doi       = {10.5281/zenodo.23646932},
+  url       = {https://github.com/vdmitriyev/llmexer},
+  license   = {MIT}
+}
+```
+
 ## License
 
 [MIT](https://github.com/vdmitriyev/llmexer/blob/main/LICENSE)

@@ -2,6 +2,12 @@
 History
 =======
 
+0.5.0 (2026-10-25)
+-------------------
+
+* Making a Zenodo release with citable DOI for the software package
+* Add further metadata to the software package
+
 0.4.9 (2026-10-25)
 -------------------
 
