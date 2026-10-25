@@ -15,14 +15,6 @@ vars:
 
 tasks:
 
-  default:
-    desc: lists all tasks
-    silent: true
-    cmds:
-      - task --list-all
-      - echo ""
-      - echo "Example usage-> 'task check-virtualenv'"
-
   check-virtualenv:
     desc: checks Python's virtualenv activation
     aliases: [cv]
@@ -38,6 +30,7 @@ tasks:
 
   clean-all:
     desc: cleans all
+    aliases: [ca]
     deps: [check-virtualenv]
     run: once
     silent: true
@@ -48,6 +41,7 @@ tasks:
 
   clean-build:
     desc: cleans Python builds
+    aliases: [cb]
     silent: true
     deps: [check-virtualenv]
     cmds:
@@ -59,6 +53,7 @@ tasks:
 
   clean-pyc:
     desc: cleans Python artifacts
+    aliases: [cp]
     silent: true
     deps: [check-virtualenv]
     cmds:
@@ -70,6 +65,7 @@ tasks:
 
   clean-test:
     desc: cleans tests artifacts
+    aliases: [ct]
     deps: [check-virtualenv]
     cmds:
       - echo "remove test and coverage artifacts"
@@ -80,6 +76,7 @@ tasks:
 
   version:
     desc: shows version of "{{.PACKAGE_NAME}}"
+    aliases: [v]
     deps: [check-virtualenv]
     cmds:
       - echo 'package version {{.PACKAGE_VERSION}}'
@@ -87,6 +84,7 @@ tasks:
 
   install:
     desc: installs "{{.PACKAGE_NAME}}"
+    aliases: [i]
     deps: [check-virtualenv]
     cmds:
       - uv pip install -e . --group dev
@@ -94,12 +92,14 @@ tasks:
 
   uninstall:
     desc: uninstalls "{{.PACKAGE_NAME}}"
+    aliases: [u]
     deps: [check-virtualenv]
     cmds:
       - pip uninstall {{.PACKAGE_NAME}}
 
   build:
     desc: builds "{{.PACKAGE_NAME}}"
+    aliases: [b]
     silent: true
     deps: [check-virtualenv]
     cmds:
@@ -112,6 +112,7 @@ tasks:
 
   publish-test-pypi:
     desc: publishes "{{.PACKAGE_NAME}}"
+    aliases: [ptp]
     deps: [check-virtualenv]
     cmds:
       - echo "uploads to testpypi"
@@ -120,7 +121,7 @@ tasks:
 
   bandit:
     desc: runs bandit
-    aliases: []
+    aliases: [bd]
     deps: [check-virtualenv]
     silent: true
     cmds:
@@ -129,7 +130,7 @@ tasks:
 
   pylint:
     desc: runs pylint
-    aliases: []
+    aliases: [pl]
     deps: [check-virtualenv]
     silent: true
     cmds:
@@ -138,7 +139,7 @@ tasks:
 
   black:
     desc: runs black
-    aliases: []
+    aliases: [bk]
     deps: [check-virtualenv]
     silent: true
     cmds:
@@ -147,6 +148,7 @@ tasks:
 
   pytest:
     desc: runs tests
+    aliases: [pt]
     silent: true
     deps: [check-virtualenv]
     cmds:
