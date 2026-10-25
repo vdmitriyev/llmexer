@@ -8,16 +8,25 @@ from typing import List, Optional
 import pandas as pd
 import pypdf
 import typer
+from rich.table import Table
 
 from llmexer.base.papers import (
+    PAPER_TYPES,
     UNPAYWALL_EMAIL,
+    PaperEntry,
+    PaperSortBy,
     PDFProcessor,
     download_pdf_from_url,
     extract_via_docling,
+    format_created_timestamp,
+    is_paper_file,
+    list_paper_files,
     resolve_unpaywall_pdf_url,
+    scan_papers,
 )
 from llmexer.common import (
     ensure_directory_exists,
+    format_bytes_console_ui,
     get_project_directory_path,
     get_proper_pid,
 )
@@ -432,3 +441,312 @@ def extract(
         f"Existing: [bold blue]{exists}[/bold blue]. "
         f"Error: [bold red]{errors}[/bold red]"
     )
+
+
+# Badge colour per file type in `papers view`; any other type is magenta.
+_TYPE_STYLES = {"pdf": "bold blue", "txt": "bold cyan", "md": "bold green"}
+
+_SORT_BY_HELP = "Sort papers by 'alpha' (alphabetical), 'date' (creation date) or 'size' (file size)."
+_DESC_HELP = "Sort in descending order."
+
+
+def _papers_path(pid: str) -> str:
+    return os.path.join(get_project_directory_path(pid), PAPERS_DIR)
+
+
+def _describe_sort(sort_by: PaperSortBy, desc: bool) -> str:
+    if sort_by == PaperSortBy.date:
+        return "sorted by creation date, " + ("newest first" if desc else "oldest first")
+    if sort_by == PaperSortBy.size:
+        return "sorted by PDF size, " + ("largest first" if desc else "smallest first")
+    return "sorted alphabetically, " + ("Z to A" if desc else "A to Z")
+
+
+def _type_badge(ext: str) -> str:
+    style = _TYPE_STYLES.get(ext, "bold magenta")
+    return f"[{style}]{ext.upper() or '?'}[/{style}]"
+
+
+def _size_cell(size: Optional[int], italic: bool = False) -> str:
+    if size is None:
+        return "[dim]—[/dim]"
+    formatted = format_bytes_console_ui(size)
+    return f"[italic]{formatted}[/italic]" if italic else formatted
+
+
+def _created_cell(entry: PaperEntry) -> str:
+    """The PDF's creation time. A paper without a PDF names the file the time comes from."""
+    created_at = format_created_timestamp(entry.created)
+    if entry.has_pdf:
+        return created_at
+    return f"{created_at} {_type_badge(entry.created_type)}"
+
+
+@app.command(name="list")
+def list_papers(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    sort_by: PaperSortBy = typer.Option(PaperSortBy.alpha, "--sort-by", help=_SORT_BY_HELP),
+    desc: bool = typer.Option(False, "--desc", help=_DESC_HELP),
+    created: bool = typer.Option(False, "--created/--no-created", help="Show the creation time of each file."),
+) -> None:
+    """List the files in the papers subdirectory of the project"""
+
+    pid = get_proper_pid(pid)
+    papers_path = _papers_path(pid)
+
+    files = list_paper_files(papers_path, sort_by, desc)
+    if not files:
+        cprint("No papers found.")
+        return
+
+    for path in files:
+        line = f"[green]{path.name}[/green]"
+        if created:
+            created_at = format_created_timestamp(path.stat().st_ctime)
+            line += f"  [cyan]{created_at}[/cyan]"
+        cprint(line, highlight=False)
+
+
+@app.command(name="view", hidden=True)
+@app.command(name="table", hidden=True)
+@app.command(name="show")
+def view(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    sort_by: PaperSortBy = typer.Option(PaperSortBy.alpha, "--sort-by", help=_SORT_BY_HELP),
+    desc: bool = typer.Option(False, "--desc", help=_DESC_HELP),
+) -> None:
+    """Show the papers of the project as a table with types and sizes (aliases: view, table)"""
+
+    pid = get_proper_pid(pid)
+    papers_path = _papers_path(pid)
+
+    entries = scan_papers(papers_path, sort_by, desc, only_paper_types=True)
+    other_files = [path for path in list_paper_files(papers_path, sort_by, desc) if not is_paper_file(path)]
+    if not entries and not other_files:
+        cprint("No papers found.")
+        return
+
+    header = Table(show_header=False, box=None, padding=(0, 1))
+    header.add_column(style="bold white", no_wrap=True)
+    header.add_column()
+    header.add_row("Project:", f"[bold yellow]{pid}[/bold yellow]")
+    header.add_row("Folder:", f"[cyan]{papers_path}[/cyan]")
+    console.print(header)
+
+    if entries:
+        cprint()
+        console.print(_build_papers_table(entries, sort_by, desc))
+
+    if other_files:
+        cprint()
+        console.print(_build_other_files_table(other_files, sort_by, desc))
+
+    cprint("\nExample to view papers stats:")
+    cprint(f"[bold yellow]llmexer papers stats --pid {pid}[/bold yellow]")
+
+
+def _build_papers_table(entries: List[PaperEntry], sort_by: PaperSortBy, desc: bool) -> Table:
+    """One row per paper: its PDF, TXT and MD files, their sizes and the PDF creation time."""
+
+    pdf_total = sum(entry.size("pdf") or 0 for entry in entries)
+    txt_total = sum(entry.size("txt") or 0 for entry in entries)
+    md_total = sum(entry.size("md") or 0 for entry in entries)
+    file_count = sum(len(entry.files) for entry in entries)
+
+    table = Table(
+        title="Papers",
+        caption=_describe_sort(sort_by, desc),
+        show_footer=True,
+        header_style="bold",
+        footer_style="bold",
+    )
+    table.add_column("#", justify="right", style="cyan", no_wrap=True)
+    table.add_column("Paper", footer=f"{len(entries)} paper(s), {file_count} file(s)", overflow="fold")
+    table.add_column("Type", no_wrap=True)
+    table.add_column("PDF size", justify="right", no_wrap=True, footer=format_bytes_console_ui(pdf_total))
+    table.add_column("TXT size", justify="right", no_wrap=True, footer=format_bytes_console_ui(txt_total))
+    table.add_column("MD size", justify="right", no_wrap=True, footer=format_bytes_console_ui(md_total))
+    table.add_column("Created (PDF)", style="cyan", no_wrap=True)
+
+    for index, entry in enumerate(entries, start=1):
+        types = [ext for ext in PAPER_TYPES if ext in entry.files]
+        badges = " ".join(_type_badge(ext) for ext in types)
+        table.add_row(
+            str(index),
+            entry.stem,
+            badges,
+            _size_cell(entry.size("pdf"), italic=True),
+            _size_cell(entry.size("txt")),
+            _size_cell(entry.size("md"), italic=True),
+            _created_cell(entry),
+        )
+
+    return table
+
+
+def _build_other_files_table(files: List[Path], sort_by: PaperSortBy, desc: bool) -> Table:
+    """One row per file in ``papers/`` that is not a PDF, TXT or MD."""
+
+    total_size = sum(path.stat().st_size for path in files)
+
+    table = Table(
+        title="Other files",
+        caption=_describe_sort(sort_by, desc).replace("PDF size", "file size"),
+        show_footer=True,
+        header_style="bold",
+        footer_style="bold",
+    )
+    table.add_column("#", justify="right", style="cyan", no_wrap=True)
+    table.add_column("File", footer=f"{len(files)} file(s)", overflow="fold")
+    table.add_column("Type", no_wrap=True)
+    table.add_column("Size", justify="right", no_wrap=True, footer=format_bytes_console_ui(total_size))
+    table.add_column("Created", style="cyan", no_wrap=True)
+
+    for index, path in enumerate(files, start=1):
+        stat = path.stat()
+        table.add_row(
+            str(index),
+            path.name,
+            _type_badge(path.suffix.lower().lstrip(".")),
+            format_bytes_console_ui(stat.st_size),
+            format_created_timestamp(stat.st_ctime),
+        )
+
+    return table
+
+
+def _build_papers_stats_grid(entries: List[PaperEntry]) -> Table:
+    """Build the 2-column stats grid (Papers by Year + Stats Breakdown) for the papers of a project."""
+
+    total = len(entries)
+
+    def _pct(n):
+        return f"{round(n / total * 100, 1)}%" if total else "0%"
+
+    year_counts = pd.Series([entry.year or "unknown" for entry in entries]).value_counts()
+    known_years = sorted((y for y in year_counts.index if y != "unknown"), reverse=True)
+    table1 = Table(title="Papers by Year", expand=True)
+    table1.add_column("Year", style="cyan", no_wrap=True, min_width=7)
+    table1.add_column("Count", style="green", justify="right", min_width=5)
+    table1.add_column("%", style="yellow", justify="right")
+    for year in known_years + (["unknown"] if "unknown" in year_counts.index else []):
+        count = int(year_counts[year])
+        table1.add_row(year, str(count), _pct(count))
+
+    table2 = Table(title="Stats Breakdown", expand=True)
+    table2.add_column("Stat", no_wrap=True)
+    table2.add_column("Count", style="cyan", justify="right")
+    table2.add_column("%", style="cyan", justify="right")
+    table2.add_row("[white]Total:[/white] [bold white]papers[/bold white]", str(total), "100%")
+
+    checks = [
+        ("PDF", sum(entry.has_pdf for entry in entries)),
+        ("TXT", sum(entry.has_txt for entry in entries)),
+        ("Markdown", sum(entry.has_md for entry in entries)),
+        ("Text (TXT or MD)", sum(entry.has_txt or entry.has_md for entry in entries)),
+    ]
+    for label, existing in checks:
+        missing = total - existing
+        table2.add_row(
+            f"[white]{label}:[/white] [bold green]existing[/bold green]",
+            f"[bold green]{existing}[/bold green]",
+            f"[bold green]{_pct(existing)}[/bold green]",
+        )
+        table2.add_row(
+            f"[white]{label}:[/white] [bold red]missing[/bold red]",
+            f"[bold red]{missing}[/bold red]",
+            f"[bold red]{_pct(missing)}[/bold red]",
+        )
+
+    with_other = sum(bool(entry.other_types) for entry in entries)
+    if with_other:
+        table2.add_row(
+            "[white]Other files:[/white] [magenta]present[/magenta]",
+            f"[magenta]{with_other}[/magenta]",
+            f"[magenta]{_pct(with_other)}[/magenta]",
+        )
+
+    layout = Table.grid(padding=(0, 2))
+    layout.add_column(ratio=1)
+    layout.add_column(ratio=1)
+    layout.add_row(table1, table2)
+
+    return layout
+
+
+def _build_file_types_table(entries: List[PaperEntry]) -> Table:
+    """Build the per-type table: number of files and their total, average and largest size."""
+
+    sizes_by_type: dict = {}
+    for entry in entries:
+        for ext, path in entry.files.items():
+            sizes_by_type.setdefault(ext, []).append(path.stat().st_size)
+
+    ordered_types = [ext for ext in PAPER_TYPES if ext in sizes_by_type]
+    ordered_types += sorted(ext for ext in sizes_by_type if ext not in PAPER_TYPES)
+
+    all_sizes = [size for sizes in sizes_by_type.values() for size in sizes]
+
+    table = Table(title="Files by Type", show_footer=True, footer_style="bold")
+    table.add_column("Type", no_wrap=True, footer="Total")
+    table.add_column("Files", style="cyan", justify="right", footer=str(len(all_sizes)))
+    table.add_column("Total size", style="green", justify="right", footer=format_bytes_console_ui(sum(all_sizes)))
+    table.add_column(
+        "Avg size",
+        style="yellow",
+        justify="right",
+        footer=format_bytes_console_ui(sum(all_sizes) / len(all_sizes)),
+    )
+    table.add_column("Largest", style="magenta", justify="right", footer=format_bytes_console_ui(max(all_sizes)))
+
+    for ext in ordered_types:
+        sizes = sizes_by_type[ext]
+        table.add_row(
+            _type_badge(ext),
+            str(len(sizes)),
+            format_bytes_console_ui(sum(sizes)),
+            format_bytes_console_ui(sum(sizes) / len(sizes)),
+            format_bytes_console_ui(max(sizes)),
+        )
+
+    return table
+
+
+@app.command()
+def stats(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+) -> None:
+    """Display statistics for the papers subdirectory of the project"""
+
+    pid = get_proper_pid(pid)
+    papers_path = _papers_path(pid)
+
+    entries = scan_papers(papers_path)
+    if not entries:
+        cprint("No papers found.")
+        return
+
+    file_count = sum(len(entry.files) for entry in entries)
+    total_size = sum(entry.total_size for entry in entries)
+
+    cprint(f"[bold]Project:[/bold] [cyan]{pid}[/cyan]")
+    cprint(
+        f"[bold]Papers:[/bold] [yellow]{PAPERS_DIR}/[/yellow] "
+        f"({len(entries)} papers, {file_count} files, {format_bytes_console_ui(total_size)})"
+    )
+    cprint()
+    console.print(_build_papers_stats_grid(entries))
+    cprint()
+    console.print(_build_file_types_table(entries))

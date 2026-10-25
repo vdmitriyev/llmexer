@@ -3,6 +3,8 @@
 import json
 import os
 import re
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -21,6 +23,17 @@ from llmexer.exceptions import (
 
 DOCLING_TIMEOUT = 300
 UNPAYWALL_EMAIL = "llmexer.unpaywall@local.local"
+
+# File types a paper is made of: the PDF and its extracted text (pypdf / docling).
+PAPER_TYPES = ("pdf", "txt", "md")
+
+_YEAR_PREFIX = re.compile(r"^(\d{4})_")
+
+
+class PaperSortBy(str, Enum):
+    alpha = "alpha"
+    date = "date"
+    size = "size"
 
 
 class PDFProcessor(str, Enum):
@@ -242,3 +255,121 @@ def make_structured_filename(
     title_part = _clean(title).lower()[:60].title() if title and str(title).strip() else "NO_title"
     doi_part = _clean(doi).lower() if doi and str(doi).strip() else "NO_doi"
     return f"{year_part}_{author_part}_{title_part}_{doi_part}.pdf"
+
+
+@dataclass
+class PaperEntry:
+    """One paper in ``papers/``: every file that shares a stem (``X.pdf``, ``X.txt``, ``X.md``)."""
+
+    stem: str
+    files: dict[str, Path] = field(default_factory=dict)
+
+    @property
+    def has_pdf(self) -> bool:
+        return "pdf" in self.files
+
+    @property
+    def has_txt(self) -> bool:
+        return "txt" in self.files
+
+    @property
+    def has_md(self) -> bool:
+        return "md" in self.files
+
+    @property
+    def other_types(self) -> list[str]:
+        return sorted(ext for ext in self.files if ext not in PAPER_TYPES)
+
+    @property
+    def created_type(self) -> str:
+        """Type of the file ``created`` is taken from: the PDF, or the oldest file when there is no PDF."""
+        if self.has_pdf:
+            return "pdf"
+        return min(self.files, key=lambda ext: self.files[ext].stat().st_ctime)
+
+    @property
+    def created(self) -> float:
+        """Creation time of the PDF, or of the oldest file when there is no PDF."""
+        return self.files[self.created_type].stat().st_ctime
+
+    @property
+    def total_size(self) -> int:
+        return sum(path.stat().st_size for path in self.files.values())
+
+    @property
+    def year(self) -> Optional[str]:
+        """Year from a structured file name (``YEAR_AUTHOR_TITLE_DOI.pdf``), else ``None``."""
+        match = _YEAR_PREFIX.match(self.stem)
+        return match.group(1) if match else None
+
+    @property
+    def sort_size(self) -> int:
+        """Size used by ``--sort-by size``: the PDF, or all files when there is no PDF."""
+        pdf_size = self.size("pdf")
+        return pdf_size if pdf_size is not None else self.total_size
+
+    def size(self, ext: str) -> Optional[int]:
+        path = self.files.get(ext)
+        return path.stat().st_size if path is not None else None
+
+
+def _file_type(path: Path) -> str:
+    return path.suffix.lower().lstrip(".")
+
+
+def is_paper_file(path: Path) -> bool:
+    """True for the file types a paper is made of (``PAPER_TYPES``)."""
+    return _file_type(path) in PAPER_TYPES
+
+
+def list_paper_files(papers_path: str, sort_by: PaperSortBy = PaperSortBy.alpha, desc: bool = False) -> list[Path]:
+    """Return the files directly in ``papers_path``, sorted. Empty when the folder is missing."""
+
+    if not os.path.isdir(papers_path):
+        return []
+
+    files = [path for path in Path(papers_path).iterdir() if path.is_file()]
+
+    if sort_by == PaperSortBy.date:
+        files.sort(key=lambda path: path.stat().st_ctime, reverse=desc)
+    elif sort_by == PaperSortBy.size:
+        files.sort(key=lambda path: path.stat().st_size, reverse=desc)
+    else:
+        files.sort(key=lambda path: path.name.lower(), reverse=desc)
+
+    return files
+
+
+def scan_papers(
+    papers_path: str,
+    sort_by: PaperSortBy = PaperSortBy.alpha,
+    desc: bool = False,
+    only_paper_types: bool = False,
+) -> list[PaperEntry]:
+    """Group the files in ``papers_path`` by stem into papers, sorted. Empty when the folder is missing.
+
+    With ``only_paper_types``, files that are not PDF, TXT or MD are left out.
+    """
+
+    entries: dict[str, PaperEntry] = {}
+    for path in list_paper_files(papers_path):
+        if only_paper_types and not is_paper_file(path):
+            continue
+        entry = entries.setdefault(path.stem, PaperEntry(stem=path.stem))
+        entry.files[_file_type(path)] = path
+
+    papers = list(entries.values())
+
+    if sort_by == PaperSortBy.date:
+        papers.sort(key=lambda entry: entry.created, reverse=desc)
+    elif sort_by == PaperSortBy.size:
+        papers.sort(key=lambda entry: entry.sort_size, reverse=desc)
+    else:
+        papers.sort(key=lambda entry: entry.stem.lower(), reverse=desc)
+
+    return papers
+
+
+def format_created_timestamp(timestamp: float) -> str:
+    """Return a creation time as ``YYYY-MM-DD HH:MM:SS`` in UTC, like ``project list``."""
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")

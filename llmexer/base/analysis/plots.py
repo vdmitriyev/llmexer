@@ -19,6 +19,9 @@ Importing this module does not touch ``matplotlib.rcParams``; call
 :func:`setup_style` explicitly if you want the shared look.
 """
 
+import warnings
+
+import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
@@ -118,7 +121,10 @@ def plot_response_time_by_model(df: pd.DataFrame, ax=None, *, title: str = "Resp
         return _no_data(ax, "No finished calls")
 
     work = pd.DataFrame({MODEL_LABEL: _model_label(df)[keep], "seconds": elapsed[keep]})
-    sns.boxplot(data=work, y=MODEL_LABEL, x="seconds", ax=ax)
+    # seaborn 0.13.2 still passes the deprecated `vert` to matplotlib >= 3.11.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=r"vert: bool", category=matplotlib.MatplotlibDeprecationWarning)
+        sns.boxplot(data=work, y=MODEL_LABEL, x="seconds", ax=ax)
     ax.set_title(title)
     ax.set_xlabel("seconds per call")
 

@@ -259,3 +259,27 @@ def format_number_console_ui(value) -> str:
         return f"{sign}{int(rounded)}{unit}"
 
     return f"{sign}{rounded:.{decimals}f}{unit}"
+
+
+_BYTE_UNITS = ("KB", "MB", "GB", "TB")
+
+
+def format_bytes_console_ui(size) -> str:
+    """Format a file size the way the console shows it: ``14540`` -> ``14.2 KB``.
+
+    Under 1 KB the raw number of bytes is shown. Above it the size is scaled by
+    1024. KB keeps one decimal, MB and larger keep two.
+    """
+
+    scaled = float(size)
+    if scaled < 1024:
+        return f"{int(scaled)} B"
+
+    unit = _BYTE_UNITS[0]
+    for unit in _BYTE_UNITS:
+        scaled /= 1024
+        if scaled < 1024:
+            break
+
+    decimals = 1 if unit == "KB" else 2
+    return f"{scaled:.{decimals}f} {unit}"

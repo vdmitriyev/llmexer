@@ -2,7 +2,11 @@
 
 import pytest
 
-from llmexer.common import format_number_console_ui, safe_filename_part
+from llmexer.common import (
+    format_bytes_console_ui,
+    format_number_console_ui,
+    safe_filename_part,
+)
 
 
 @pytest.mark.parametrize(
@@ -99,3 +103,20 @@ def test_format_number_console_ui(value, expected):
 def test_format_number_console_ui_accepts_a_float():
     assert format_number_console_ui(42.0) == "42"
     assert format_number_console_ui(15_400.0) == "15.4K"
+
+
+@pytest.mark.parametrize(
+    "size, expected",
+    [
+        (0, "0 B"),
+        (512, "512 B"),
+        (1023, "1023 B"),
+        (1024, "1.0 KB"),
+        (14540, "14.2 KB"),
+        (3 * 1024**2 + 471_859, "3.45 MB"),
+        (int(1.2 * 1024**3), "1.20 GB"),
+        (2 * 1024**4, "2.00 TB"),
+    ],
+)
+def test_format_bytes_console_ui(size, expected):
+    assert format_bytes_console_ui(size) == expected

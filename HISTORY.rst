@@ -2,11 +2,14 @@
 History
 =======
 
-0.4.8 (2026-10-01)
+0.4.9 (2026-10-25)
 -------------------
 
 * Bumping minimum version of some packages
 * Improve documentation of the project
+* Add ``papers list``: the files in the project's ``papers/`` folder (``--created`` adds their creation time). Takes ``--sort-by alpha|date|size`` and ``--desc``.
+* Add ``papers show`` (aliases ``view``, ``table``): one row per paper with its file types, PDF/TXT/MD sizes and creation date; other files go in a separate table. Takes ``--sort-by alpha|date|size`` and ``--desc``.
+* Add ``papers stats``: papers by year and PDF/TXT/Markdown coverage, like ``search stats``, plus file counts and sizes per type. Needs no search file.
 
 0.4.8 (2026-09-26)
 -------------------

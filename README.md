@@ -563,6 +563,9 @@ The `papers` category manages the PDFs of a project.
 | `download --doi` | Downloads open-access PDFs by DOI through the Unpaywall API. Needs your email, from `--email` or `UNPAYWALL_EMAIL`. | `llmexer papers download --doi 10.1038/nature12373 --email you@example.com` |
 | `download --search-file` | Downloads every paper with a DOI from a search result or filtered CSV, then syncs the search against `papers/`. Failures are logged so you can retry them. | `llmexer papers download --search-file 20260401-abc123__filtered.csv` |
 | `extract` | Extracts the text of every PDF in `papers/`. The default `pypdf` backend saves `.txt`; the `docling` backend saves `.md`. Already extracted files are skipped unless you pass `--rewrite`. | `llmexer papers extract --pid my-project --processor docling` |
+| `list` | Lists the files in the project's `papers/` folder. `--created` adds the creation time of each file. Sort with `--sort-by alpha` (default), `--sort-by date` (creation date) or `--sort-by size` (file size), and reverse with `--desc`. | `llmexer papers list --sort-by date --desc` |
+| `show` | Shows one row per paper with its file types (PDF, TXT, MD), their sizes and the creation date. Any other files in `papers/` are listed in a separate *Other files* table. The Created (PDF) column shows when the PDF was created; for a paper without a PDF, it shows the date of its oldest file and names that file's type. Takes the same `--sort-by` and `--desc` as `list`; `size` sorts by the PDF size (all files of a paper without a PDF). Aliases: `view`, `table`. | `llmexer papers show --pid my-project` |
+| `stats` | Shows statistics for the `papers/` folder: papers by year (from `YEAR_...` file names), how many papers have a PDF, TXT or Markdown file, and the number and size of files per type. | `llmexer papers stats --pid my-project` |
 
 ## 🔍 CLI category: **search**
 
