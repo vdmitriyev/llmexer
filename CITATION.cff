@@ -34,7 +34,5 @@ keywords:
   - command-line tool
   - scientific software tool
 license: MIT
-# Both bumped by release-please on release;
-# The date matcher only understands YYYY-MM-DD, so keep that shape.
-version: 0.5.0 # x-release-please-version
-date-released: 2026-10-25 # x-release-please-date
+version: 0.5.0 # package-version
+date-released: 2026-10-25 #package-version-date
