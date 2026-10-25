@@ -10,6 +10,7 @@ History
 * Add ``papers list``: the files in the project's ``papers/`` folder (``--created`` adds their creation time). Takes ``--sort-by alpha|date|size`` and ``--desc``.
 * Add ``papers show`` (aliases ``view``, ``table``): one row per paper with its file types, PDF/TXT/MD sizes and creation date; other files go in a separate table. Takes ``--sort-by alpha|date|size`` and ``--desc``.
 * Add ``papers stats``: papers by year and PDF/TXT/Markdown coverage, like ``search stats``, plus file counts and sizes per type. Needs no search file.
+* Extend ``self envs``: adds the provider, log level, base directory and limit variables, and a ``Default`` column.
 
 0.4.8 (2026-09-26)
 -------------------

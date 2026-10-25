@@ -596,7 +596,7 @@ The `self` category reports on the CLI itself.
 | Command   | What it does | Example |
 |-----------|-------------|-----------------|
 | `version` | Prints the installed version. | `llmexer self version` |
-| `envs` | Lists the environment variables `llmexer` uses, with passwords masked. | `llmexer self envs` |
+| `envs` | Lists the environment variables `llmexer` uses, with their defaults and with passwords and keys masked. Covers every provider, plus any custom `PROVIDER_<NAME>_URL`. | `llmexer self envs` |
 
 ## 🧩 Development Setup
 
