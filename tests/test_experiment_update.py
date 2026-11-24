@@ -66,7 +66,7 @@ def generated_experiment(projects_dir):
     The generated database holds two ollama rows (D01 and D02 under prompt01).
     """
     pid = "update-test"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -339,7 +339,7 @@ def test_update_defaults_to_newest_database(generated_experiment):
 def test_update_without_database_raises(projects_dir, mock_no_dotenv):
     """A project with no generated database points the user at `generate`."""
     pid = "no-db"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir / "prompts")
     _write_models(exp_subdir, _OLLAMA_MODEL_ROW)
     (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;T;A.\n", encoding="utf-8")

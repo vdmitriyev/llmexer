@@ -132,6 +132,7 @@ Category: **CLI**
 |---|---|---|
 | `LLMEXER_BASEDIR` | `basedir` in `llmexer.ini` | Where the CLI writes `.projects/` and `temp/`. |
 | `LLMEXER_PROJECTS_DIR` | `.projects` | Name of the projects folder inside the basedir. |
+| `LLMEXER_EXPERIMENTS_DIR` | `experiments` | Name of the folder inside each project that holds its experiment(s). It was `experiment` before 0.6.0. |
 
 ### Where llmexer keeps its data
 
@@ -144,7 +145,10 @@ Category: **CLI**
 [llmexer]
 basedir = .
 projects_dir = .projects
+experiments_dir = experiments
 ```
+
+> ⚠️ **Upgrading from 0.5.x:** the experiment folder of a project is now called `experiments/` (it was `experiment/`). Old projects are not read until you rename the folder, e.g. `mv .projects/my-project/experiment .projects/my-project/experiments`. To keep the old name instead, set `experiments_dir = experiment` in `llmexer.ini`. `llmexer experiment list` marks the projects that still use the old name.
 
 `LLMEXER_BASEDIR` and `LLMEXER_PROJECTS_DIR` override these values. Set them in the shell, in a `.env` file in the current folder, or in a file passed with `--env-file`. Run `llmexer self paths` to see the paths in use.
 
@@ -164,18 +168,18 @@ llmexer project rename --old-id 20260402-a1b2c3d4 --new-id llm-survey-2026
 
 **3. Set up the project structure**
 
-This creates an `experiment/` folder with template CSVs and a starter prompt:
+This creates an `experiments/` folder with template CSVs and a starter prompt:
 ```bash
 llmexer experiment init --pid llm-survey-2026
 ```
 
 | File | What it holds |
 | :-------- | :---------- |
-| `experiment/llms-for-experiment.csv` | The models to test. One row is one model run under one profile, so list a model twice to run it under two profiles. |
-| `experiment/data.csv` | Your input rows. |
-| `experiment/mapping.csv` | Which prompt each data row uses. |
-| `experiment/llm-params.csv` | Hyperparameter profiles, keyed by provider, model and profile name. |
-| `experiment/prompts/prompt01.txt` | A starter Jinja2 prompt template using `{{title}}` and `{{abstract}}`. |
+| `experiments/llms-for-experiment.csv` | The models to test. One row is one model run under one profile, so list a model twice to run it under two profiles. |
+| `experiments/data.csv` | Your input rows. |
+| `experiments/mapping.csv` | Which prompt each data row uses. |
+| `experiments/llm-params.csv` | Hyperparameter profiles, keyed by provider, model and profile name. |
+| `experiments/prompts/prompt01.txt` | A starter Jinja2 prompt template using `{{title}}` and `{{abstract}}`. |
 
 **4. Build the experiment database**
 
@@ -191,14 +195,14 @@ Now generate the experiments:
 llmexer experiment generate --pid llm-survey-2026
 ```
 
-`generate` renders every combination of data row, prompt, model and parameter profile, then writes them to a SQLite database in `experiment/`. Models and profiles are matched on provider, model name and profile name. Each of those combinations must be unique in each CSV; if one is repeated, `generate` reports it and stops. A model with no matching profile is reported and skipped.
+`generate` renders every combination of data row, prompt, model and parameter profile, then writes them to a SQLite database in `experiments/`. Models and profiles are matched on provider, model name and profile name. Each of those combinations must be unique in each CSV; if one is repeated, `generate` reports it and stops. A model with no matching profile is reported and skipped.
 
 Add `--dry-run` to see how many rows you would get, without writing anything:
 ```bash
 llmexer --dry-run experiment generate --pid llm-survey-2026
 ```
 
-> 💡 **Hint:** the experiment store is a plain SQLite database (`experiment/experiment_*.db`), so you can also open and edit it in a tool such as [DBeaver](https://dbeaver.io/). Each provider has an `experiment_<provider>` table for the rows and a `params_<provider>` table for the hyperparameters. Join them to see each row next to the parameters it ran with:
+> 💡 **Hint:** the experiment store is a plain SQLite database (`experiments/experiment_*.db`), so you can also open and edit it in a tool such as [DBeaver](https://dbeaver.io/). Each provider has an `experiment_<provider>` table for the rows and a `params_<provider>` table for the hyperparameters. Join them to see each row next to the parameters it ran with:
 >
 > ```sql
 > SELECT e.*, p.* FROM experiment_ollama e
@@ -242,7 +246,7 @@ Call the LLMs and collect the results:
 llmexer experiment run --pid llm-survey-2026 --file experiment_<SAMPLE>.db
 ```
 
-Results are written back into the same database, so it stays your single source of truth. Each call is also saved as a JSON file in `experiment/responses/`. If you run the command again, rows that already finished successfully are skipped.
+Results are written back into the same database, so it stays your single source of truth. Each call is also saved as a JSON file in `experiments/responses/`. If you run the command again, rows that already finished successfully are skipped.
 
 [Scenario 4](#-scenario-4-more-ways-to-run-an-experiment) covers the rest of the options: previewing a run, narrowing it to one provider, model or profile, running a single row, and running several calls at once.
 
@@ -500,6 +504,48 @@ Most of a run is spent waiting for the backend, so `--parallel-calls` lets sever
 llmexer experiment run --pid llm-survey-2026 --parallel-calls 4
 ```
 
+## 📢 Scenario 5: Several experiments in one project
+
+Sometimes one search feeds more than one experiment. For example, you may want to screen the abstracts with one set of models and the full papers with another. Each sub-experiment then needs its own data, but the prompts and parameter profiles can stay the same. Create the project with `--layout multiple`:
+
+```bash
+llmexer experiment init --pid llm-survey-2026 --layout multiple --exp abstracts --exp fulltext
+```
+
+```
+experiments/
+├── experiments.yaml        # lists the sub-experiments and the default one
+├── llm-params.csv          # shared
+├── prompts/                # shared
+├── abstracts/              # data.csv, mapping.csv, llms-for-experiment.csv,
+│                           # experiment_*.db, responses/
+└── fulltext/
+```
+
+Every experiment command takes `--exp NAME`. Without it, the `default` sub-experiment from `experiments.yaml` is used (the first `--exp` given to `init`):
+
+```bash
+llmexer experiment copy-search --pid llm-survey-2026 --exp abstracts --file <SEARCH_ID>__results.csv
+llmexer experiment copy-papers --pid llm-survey-2026 --exp fulltext
+llmexer experiment generate --pid llm-survey-2026 --exp fulltext
+llmexer experiment run --pid llm-survey-2026 --exp fulltext
+```
+
+`init` and `add` also accept your own files with `--data`, `--mapping` and `--llms`. The files are copied in under the standard names:
+
+```bash
+llmexer experiment add papers-gpt --pid llm-survey-2026 --from fulltext --llms my-llms.csv --default
+```
+
+To turn an existing project into one with several experiments, name its current experiment. Its data, mapping, LLM list, databases and `responses/` move into `experiments/<name>/`:
+
+```bash
+llmexer --dry-run experiment convert --pid llm-survey-2026 --exp abstracts   # shows what moves
+llmexer experiment convert --pid llm-survey-2026 --exp abstracts
+```
+
+`analysis init --exp NAME` and `analysis add-agreement --exp NAME` write notebooks with a `<NAME>__` prefix, so each sub-experiment gets its own.
+
 #### Working with the current project
 
 Most commands take a `--pid` option to say which project to use. If you set `PROJECT_ID` in your `.env` file, you can leave it out:
@@ -530,11 +576,13 @@ A project is the top-level container for your experiments, papers and searches. 
 
 ## 🧪 CLI category: **experiment**
 
-The `experiment` category (alias: `exp`) sets up, generates and runs the experiments inside a project.
+The `experiment` category (alias: `exp`) sets up, generates and runs the experiments inside a project. In a project with several sub-experiments, every command below takes `--exp NAME`, falling back to the default named in `experiments.yaml`.
 
 | Command   | What it does | Example |
 |-----------|-------------|-----------------|
-| `init` | Creates the `experiment/` folder with template CSVs and a starter prompt. Stops if the project is already set up. | `llmexer experiment init --pid my-project` |
+| `init` | Creates the `experiments/` folder with template CSVs and a starter prompt. Stops if the project is already set up. `--layout multiple --exp NAME` (repeatable) creates named sub-experiments that share `llm-params.csv` and `prompts/` (see Scenario 5). `--data`, `--mapping` and `--llms` copy in your own files instead of the templates. | `llmexer experiment init --pid my-project --layout multiple --exp abstracts --exp fulltext` |
+| `add` | Adds a sub-experiment to a project with several. Its files come from `--data` / `--mapping` / `--llms`, from another sub-experiment (`--from`), or from the templates. `--default` makes it the default. Supports `--dry-run`. | `llmexer experiment add fulltext --pid my-project --from abstracts` |
+| `convert` | Turns a single-experiment project into one with several: everything except `llm-params.csv` and `prompts/` moves into `experiments/<exp>/`. Supports `--dry-run`. | `llmexer experiment convert --pid my-project --exp abstracts` |
 | `copy-papers` | Copies the extracted text of your papers into `data.csv`, one row per paper. Backs up the old file first. | `llmexer experiment copy-papers --pid my-project` |
 | `copy-search` | Copies a search result CSV into `data.csv` as `ID;Title;Abstract;year;doi;authors`, keeping the original row order. Backs up the old file first. | `llmexer experiment copy-search --pid my-project --file <SEARCH_ID>__results.csv` |
 | `map` | Rebuilds `mapping.csv` by pairing every data row with the prompts you select. Use `--prompt` to pick them, or leave it out to use all of them. An unknown prompt name stops the command. Backs up the old file first. Supports `--dry-run`. | `llmexer experiment map --pid my-project --prompt prompt01,prompt02` |
@@ -545,13 +593,13 @@ The `experiment` category (alias: `exp`) sets up, generates and runs the experim
 | `run` | Runs every row of a generated database against its provider and writes the results back into the same database. Rows that already finished are skipped. Narrow the run with `--filter-provider`, `--filter-model`, `--filter-profile` or `--code`, and raise the throughput with `--parallel-calls`. Supports `--dry-run` and `--file`. | `llmexer experiment run --pid my-project --filter-provider ollama` |
 | `stats` | Shows the totals, token counts, and a breakdown per provider and per model. The same model served by two providers is reported once per provider. Pass `--file` to pick a database. | `llmexer experiment stats --pid my-project` |
 | `view` | Shows the setup files of an experiment as tables (alias: `show`). `--params` shows `llm-params.csv` - one table per provider, `--llms` shows `llms-for-experiment.csv`. `--data` shows the counts related to data files. | `llmexer experiment view --pid my-project --llms` |
-| `list` | Lists all projects with their setup state and their experiment databases. Sort with `--sort-by` and `--desc`. | `llmexer experiment list --sort-by date --desc` |
+| `list` | Lists all projects with their setup state and their experiment databases, one row per sub-experiment (`*` marks the default). Sort with `--sort-by` and `--desc`. | `llmexer experiment list --sort-by date --desc` |
 | `export` | Renders an experiment database as an HTML page next to it, with sortable columns, per-column filters and a ready-to-run `try` command per row. Narrow it with `--filter-provider`, `--filter-model` or `--filter-profile`, and with the export-only patterns `--filter-code` (glob over the code) and `--filter-response` (regular expression over the answer); each filter is added to the file name. Supports `--file`, `--rewrite` and `--dry-run`. | `llmexer experiment export --pid my-project --filter-provider ollama` |
 | `compact` | Compresses an experiment database into a `.7z` archive next to it, under the same name. The database is left in place. Supports `--file`, `--rewrite` and `--dry-run`. | `llmexer experiment compact --pid my-project` |
 
 ## 📊 CLI category: **analysis**
 
-The `analysis` category (aliases: `analyse`, `analyze`) sets up a Jupyter workspace for a project. It creates an `analysis/` folder next to `experiment/`, `papers/` and `searches/`, holding two notebooks and the Python modules they call.
+The `analysis` category (aliases: `analyse`, `analyze`) sets up a Jupyter workspace for a project. It creates an `analysis/` folder next to `experiments/`, `papers/` and `searches/`, holding two notebooks and the Python modules they call.
 
 The notebooks hold no logic of their own — the cells set the paths, call functions and show the result — so the analysis itself stays testable code. The modules are copies, and the notebooks import only them, never `llmexer`. That keeps the folder self-contained and lets you adapt it per project.
 
@@ -659,7 +707,7 @@ If you use `llmexer` in your research, please cite it. The metadata is in [CITAT
 @software{dmitriyev_llmexer_2026,
   author    = {Dmitriyev, Viktor and Valko, Danila},
   title     = {llmexer},
-  version   = {0.5.1},
+  version   = {0.6.0},
   year      = {2026},
   month     = {11},
   doi       = {10.5281/zenodo.23646932},

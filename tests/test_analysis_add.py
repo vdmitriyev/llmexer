@@ -54,7 +54,7 @@ def project(projects_dir):
 def project_with_db(project):
     """A project carrying one generated database, so a CSV name can be derived."""
 
-    exp_subdir = project / "experiment"
+    exp_subdir = project / "experiments"
     os.makedirs(exp_subdir)
     seed_db(exp_subdir / "experiment_20240101_01.db", {"ollama": [dict(OLLAMA_ROW)]})
     return project

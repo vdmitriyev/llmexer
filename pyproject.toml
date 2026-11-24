@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llmexer"
 description = "Framework and CLI utility to create and curate datasets (e.g., publications, metadata, LLM prompts, etc.) and orchestrate (design, run, evaluate) various LLM experiments on them"
-version = "0.5.1"
+version = "0.6.0"
 readme = "README.md"
 keywords = [
     "large language models",
@@ -69,7 +69,7 @@ classifiers = [
 license = "MIT"
 
 [project.scripts]
-llmexer = "llmexer.cli:app"
+llmexer = "llmexer.cli:run"
 
 [project.urls]
 

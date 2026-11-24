@@ -52,7 +52,7 @@ def mock_no_dotenv(monkeypatch):
 def experiment(projects_dir):
     """A project whose experiment/ folder holds all the files the view reads."""
     pid = "test-view"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -124,7 +124,7 @@ def test_view_params_edit_hint(experiment, projects_dir, monkeypatch):
 
     result = _invoke("--pid", pid)
 
-    expected = os.path.join(str(projects_dir), pid, "experiment", "llm-params.csv")
+    expected = os.path.join(str(projects_dir), pid, "experiments", "llm-params.csv")
     assert f"To edit use:\nnano {expected}" in result.output
 
 
@@ -138,7 +138,7 @@ def test_view_llms(experiment, projects_dir, monkeypatch):
     assert "llama3.3:latest" in result.output and "gpt-4o" in result.output
     assert "local model" in result.output
     assert "Provider: ollama" not in result.output
-    assert f"nano {os.path.join(str(projects_dir), pid, 'experiment', 'llms-for-experiment.csv')}" in result.output
+    assert f"nano {os.path.join(str(projects_dir), pid, 'experiments', 'llms-for-experiment.csv')}" in result.output
 
 
 def test_view_data_counts(experiment, projects_dir, monkeypatch):
@@ -152,8 +152,8 @@ def test_view_data_counts(experiment, projects_dir, monkeypatch):
     assert re.search(r"Prompts in prompts/\s*│\s*2\s*│", result.output)
     assert re.search(r"Mapping: prompt01\s*│\s*3\s*│", result.output)
     assert re.search(r"Mapping: prompt02\s*│\s*1\s*│", result.output)
-    assert f"nano {os.path.join(str(projects_dir), pid, 'experiment', 'data.csv')}" in result.output
-    assert f"nano {os.path.join(str(projects_dir), pid, 'experiment', 'mapping.csv')}" in result.output
+    assert f"nano {os.path.join(str(projects_dir), pid, 'experiments', 'data.csv')}" in result.output
+    assert f"nano {os.path.join(str(projects_dir), pid, 'experiments', 'mapping.csv')}" in result.output
 
 
 def test_view_combined_flags(experiment):

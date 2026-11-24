@@ -1,8 +1,13 @@
+import logging
 import os
+import re
+import sys
 from pathlib import Path
 
 import typer
 from dotenv import load_dotenv
+from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 from typing_extensions import Annotated
@@ -11,7 +16,8 @@ from llmexer import constants
 from llmexer.commands import analysis, experiment, papers, project, search
 from llmexer.commands import self as self_module
 from llmexer.common import ensure_directory_exists
-from llmexer.configs import console, cprint, settings
+from llmexer.configs import console, cprint, logger, settings
+from llmexer.exceptions import LLMExerException
 from llmexer.logger import attach_file_handler
 from llmexer.paths import apply_paths, resolve_paths
 from llmexer.version import package_summary, package_version
@@ -158,5 +164,69 @@ def main(
         typer.echo(ctx.get_help())
 
 
+# Lines of an error message that are a command to copy, shown as one.
+_COMMAND_LINE_PREFIXES = ("llmexer ", "mv ", "move ")
+# `command` in backticks, or a 'value' in single quotes (not the apostrophe in "project's").
+_HIGHLIGHT_PATTERN = re.compile(r"(`[^`\n]+`|(?<!\w)'[^'\n]+'(?!\w))")
+
+error_console = Console(stderr=True)
+
+
+def _style_error_line(line: str) -> str:
+    """Rich markup for one line of an error message: commands yellow, quoted values cyan."""
+
+    stripped = line.strip()
+    if stripped.startswith(_COMMAND_LINE_PREFIXES):
+        return f"  [bold yellow]{escape(stripped)}[/bold yellow]"
+
+    styled_parts = []
+    for part in _HIGHLIGHT_PATTERN.split(line):
+        if part.startswith("`") and part.endswith("`") and len(part) > 1:
+            styled_parts.append(f"[bold yellow]{escape(part[1:-1])}[/bold yellow]")
+        elif part.startswith("'") and part.endswith("'") and len(part) > 1:
+            styled_parts.append(f"[cyan]{escape(part)}[/cyan]")
+        else:
+            styled_parts.append(escape(part))
+    return "".join(styled_parts)
+
+
+def print_error(error: LLMExerException) -> None:
+    """Print an llmexer error as a short colored message instead of a traceback."""
+
+    lines = str(error).splitlines() or [type(error).__name__]
+    # soft_wrap: the terminal wraps long lines itself, so a command stays copyable.
+    error_console.print(f"[bold red]Error:[/bold red] {_style_error_line(lines[0])}", soft_wrap=True)
+    for line in lines[1:]:
+        error_console.print(_style_error_line(line), soft_wrap=True)
+
+    details = f"{type(error).__name__}"
+    if constants.LOG_FILE_PATH:
+        details += f"; traceback in {constants.LOG_FILE_PATH}"
+    error_console.print(f"[dim]({escape(details)}; use --verbose to show it here)[/dim]", soft_wrap=True)
+
+
+def _has_log_file() -> bool:
+    return any(isinstance(handler, logging.FileHandler) for handler in logger.handlers)
+
+
+def run() -> None:
+    """Console entry point: llmexer's own errors are shown as a message, not a traceback.
+
+    Tests call ``app`` directly and still see the exception itself. ``--verbose``
+    keeps the full traceback, for debugging.
+    """
+
+    try:
+        app()
+    except LLMExerException as error:
+        # Only into the log file: without one, logging would print the traceback to stderr.
+        if _has_log_file():
+            logger.error("%s: %s", type(error).__name__, error, exc_info=True)
+        if settings.verbose:
+            raise
+        print_error(error)
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    app()
+    run()

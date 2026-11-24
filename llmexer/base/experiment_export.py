@@ -98,7 +98,7 @@ def format_timestamp(value) -> str:
         return str(value)
 
 
-def build_try_command(row: dict, project_id: str, db_name: str | None = None) -> str:
+def build_try_command(row: dict, project_id: str, db_name: str | None = None, exp_name: str | None = None) -> str:
     """The ``experiment try`` invocation that runs this row, or '' if unknown.
 
     Every argument is spelled out so the command runs whatever ``.env`` holds and
@@ -109,6 +109,7 @@ def build_try_command(row: dict, project_id: str, db_name: str | None = None) ->
     newest database itself. The export always names one, so a row's command
     lands back in the database it came from; `experiment try --suggest` does
     not, because it suggests a combination rather than re-running a stored row.
+    ``exp_name`` adds ``--exp`` for a sub-experiment of a project with several.
     """
 
     model_name = str(row.get("model_name") or "")
@@ -131,6 +132,8 @@ def build_try_command(row: dict, project_id: str, db_name: str | None = None) ->
         "--pid",
         project_id,
     ]
+    if exp_name is not None:
+        parts += ["--exp", exp_name]
     if db_name is not None:
         parts += ["--file", db_name]
     parts += [
@@ -250,7 +253,13 @@ def _cell_value(row: dict, key, kind: str) -> str:
 
 
 def build_export_context(
-    rows: list, title: str, project_id: str, source_db: str, generated_at: str, filters: str = ""
+    rows: list,
+    title: str,
+    project_id: str,
+    source_db: str,
+    generated_at: str,
+    filters: str = "",
+    exp_name: str | None = None,
 ) -> dict:
     """Build the full rendering context for the experiment export template.
 
@@ -279,7 +288,7 @@ def build_export_context(
             elif kind == "code":
                 cells.append(_build_collapsed_cell(_cell_value(row, source, kind), CODE_PREVIEW_LENGTH))
             elif kind == "try":
-                command = build_try_command(row, project_id, source_db)
+                command = build_try_command(row, project_id, source_db, exp_name)
                 cells.append(_build_collapsed_cell(command, TRY_PREVIEW_LENGTH))
             else:
                 cells.append(_build_cell(_cell_value(row, source, kind), kind))
@@ -370,6 +379,7 @@ def export_db_to_html(
     profile_name: str = None,
     row_filter=None,
     filters: str = "",
+    exp_name: str | None = None,
 ) -> int:
     """Render an experiment database to an HTML file. Returns the row count.
 
@@ -395,6 +405,7 @@ def export_db_to_html(
         source_db=os.path.basename(db_path),
         generated_at=generated_at,
         filters=filters,
+        exp_name=exp_name,
     )
 
     with open(html_path, "w", encoding="utf-8") as f:

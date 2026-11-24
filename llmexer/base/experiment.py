@@ -6,7 +6,6 @@ import uuid
 from llmexer.constants import PACKAGE_DATA_PATH
 from llmexer.exceptions import LLMExerException
 
-DIR_EXPERIMENT = "experiment"
 DIR_RESPONSES = "responses"
 DIR_PROMPTS = "prompts"
 
@@ -16,7 +15,8 @@ FILE_MAPPING = "mapping.csv"
 FILE_LLM_PARAMS = "llm-params.csv"
 FILE_LLMS_FOR_EXPERIMENT = "llms-for-experiment.csv"
 
-PACKAGE_EXPERIMENT_DATA_PATH = PACKAGE_DATA_PATH / DIR_EXPERIMENT
+# Bundled templates; unrelated to the configurable project folder name.
+PACKAGE_EXPERIMENT_DATA_PATH = PACKAGE_DATA_PATH / "experiment"
 FILE_PROMPT_EXAMPLE = "prompt01.txt"
 
 # Identity triple shared by llms-for-experiment.csv and llm-params.csv. A model
@@ -197,17 +197,18 @@ def read_prompt_example() -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _is_experiment_initialized(experiment_path: str) -> bool:
-    """Check if an experiment has been initialized with required CSV files."""
-    experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
-    required_files = [FILE_DATA, FILE_LLM_PARAMS, FILE_MAPPING, FILE_LLMS_FOR_EXPERIMENT]
-    return all(os.path.exists(os.path.join(experiment_subdir_path, f)) for f in required_files)
+def _is_experiment_initialized(paths) -> bool:
+    """Check if a (sub-)experiment has its four CSV files.
+
+    ``paths`` is an ``ExperimentPaths`` (``base/experiment_layout.py``).
+    """
+    required_files = [paths.data, paths.llm_params, paths.mapping, paths.llms]
+    return all(os.path.exists(path) for path in required_files)
 
 
-def _get_generated_experiment_files(experiment_path: str) -> list[str]:
-    """Get the sorted list of generated experiment databases (``experiment_*.db``)."""
+def _get_generated_experiment_files(paths) -> list[str]:
+    """Get the sorted list of a (sub-)experiment's databases (``experiment_*.db``)."""
     # Local import to avoid a circular import (``dao`` imports from this module).
     from llmexer.base.dao import list_db_files
 
-    experiment_subdir_path = os.path.join(experiment_path, DIR_EXPERIMENT)
-    return list_db_files(experiment_subdir_path)
+    return list_db_files(paths.work_dir)

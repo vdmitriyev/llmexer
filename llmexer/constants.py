@@ -8,6 +8,9 @@ LOGGER_NAME = "llmexer"
 LOG_FILE_NAME = "llmexer.log"
 APP_LOG_LEVEL = os.environ.get("APP_LOG_LEVEL", "INFO").upper()
 DEFAULT_PROJECTS_DIR = ".projects"
+# Folder of a project that holds its experiment(s). Before 0.6.0 it was "experiment".
+DEFAULT_EXPERIMENTS_DIR = "experiments"
+LEGACY_EXPERIMENTS_DIR = "experiment"
 LLMEXER_HOME_DIR = ".llmexer"
 INI_FILE_NAME = "llmexer.ini"
 TEMP_DIR = "temp"
@@ -29,6 +32,7 @@ PACKAGE_DATA_PATH = PACKAGE_PATH / PACKAGE_DATA_DIR
 BASEDIR = None
 PROJECTS_DIR = None
 PROJECTS_PATH = None
+EXPERIMENTS_DIR = None
 TEMP_PATH = None
 LOG_FILE_PATH = None
 

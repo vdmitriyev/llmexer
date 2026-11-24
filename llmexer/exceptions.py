@@ -52,3 +52,7 @@ class ConfigException(LLMExerException):
 
 class SearchQueryNotationException(LLMExerException):
     """Raised when a search query mixes Semantic Scholar and OpenAlex operators."""
+
+
+class ExperimentLayoutException(LLMExerException):
+    """Raised when `experiments.yaml` is invalid or a sub-experiment cannot be resolved."""

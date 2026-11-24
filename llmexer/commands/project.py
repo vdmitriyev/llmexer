@@ -6,8 +6,10 @@ import typer
 from rich.table import Table
 
 import llmexer.constants as _constants
-from llmexer.base.experiment import DIR_EXPERIMENT, generate_project_id
+from llmexer.base.experiment import generate_project_id
+from llmexer.base.experiment_layout import experiments_dir_name
 from llmexer.base.project import (
+    EXPERIMENTS_DIR_PLACEHOLDER,
     README_VERSION_PLACEHOLDER,
     SOURCE_GITIGNORE,
     SOURCE_README,
@@ -78,7 +80,7 @@ def create(
 
     gitignore_path = os.path.join(project_path, FILE_GITIGNORE)
     with open(gitignore_path, "w", encoding="utf-8") as f:
-        f.write(read_project_template(SOURCE_GITIGNORE))
+        f.write(read_project_template(SOURCE_GITIGNORE).replace(EXPERIMENTS_DIR_PLACEHOLDER, experiments_dir_name()))
 
     readme = read_project_template(SOURCE_README).replace(README_VERSION_PLACEHOLDER, package_version())
     readme_path = os.path.join(project_path, FILE_README)
@@ -88,13 +90,15 @@ def create(
     cprint(f"Created project: [bold yellow]{project_id}[/bold yellow]")
 
 
-# Columns of `project list`, each one a folder a project may or may not hold yet.
-PROJECT_PARTS = [
-    ("Search", SEARCHES_DIR),
-    ("Experiment", DIR_EXPERIMENT),
-    ("Analysis", ANALYSIS_DIR),
-    ("Papers", PAPERS_DIR),
-]
+def _project_parts() -> list[tuple[str, str]]:
+    """Columns of `project list`, each one a folder a project may or may not hold yet."""
+
+    return [
+        ("Search", SEARCHES_DIR),
+        ("Experiment", experiments_dir_name()),
+        ("Analysis", ANALYSIS_DIR),
+        ("Papers", PAPERS_DIR),
+    ]
 
 
 @app.command(name="list")
@@ -117,12 +121,13 @@ def list_projects(
     table.add_column("#", justify="right", style="cyan", no_wrap=True)
     table.add_column("Name", style="cyan")
     table.add_column("Created", style="cyan", no_wrap=True)
-    for label, _ in PROJECT_PARTS:
+    project_parts = _project_parts()
+    for label, _ in project_parts:
         table.add_column(label, justify="center", no_wrap=True)
 
     current_pid = settings.project_id
     for i, entry in enumerate(entries, start=1):
-        present = [has_content(entry.path, part_dir) for _, part_dir in PROJECT_PARTS]
+        present = [has_content(entry.path, part_dir) for _, part_dir in project_parts]
 
         plain_cells = [entry.name, format_created(entry)] + ["YES" if p else "NO" for p in present]
         display_cells = [entry.name, format_created(entry)] + [

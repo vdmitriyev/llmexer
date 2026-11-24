@@ -19,6 +19,7 @@ def isolated_llmexer_home(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(paths, "llmexer_home", lambda: home)
     monkeypatch.setenv(paths.BASEDIR_ENV_VAR, str(basedir))
     monkeypatch.delenv(paths.PROJECTS_DIR_ENV_VAR, raising=False)
-    for name in ("BASEDIR", "PROJECTS_DIR", "PROJECTS_PATH", "TEMP_PATH", "LOG_FILE_PATH"):
+    monkeypatch.delenv(paths.EXPERIMENTS_DIR_ENV_VAR, raising=False)
+    for name in ("BASEDIR", "PROJECTS_DIR", "PROJECTS_PATH", "EXPERIMENTS_DIR", "TEMP_PATH", "LOG_FILE_PATH"):
         monkeypatch.setattr(constants, name, None)
     return home

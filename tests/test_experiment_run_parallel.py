@@ -45,7 +45,7 @@ def _ollama_row(row_id):
 def experiment_with_rows(projects_dir):
     """Database with a single ollama table holding several pending rows."""
     pid = "parallel-run-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _EXPERIMENT_DB_NAME,

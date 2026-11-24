@@ -91,7 +91,7 @@ def _write_params(exp_subdir, *rows):
 def generated_experiment(projects_dir):
     """Initialise a project, run `generate`, return (pid, exp_subdir, db_path)."""
     pid = "try-test"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -407,7 +407,7 @@ def test_try_model_option_disambiguates(generated_experiment, mock_ollama):
 def initialised_without_database(projects_dir):
     """An initialised project that `generate` was never run against."""
     pid = "no-db"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir / "prompts")
     (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + _OLLAMA_MODEL_ROW, encoding="utf-8")
     (exp_subdir / "data.csv").write_text("ID;Title;Abstract\nD01;T;A.\n", encoding="utf-8")

@@ -31,7 +31,7 @@ def mock_no_dotenv(monkeypatch):
 
 def _project(projects_dir, pid):
     """Create ``<pid>/experiment`` and ``<pid>/papers`` and return their paths."""
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     papers_dir = projects_dir / pid / "papers"
     searches_dir = projects_dir / pid / "searches"
     os.makedirs(exp_subdir)
@@ -109,7 +109,7 @@ def test_copy_papers_no_parsed_files_warns_and_skips(projects_dir):
 
 def test_copy_papers_missing_papers_folder_raises(projects_dir):
     pid = "papers-nofolder"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)  # no papers/ folder
 
     result = runner.invoke(app, ["experiment", "copy-papers", "--pid", pid])

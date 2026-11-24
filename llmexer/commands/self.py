@@ -13,6 +13,7 @@ from llmexer.common import get_user_agent
 from llmexer.configs import console, cprint
 from llmexer.constants import (
     DEFAULT_DOCLING_URL,
+    DEFAULT_EXPERIMENTS_DIR,
     DEFAULT_MAX_OPENALEX_RESPONSES,
     DEFAULT_OPENROUTER_MAX_SPEND_USD,
     DEFAULT_PROJECTS_DIR,
@@ -39,6 +40,7 @@ GENERAL_ENV_VARS = [
     EnvVar("APP_LOG_LEVEL", default="INFO"),
     EnvVar("LLMEXER_BASEDIR", default="<from llmexer.ini>"),
     EnvVar("LLMEXER_PROJECTS_DIR", default=DEFAULT_PROJECTS_DIR),
+    EnvVar("LLMEXER_EXPERIMENTS_DIR", default=DEFAULT_EXPERIMENTS_DIR),
 ]
 
 PAPERS_SEARCH_ENV_VARS = [
@@ -141,5 +143,6 @@ def paths():
     table.add_row("Log file", str(runtime_paths.log_file_path))
     table.add_row("Basedir", f"{runtime_paths.basedir} [dim]({runtime_paths.basedir_source})[/dim]")
     table.add_row("Projects folder", str(runtime_paths.projects_path))
+    table.add_row("Experiments folder", f"<project>/{runtime_paths.experiments_dir}")
     table.add_row("Temp folder", str(runtime_paths.temp_path))
     console.print(table)

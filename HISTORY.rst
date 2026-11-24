@@ -2,11 +2,18 @@
 History
 =======
 
+0.6.0 (2026-11-24)
+-------------------
+
+* ``search create`` / ``search run`` accept a query in Semantic Scholar (``+ | -``) or OpenAlex (``AND OR NOT``) notation; each engine gets it translated. Mixing both is an error.
+* Several experiments per project: ``experiment init --layout multiple --exp NAME`` gives each sub-experiment its own data, mapping, LLM list, databases and responses, sharing ``llm-params.csv`` and ``prompts/``. Every command takes ``--exp``. Add ``experiment add`` and ``experiment convert``; ``init`` / ``add`` accept ``--data`` / ``--mapping`` / ``--llms``. ``analysis init`` / ``add-agreement`` take ``--exp`` too.
+* **Breaking:** a project's experiment folder is now ``experiments/`` (was ``experiment/``); rename old ones or set ``experiments_dir = experiment`` in ``llmexer.ini`` / ``LLMEXER_EXPERIMENTS_DIR``. A project with the old folder stops with the ``mv`` command for the rename; ``experiment list`` marks such projects.
+* llmexer's own errors are shown as a short colored message instead of a traceback (kept in ``llmexer.log``; ``--verbose`` shows it).
+
 0.5.1 (2026-11-24)
 -------------------
 
 * Keep the log and projects in one place: a ``.llmexer/llmexer.ini`` next to the virtualenv (or in the home folder) sets the base folder and the projects folder name. Overridable via ``LLMEXER_BASEDIR`` / ``LLMEXER_PROJECTS_DIR``. Add ``self paths``.
-* ``search create`` / ``search run`` accept a query in Semantic Scholar (``+ | -``) or OpenAlex (``AND OR NOT``) notation; each engine gets it translated. Mixing both is an error.
 
 0.5.0 (2026-10-25)
 -------------------

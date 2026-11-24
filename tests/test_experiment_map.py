@@ -54,7 +54,7 @@ _DATA_CSV = (
 def initialised_experiment(projects_dir):
     """Create a project with data.csv and two prompt templates, but no mapping.csv."""
     pid = "test-map"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 

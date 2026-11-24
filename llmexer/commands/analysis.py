@@ -16,6 +16,11 @@ from llmexer.base.analysis.notebook import (
     write_notebook,
 )
 from llmexer.base.dao import latest_db
+from llmexer.base.experiment_layout import (
+    ExperimentPaths,
+    experiments_dir_name,
+    resolve_experiment,
+)
 from llmexer.common import (
     ensure_directory_exists,
     get_project_directory_path,
@@ -30,18 +35,39 @@ from llmexer.version import package_version
 app = typer.Typer(help="Helps with analyse of the data by generating ready-to-run Jupyter notebooks.")
 
 
-def _latest_db_name(project_path: str):
-    """Filename of the project's newest ``experiment_*.db``, or ``None``.
+def _latest_db_name(paths: ExperimentPaths):
+    """Filename of the (sub-)experiment's newest ``experiment_*.db``, or ``None``.
 
     Only the name travels into the notebook: the notebook joins it onto its own
     ``DIR_EXPERIMENT``, so the project folder stays relocatable.
     """
 
-    from llmexer.base.experiment import DIR_EXPERIMENT
-
-    newest = latest_db(os.path.join(project_path, DIR_EXPERIMENT))
+    newest = latest_db(paths.work_dir)
 
     return os.path.basename(newest) if newest else None
+
+
+def _exp_prefix(paths: ExperimentPaths) -> str:
+    """``<name>__`` for a sub-experiment, so two of them never share an output file."""
+
+    return "" if paths.name is None else f"{paths.name}__"
+
+
+def _analysis_paths(pid: str, exp: str | None) -> ExperimentPaths:
+    """The (sub-)experiment to analyse; a project without ``experiments/`` yet is fine."""
+
+    paths = resolve_experiment(pid, exp, must_exist=False)
+    if paths.name is not None:
+        cprint(f"Experiment: [bold yellow]{paths.label()}[/bold yellow]")
+    return paths
+
+
+def _exp_option():
+    return typer.Option(
+        None,
+        "--exp",
+        help="Sub-experiment to analyse in a project with several. Defaults to the default one.",
+    )
 
 
 def _search_files(project_path: str) -> list:
@@ -131,10 +157,11 @@ def init(
         "--rewrite",
         help="Replace existing notebooks and analysis modules, backing each up first.",
     ),
+    exp: str = _exp_option(),
 ) -> None:
     """Scaffold Jupyter notebooks for analysing a project
 
-    Creates ``analysis/`` next to the project's ``experiment/``, ``papers/`` and
+    Creates ``analysis/`` next to the project's ``experiments/``, ``papers/`` and
     ``searches/`` folders, holding two ready-to-run notebooks and the Python
     modules they call. The modules are copies, so they can be tweaked per
     project; ``--rewrite`` restores the shipped versions and backs up the old
@@ -147,8 +174,10 @@ def init(
     pid = get_proper_pid(pid)
     project_path = get_project_directory_path(pid)
     analysis_path = os.path.join(project_path, ANALYSIS_DIR)
+    paths = _analysis_paths(pid, exp)
+    notebooks = _notebook_names(paths)
 
-    planned = _plan(analysis_path, rewrite)
+    planned = _plan(analysis_path, rewrite, list(notebooks.values()) + list(COPIED_MODULES))
     console.print(_render_plan_table(planned, analysis_path))
 
     to_write = [item for item in planned if item[2] != "keep"]
@@ -175,7 +204,10 @@ def init(
 
     context = {
         "project_id": pid,
-        "db_file": _latest_db_name(project_path),
+        "db_file": _latest_db_name(paths),
+        "exp_name": paths.name,
+        "experiments_dir": experiments_dir_name(),
+        "csv_prefix": _exp_prefix(paths),
         "searches": _search_files(project_path),
         "package_version": package_version(),
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -183,7 +215,7 @@ def init(
 
     written = []
     pending = {filename for filename, _, action, _ in to_write if action != "keep"}
-    for kind, filename in NOTEBOOKS.items():
+    for kind, filename in notebooks.items():
         if filename in pending:
             written.append(write_notebook(kind, context, os.path.join(analysis_path, filename)))
     if pending & set(COPIED_MODULES):
@@ -191,7 +223,7 @@ def init(
 
     cprint(f"Analysis workspace ready — {len(written)} file(s) written:\n  {analysis_path}")
 
-    notebook = os.path.join(analysis_path, NOTEBOOKS["experiment"])
+    notebook = os.path.join(analysis_path, notebooks["experiment"])
     cprint("\nNext step is to open Jupyter Notebook file and run all cells.")
     cprint(f"Jupyter Notebook: [bold yellow]{notebook}[/bold yellow]")
 
@@ -216,12 +248,23 @@ def _resolve_fields(fields) -> list:
     return unique
 
 
-def _flattened_csv_name(project_path: str):
+def _notebook_names(paths: ExperimentPaths) -> dict:
+    """``NOTEBOOKS``, with the experiment notebook prefixed for a sub-experiment.
+
+    The searches notebook covers the whole project, so it keeps its name.
+    """
+
+    names = dict(NOTEBOOKS)
+    names["experiment"] = f"{_exp_prefix(paths)}{NOTEBOOKS['experiment']}"
+    return names
+
+
+def _flattened_csv_name(paths: ExperimentPaths):
     """Name of the flattened CSV the experiment notebook writes, or ``None``."""
 
-    db_file = _latest_db_name(project_path)
+    db_file = _latest_db_name(paths)
 
-    return f"{Path(db_file).stem}_flattened.csv" if db_file else None
+    return f"{_exp_prefix(paths)}{Path(db_file).stem}_flattened.csv" if db_file else None
 
 
 def _print_agreement_inputs(fields: list, autodetect: bool, csv_file, notebook: str) -> None:
@@ -267,6 +310,7 @@ def add_agreement(
         "--rewrite",
         help="Replace an existing agreements notebook, backing it up first.",
     ),
+    exp: str = _exp_option(),
 ) -> None:
     """Add the agreements notebook: pairwise Cohen's kappa between configurations
 
@@ -284,8 +328,9 @@ def add_agreement(
     project_path = get_project_directory_path(pid)
     analysis_path = os.path.join(project_path, ANALYSIS_DIR)
 
-    notebook_name = ADDON_NOTEBOOKS["agreements"]
-    csv_file = _flattened_csv_name(project_path)
+    paths = _analysis_paths(pid, exp)
+    notebook_name = f"{_exp_prefix(paths)}{ADDON_NOTEBOOKS['agreements']}"
+    csv_file = _flattened_csv_name(paths)
     _print_agreement_inputs(selected_fields, autodetect_fields, csv_file, notebook_name)
 
     planned = _plan(analysis_path, rewrite, [notebook_name] + list(COPIED_MODULES))
@@ -315,7 +360,9 @@ def add_agreement(
 
     context = {
         "project_id": pid,
-        "db_file": _latest_db_name(project_path),
+        "db_file": _latest_db_name(paths),
+        "exp_name": paths.name,
+        "experiments_dir": experiments_dir_name(),
         "csv_file": csv_file,
         "fields": selected_fields,
         "autodetect_fields": autodetect_fields,

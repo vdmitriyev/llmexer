@@ -17,6 +17,7 @@ from llmexer.exceptions import ConfigException
 INI_SECTION = "llmexer"
 BASEDIR_ENV_VAR = "LLMEXER_BASEDIR"
 PROJECTS_DIR_ENV_VAR = "LLMEXER_PROJECTS_DIR"
+EXPERIMENTS_DIR_ENV_VAR = "LLMEXER_EXPERIMENTS_DIR"
 
 
 @dataclass
@@ -29,6 +30,7 @@ class RuntimePaths:
     basedir: Path
     basedir_source: str
     projects_dir: str
+    experiments_dir: str
     projects_path: Path
     temp_path: Path
     log_file_path: Path
@@ -75,6 +77,8 @@ def ensure_ini(home: Path, venv: bool) -> Path:
         f"basedir = {_default_basedir_value(venv)}\n"
         "; Name of the folder (inside basedir) that holds the projects.\n"
         f"projects_dir = {_constants.DEFAULT_PROJECTS_DIR}\n"
+        "; Name of the folder (inside each project) that holds its experiment(s).\n"
+        f"experiments_dir = {_constants.DEFAULT_EXPERIMENTS_DIR}\n"
     )
     ini_file.write_text(content, encoding="utf-8")
     return ini_file
@@ -98,6 +102,13 @@ def _ini_basedir(value: str, venv: bool, ini_file: Path) -> Path:
     if not venv:
         raise ConfigException(f"'basedir' in '{ini_file}' must be an absolute path, got '{value}'.")
     return (venv_root() / path).resolve()
+
+
+def _check_folder_name(value: str, setting: str) -> None:
+    """A folder name, not a path: it is joined onto every project folder."""
+
+    if value in (".", "..") or "/" in value or "\\" in value:
+        raise ConfigException(f"'{setting}' must be a plain folder name, got '{value}'.")
 
 
 def resolve_paths() -> RuntimePaths:
@@ -124,6 +135,11 @@ def resolve_paths() -> RuntimePaths:
     ini_projects_dir = ini.get("projects_dir", "").strip()
     projects_dir = env_projects_dir or ini_projects_dir or _constants.DEFAULT_PROJECTS_DIR
 
+    env_experiments_dir = os.getenv(EXPERIMENTS_DIR_ENV_VAR, "").strip()
+    ini_experiments_dir = ini.get("experiments_dir", "").strip()
+    experiments_dir = env_experiments_dir or ini_experiments_dir or _constants.DEFAULT_EXPERIMENTS_DIR
+    _check_folder_name(experiments_dir, "experiments_dir")
+
     return RuntimePaths(
         venv=venv,
         home=home,
@@ -132,6 +148,7 @@ def resolve_paths() -> RuntimePaths:
         basedir_source=basedir_source,
         projects_dir=projects_dir,
         projects_path=basedir / projects_dir,
+        experiments_dir=experiments_dir,
         temp_path=basedir / _constants.TEMP_DIR,
         log_file_path=home / _constants.LOG_FILE_NAME,
     )
@@ -144,6 +161,7 @@ def apply_paths(paths: RuntimePaths) -> None:
         "BASEDIR": str(paths.basedir),
         "PROJECTS_DIR": paths.projects_dir,
         "PROJECTS_PATH": str(paths.projects_path),
+        "EXPERIMENTS_DIR": paths.experiments_dir,
         "TEMP_PATH": str(paths.temp_path),
         "LOG_FILE_PATH": str(paths.log_file_path),
     }

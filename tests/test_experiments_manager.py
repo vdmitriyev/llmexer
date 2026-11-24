@@ -611,7 +611,7 @@ def test_stats_counts_errors(db_file, monkeypatch):
 
 def test_cli_stats_command(projects_dir):
     pid = "stats-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _DB_NAME,
@@ -633,7 +633,7 @@ def test_cli_stats_command(projects_dir):
 def test_cli_stats_models_table_names_the_provider(projects_dir):
     """One model served by two providers is listed once per provider."""
     pid = "stats-shared-model"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _DB_NAME,
@@ -656,7 +656,7 @@ def test_cli_stats_models_table_names_the_provider(projects_dir):
 def test_cli_stats_shortens_token_counts(projects_dir):
     """Tokens are shown through `format_number_console_ui`, not raw."""
     pid = "stats-big-tokens"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _DB_NAME,
@@ -674,7 +674,7 @@ def test_cli_stats_shortens_token_counts(projects_dir):
 def test_cli_stats_defaults_to_single_db(projects_dir, mock_providers):
     """With no --file, stats auto-discovers the single database."""
     pid = "stats-default-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(exp_subdir / _DB_NAME, {"ollama": [dict(OLLAMA_ROW)]})
 
@@ -700,7 +700,7 @@ def test_format_hms():
 def test_cli_stats_missing_db_raises(projects_dir):
     """stats with no --file and no database errors, pointing to `generate`."""
     pid = "stats-no-db"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
 
     result = runner.invoke(app, ["experiment", "stats", "--pid", pid])
@@ -712,7 +712,7 @@ def test_cli_stats_missing_db_raises(projects_dir):
 def test_cli_stats_multiple_dbs_requires_file(projects_dir):
     """stats with no --file errors when several databases exist."""
     pid = "stats-multi"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(exp_subdir / "experiment_20240101_01.db", {"ollama": [dict(OLLAMA_ROW)]})
     seed_db(exp_subdir / "experiment_20240101_02.db", {"openai": [dict(OPENAI_ROW)]})
@@ -725,7 +725,7 @@ def test_cli_stats_multiple_dbs_requires_file(projects_dir):
 
 def test_cli_run_single_code(projects_dir, mock_providers):
     pid = "single-code-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _DB_NAME,

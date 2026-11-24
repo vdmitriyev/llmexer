@@ -168,3 +168,25 @@ def test_self_paths_shows_the_ini_file(venv_mode, monkeypatch):
     assert result.exit_code == 0, result.output
     assert constants.INI_FILE_NAME in result.output
     assert "virtualenv" in result.output
+
+
+def test_experiments_dir_default_env_and_ini(venv_mode, monkeypatch):
+    assert paths.resolve_paths().experiments_dir == "experiments"
+
+    _write_ini(venv_mode / constants.LLMEXER_HOME_DIR, basedir=".", experiments_dir="exps")
+    assert paths.resolve_paths().experiments_dir == "exps"
+
+    monkeypatch.setenv(paths.EXPERIMENTS_DIR_ENV_VAR, "experiment")
+    assert paths.resolve_paths().experiments_dir == "experiment"
+
+
+@pytest.mark.parametrize("value", ["a/b", "..", "."])
+def test_experiments_dir_must_be_a_folder_name(venv_mode, monkeypatch, value):
+    monkeypatch.setenv(paths.EXPERIMENTS_DIR_ENV_VAR, value)
+    with pytest.raises(ConfigException, match="experiments_dir"):
+        paths.resolve_paths()
+
+
+def test_new_ini_lists_experiments_dir(user_mode):
+    resolved = paths.resolve_paths()
+    assert "experiments_dir = experiments" in resolved.ini_file.read_text(encoding="utf-8")

@@ -90,7 +90,7 @@ def _ran_row(row_id, code_suffix, response, **overrides):
 @pytest.fixture()
 def experiment_with_results(projects_dir):
     """A database with three finished ollama rows and one unrun litellm row."""
-    exp_subdir = projects_dir / PID / "experiment"
+    exp_subdir = projects_dir / PID / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _DB_NAME,
@@ -428,7 +428,7 @@ def test_export_try_command_matches_each_row(experiment_with_results):
 
 def test_export_try_cell_is_empty_for_an_unparseable_code(projects_dir):
     """A code that is not DATAID_PROMPTID_MODEL_PROFILE yields no command."""
-    exp_subdir = projects_dir / "odd-code-exp" / "experiment"
+    exp_subdir = projects_dir / "odd-code-exp" / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _DB_NAME,
@@ -535,7 +535,7 @@ def mock_ollama(monkeypatch):
 def generated_experiment(projects_dir):
     """A real project put through `generate`, so `try` can resolve its names."""
     pid = "export-roundtrip"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -616,7 +616,7 @@ def test_export_does_not_overwrite_without_rewrite(experiment_with_results):
 
 def test_export_without_database_raises(projects_dir, mock_no_dotenv):
     """A project with no generated database points the user at `generate`."""
-    os.makedirs(projects_dir / "empty-exp" / "experiment")
+    os.makedirs(projects_dir / "empty-exp" / "experiments")
 
     result = runner.invoke(app, ["experiment", "export", "--pid", "empty-exp"])
 
@@ -651,7 +651,7 @@ def test_export_defaults_to_the_newest_database(experiment_with_results):
 
 def test_export_does_not_emit_raw_markup_from_a_response(projects_dir):
     """A response carrying markup is stripped and escaped, never rendered live."""
-    exp_subdir = projects_dir / "escape-exp" / "experiment"
+    exp_subdir = projects_dir / "escape-exp" / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _DB_NAME,
@@ -688,7 +688,7 @@ def _ollama_row(row_id, model_name, profile_name):
 @pytest.fixture()
 def experiment_with_model_profile_matrix(projects_dir):
     """Database with one ollama table holding two models × two profiles."""
-    exp_subdir = projects_dir / PID / "experiment"
+    exp_subdir = projects_dir / PID / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _DB_NAME,

@@ -43,7 +43,7 @@ def mock_no_dotenv(monkeypatch):
 @pytest.fixture()
 def experiment_with_results(projects_dir):
     """A database with one finished ollama row and one unrun litellm row."""
-    exp_subdir = projects_dir / PID / "experiment"
+    exp_subdir = projects_dir / PID / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _DB_NAME,
@@ -157,7 +157,7 @@ def test_compact_accepts_an_absolute_path(experiment_with_results):
 
 def test_compact_without_database_raises(projects_dir, mock_no_dotenv):
     """A project with no generated database points the user at `generate`."""
-    os.makedirs(projects_dir / "empty-exp" / "experiment")
+    os.makedirs(projects_dir / "empty-exp" / "experiments")
 
     result = runner.invoke(app, ["experiment", "compact", "--pid", "empty-exp"])
 

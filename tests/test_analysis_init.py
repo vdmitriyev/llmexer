@@ -52,7 +52,7 @@ def project(projects_dir):
 def full_project(project):
     """A project with a generated database, a search CSV and a paper."""
 
-    exp_subdir = project / "experiment"
+    exp_subdir = project / "experiments"
     os.makedirs(exp_subdir)
     seed_db(exp_subdir / "experiment_20240101_01.db", {"ollama": [dict(OLLAMA_ROW)]})
 

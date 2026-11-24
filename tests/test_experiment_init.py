@@ -52,7 +52,7 @@ def test_init_creates_experiment_subfolder(experiment, projects_dir):
     result = runner.invoke(app, ["experiment", "init", "--pid", pid])
 
     assert result.exit_code == 0
-    assert (exp_path / "experiment").is_dir()
+    assert (exp_path / "experiments").is_dir()
 
 
 def test_init_creates_prompts_subfolder(experiment, projects_dir):
@@ -62,7 +62,7 @@ def test_init_creates_prompts_subfolder(experiment, projects_dir):
     result = runner.invoke(app, ["experiment", "init", "--pid", pid])
 
     assert result.exit_code == 0
-    assert (exp_path / "experiment" / "prompts").is_dir()
+    assert (exp_path / "experiments" / "prompts").is_dir()
 
 
 def test_init_creates_models_csv(experiment, projects_dir):
@@ -72,7 +72,7 @@ def test_init_creates_models_csv(experiment, projects_dir):
     result = runner.invoke(app, ["experiment", "init", "--pid", pid])
 
     assert result.exit_code == 0
-    models_file = exp_path / "experiment" / "llms-for-experiment.csv"
+    models_file = exp_path / "experiments" / "llms-for-experiment.csv"
     assert models_file.exists()
     lines = models_file.read_text(encoding="utf-8").splitlines()
     assert lines[0] == "provider;model_name;profile_name;notes"
@@ -94,7 +94,7 @@ def test_init_creates_data_csv(experiment, projects_dir):
     result = runner.invoke(app, ["experiment", "init", "--pid", pid])
 
     assert result.exit_code == 0
-    data_file = exp_path / "experiment" / "data.csv"
+    data_file = exp_path / "experiments" / "data.csv"
     assert data_file.exists()
     lines = data_file.read_text(encoding="utf-8").splitlines()
     assert lines[0] == "ID;Title;Abstract"
@@ -110,7 +110,7 @@ def test_init_creates_mapping_csv(experiment, projects_dir):
     result = runner.invoke(app, ["experiment", "init", "--pid", pid])
 
     assert result.exit_code == 0
-    mapping_file = exp_path / "experiment" / "mapping.csv"
+    mapping_file = exp_path / "experiments" / "mapping.csv"
     assert mapping_file.exists()
     lines = mapping_file.read_text(encoding="utf-8").splitlines()
     assert lines[0] == "data_id;prompt_id"
@@ -124,7 +124,7 @@ def test_init_creates_prompt_file(experiment, projects_dir):
     result = runner.invoke(app, ["experiment", "init", "--pid", pid])
 
     assert result.exit_code == 0
-    prompt_file = exp_path / "experiment" / "prompts" / "prompt01.txt"
+    prompt_file = exp_path / "experiments" / "prompts" / "prompt01.txt"
     assert prompt_file.exists()
     content = prompt_file.read_text(encoding="utf-8")
     assert "{{title}}" in content
@@ -141,7 +141,7 @@ def test_init_copies_the_bundled_prompt_example(experiment, projects_dir):
     pid, exp_path = experiment
     runner.invoke(app, ["experiment", "init", "--pid", pid])
 
-    written = (exp_path / "experiment" / "prompts" / "prompt01.txt").read_text(encoding="utf-8")
+    written = (exp_path / "experiments" / "prompts" / "prompt01.txt").read_text(encoding="utf-8")
     bundled = (PACKAGE_EXPERIMENT_DATA_PATH / "prompt01.txt").read_text(encoding="utf-8")
 
     assert written == bundled == read_prompt_example()
@@ -211,7 +211,7 @@ def test_init_uses_current_experiment_from_env(projects_dir, mock_no_dotenv, mon
     result = runner.invoke(app, ["experiment", "init"])
 
     assert result.exit_code == 0
-    assert (exp_path / "experiment").is_dir()
+    assert (exp_path / "experiments").is_dir()
     assert pid in result.output
 
 
@@ -235,7 +235,7 @@ def test_init_creates_llm_params_csv(experiment, projects_dir):
     result = runner.invoke(app, ["experiment", "init", "--pid", pid])
 
     assert result.exit_code == 0
-    params_file = exp_path / "experiment" / "llm-params.csv"
+    params_file = exp_path / "experiments" / "llm-params.csv"
     assert params_file.exists()
     lines = params_file.read_text(encoding="utf-8").splitlines()
     assert lines[0] == (
@@ -266,7 +266,7 @@ def test_init_templates_join_on_the_triple(projects_dir):
     runner.invoke(app, ["experiment", "init", "--pid", pid])
 
     key = ["provider", "model_name", "profile_name"]
-    subdir = exp_path / "experiment"
+    subdir = exp_path / "experiments"
     models = pd.read_csv(subdir / "llms-for-experiment.csv", sep=";")
     params = pd.read_csv(subdir / "llm-params.csv", sep=";")
 
@@ -282,7 +282,7 @@ def test_init_llm_params_values_land_in_their_own_columns(experiment, projects_d
     result = runner.invoke(app, ["experiment", "init", "--pid", pid])
     assert result.exit_code == 0
 
-    params_file = exp_path / "experiment" / "llm-params.csv"
+    params_file = exp_path / "experiments" / "llm-params.csv"
     df = pd.read_csv(params_file, sep=";").set_index("profile_name")
 
     assert df.loc["ollama-gemma4-default", "ollama_context_window"] == 4096
@@ -320,6 +320,6 @@ def test_init_eid_overrides_env(projects_dir, mock_no_dotenv, monkeypatch):
 
     assert result.exit_code == 0
     # env-exp should NOT have been initialised
-    assert not (projects_dir / env_eid / "experiment").exists()
+    assert not (projects_dir / env_eid / "experiments").exists()
     # cli-exp should have been initialised
-    assert (projects_dir / cli_eid / "experiment").is_dir()
+    assert (projects_dir / cli_eid / "experiments").is_dir()

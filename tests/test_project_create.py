@@ -67,24 +67,31 @@ def test_create_writes_gitignore(projects_dir):
     for pattern in (
         "*.html",
         "*.db",
-        "experiment/data_backup_*.csv",
-        "experiment/mapping_backup_*.csv",
+        "experiments/data_backup_*.csv",
+        "experiments/mapping_backup_*.csv",
+        "experiments/*/responses/*",
         "searches/jsons/*",
         "papers/*",
-        "experiment/responses/*",
+        "experiments/responses/*",
         "analysis/.backup/*",
     ):
         assert pattern in content
 
 
 def test_create_gitignore_matches_template(projects_dir):
-    """The written .gitignore should be the shipped file, byte for byte."""
-    from llmexer.base.project import SOURCE_GITIGNORE, read_project_template
+    """The written .gitignore is the shipped file with the experiments folder name filled in."""
+    from llmexer.base.project import (
+        EXPERIMENTS_DIR_PLACEHOLDER,
+        SOURCE_GITIGNORE,
+        read_project_template,
+    )
 
     runner.invoke(app, ["project", "create", "--id", "gi-template-exp"])
 
     gitignore = projects_dir / "gi-template-exp" / ".gitignore"
-    assert gitignore.read_text(encoding="utf-8") == read_project_template(SOURCE_GITIGNORE)
+    expected = read_project_template(SOURCE_GITIGNORE).replace(EXPERIMENTS_DIR_PLACEHOLDER, "experiments")
+    assert gitignore.read_text(encoding="utf-8") == expected
+    assert EXPERIMENTS_DIR_PLACEHOLDER not in expected
 
 
 def test_create_writes_readme(projects_dir):

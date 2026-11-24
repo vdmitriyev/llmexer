@@ -65,7 +65,7 @@ def test_an_uninitialised_project_points_at_init(projects_dir, mock_no_dotenv, m
 
 
 def test_a_project_without_a_database_points_at_generate(projects_dir, mock_no_dotenv, monkeypatch):
-    os.makedirs(projects_dir / PID / "experiment")
+    os.makedirs(projects_dir / PID / "experiments")
     monkeypatch.setenv("PROJECT_ID", PID)
 
     result = runner.invoke(app, ["experiment"])
@@ -75,7 +75,7 @@ def test_a_project_without_a_database_points_at_generate(projects_dir, mock_no_d
 
 
 def test_the_newest_database_is_reported(projects_dir, mock_no_dotenv, monkeypatch):
-    exp_subdir = projects_dir / PID / "experiment"
+    exp_subdir = projects_dir / PID / "experiments"
     os.makedirs(exp_subdir)
     for name in ("experiment_20240101_01.db", "experiment_20240101_02.db"):
         seed_db(exp_subdir / name, {"ollama": [dict(OLLAMA_ROW)]})
@@ -89,7 +89,7 @@ def test_the_newest_database_is_reported(projects_dir, mock_no_dotenv, monkeypat
 
 
 def test_the_exp_alias_behaves_the_same(projects_dir, mock_no_dotenv, monkeypatch):
-    exp_subdir = projects_dir / PID / "experiment"
+    exp_subdir = projects_dir / PID / "experiments"
     os.makedirs(exp_subdir)
     seed_db(exp_subdir / "experiment_20240101_01.db", {"ollama": [dict(OLLAMA_ROW)]})
     monkeypatch.setenv("PROJECT_ID", PID)

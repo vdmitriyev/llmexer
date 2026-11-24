@@ -153,7 +153,7 @@ def test_list_not_initialized(projects_dir):
 
 def test_list_initialized(projects_dir):
     """Experiment with all required CSV files should show Yes in Initialized column."""
-    exp_path = projects_dir / "init-exp" / "experiment"
+    exp_path = projects_dir / "init-exp" / "experiments"
     os.makedirs(exp_path)
     for f in ["data.csv", "llm-params.csv", "mapping.csv", "llms-for-experiment.csv"]:
         (exp_path / f).write_text("header\n")
@@ -165,7 +165,7 @@ def test_list_initialized(projects_dir):
 
 def test_list_partially_initialized(projects_dir):
     """Experiment with only some CSV files should show No in Initialized column."""
-    exp_path = projects_dir / "partial-exp" / "experiment"
+    exp_path = projects_dir / "partial-exp" / "experiments"
     os.makedirs(exp_path)
     # Only create some of the required files
     for f in ["data.csv", "llms-for-experiment.csv"]:
@@ -197,7 +197,7 @@ def test_list_no_generated_files(projects_dir):
 
 def test_list_with_generated_files(projects_dir):
     """Experiment with generated files should display their names (possibly truncated)."""
-    exp_path = projects_dir / "gen-exp" / "experiment"
+    exp_path = projects_dir / "gen-exp" / "experiments"
     os.makedirs(exp_path)
     (exp_path / "experiment_20240101_01.db").write_text("data\n")
 
@@ -209,7 +209,7 @@ def test_list_with_generated_files(projects_dir):
 
 def test_list_multiple_generated_files(projects_dir):
     """Experiment with multiple generated files should display them."""
-    exp_path = projects_dir / "multi-gen-exp" / "experiment"
+    exp_path = projects_dir / "multi-gen-exp" / "experiments"
     os.makedirs(exp_path)
     (exp_path / "experiment_20240101_01.db").write_text("data\n")
     (exp_path / "experiment_20240102_02.db").write_text("data\n")
@@ -223,7 +223,7 @@ def test_list_multiple_generated_files(projects_dir):
 
 def test_list_excludes_non_db_files(projects_dir):
     """Only generated databases (*.db) appear in the Experiments column."""
-    exp_path = projects_dir / "results-exp" / "experiment"
+    exp_path = projects_dir / "results-exp" / "experiments"
     os.makedirs(exp_path)
     (exp_path / "experiment_20240101_01.db").write_text("data\n")
     # Non-db files in the experiment dir must not be listed as generated experiments.

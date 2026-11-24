@@ -123,7 +123,7 @@ def test_write_notebook_leaves_nothing_behind_when_rendering_fails(tmp_path):
 
 def _project_with_data(projects_dir):
     project = projects_dir / PID
-    exp_subdir = project / "experiment"
+    exp_subdir = project / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / "experiment_20240101_01.db",

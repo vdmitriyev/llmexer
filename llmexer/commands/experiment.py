@@ -8,6 +8,7 @@ import random
 import shutil
 from collections import Counter, defaultdict
 from contextlib import ExitStack
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -38,9 +39,7 @@ from llmexer.base.experiment import (
     _PARAM_COLUMNS,
     COMMON_PARAM_COLUMNS,
     CSV_JOIN_KEY_COLUMNS,
-    DIR_EXPERIMENT,
     DIR_PROMPTS,
-    DIR_RESPONSES,
     FILE_DATA,
     FILE_LLM_PARAMS,
     FILE_LLMS_FOR_EXPERIMENT,
@@ -58,11 +57,26 @@ from llmexer.base.experiment_export import (
     build_try_command,
     export_db_to_html,
 )
+from llmexer.base.experiment_layout import (
+    EXPERIMENTS_YAML,
+    ExperimentPaths,
+    Layout,
+    Manifest,
+    default_files,
+    default_name,
+    experiment_root,
+    experiments_dir_name,
+    legacy_folder_hint,
+    list_sub_experiments,
+    load_manifest,
+    resolve_experiment,
+    save_manifest,
+    validate_name,
+)
 from llmexer.base.project import SortBy, format_created, project_row, scan_projects
 from llmexer.common import (
     ensure_directory_exists,
     format_number_console_ui,
-    get_experiment_subdir_path,
     get_project_directory_path,
     get_proper_pid,
     next_backup_name,
@@ -70,7 +84,11 @@ from llmexer.common import (
 )
 from llmexer.configs import console, cprint, settings
 from llmexer.constants import PAPERS_DIR, SEARCHES_DIR
-from llmexer.exceptions import LLMExerException, UnexpectedCLIParamsException
+from llmexer.exceptions import (
+    ExperimentLayoutException,
+    LLMExerException,
+    UnexpectedCLIParamsException,
+)
 
 app = typer.Typer(help="Manage LLM experiments.")
 
@@ -93,23 +111,62 @@ def main(ctx: typer.Context) -> None:
         cprint(f"[bold red]Project not found in {_constants.PROJECTS_PATH}[/bold red]")
         return
 
-    experiment_subdir_path = os.path.join(project_path, DIR_EXPERIMENT)
-    if not os.path.isdir(experiment_subdir_path):
+    sub_experiments = list_sub_experiments(project_path)
+    hint = legacy_folder_hint(project_path)
+    if hint:
+        cprint(f"[bold yellow]Warning:[/bold yellow] {escape(hint)}")
+        return
+    if not sub_experiments:
         cprint(
             "No experiment set up yet. Run:\n"
             f"[bold yellow]llmexer experiment init --pid {settings.project_id}[/bold yellow]"
         )
         return
 
-    db_path = latest_db(experiment_subdir_path)
+    if sub_experiments[0].name is None:
+        _print_current_db(sub_experiments[0])
+        return
+
+    default = default_name(project_path)
+    cprint("Experiments ([bold]*[/bold] = default, used when --exp is not given):")
+    for paths in sub_experiments:
+        marker = "*" if paths.name == default else " "
+        db_path = latest_db(paths.work_dir)
+        db_display = os.path.basename(db_path) if db_path else "[dim]no database yet[/dim]"
+        cprint(f"  {marker} [bold yellow]{paths.name}[/bold yellow]: {db_display}")
+
+
+def _print_current_db(paths: ExperimentPaths) -> None:
+    """The newest database of a single-layout project, or how to create one."""
+
+    db_path = latest_db(paths.work_dir)
     if db_path is None:
         cprint(
             "No experiment database yet. Run\n"
-            f"[bold yellow]llmexer experiment generate --pid {settings.project_id}[/bold yellow]"
+            f"[bold yellow]llmexer experiment generate --pid {paths.pid}[/bold yellow]"
         )
         return
 
     cprint(f"Current experiment database: [bold yellow]{os.path.basename(db_path)}[/bold yellow]")
+
+
+EXP_OPTION_HELP = (
+    "Sub-experiment to use in a project with several (see experiments.yaml). "
+    "Defaults to the one marked as default there."
+)
+
+
+def _exp_option():
+    return typer.Option(None, "--exp", help=EXP_OPTION_HELP)
+
+
+def _experiment_paths(pid: str, exp: str | None) -> ExperimentPaths:
+    """Resolve the (sub-)experiment and name it when the project has several."""
+
+    paths = resolve_experiment(pid, exp)
+    if paths.name is not None:
+        cprint(f"Experiment: [bold yellow]{paths.label()}[/bold yellow]")
+    return paths
 
 
 def _key_part(value: Any) -> str:
@@ -216,38 +273,42 @@ def _format_hms(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
-def _resolve_experiment_db(pid: str, file: str, required: bool = True) -> tuple[str | None, str]:
+def _resolve_experiment_db(
+    pid: str, file: str, required: bool = True, exp: str | None = None
+) -> tuple[str | None, ExperimentPaths]:
     """Resolve and validate a generated experiment database path for a project.
 
-    Returns ``(db_path, experiment_subdir_path)``. When ``file`` is omitted the
+    Returns ``(db_path, paths)``. Databases live in ``paths.work_dir``: the
+    ``experiments/`` folder, or the sub-experiment's folder. When ``file`` is omitted the
     newest ``experiment*.db`` (highest counter) is used. Raises
     ``LLMExerException`` if the project is not initialised or no database exists.
 
     ``required=False`` relaxes exactly one of those: a project with no database
-    at all gives ``(None, experiment_subdir_path)`` instead of raising. Only
+    at all gives ``(None, paths)`` instead of raising. Only
     `experiment try` passes it - a try still runs without a database, it is
     simply not kept. A ``--file`` that does not exist still raises either way:
     naming a database and misspelling it is a typo, not a project without one.
     """
 
-    experiment_subdir_path = get_experiment_subdir_path(pid)
+    paths = _experiment_paths(pid, exp)
 
     if file is None:
-        db_path = latest_db(experiment_subdir_path)
+        db_path = latest_db(paths.work_dir)
         if db_path is None:
             if not required:
-                return None, experiment_subdir_path
+                return None, paths
             raise LLMExerException(
-                f"No experiment database found for project '{pid}'. " f"Run `experiment generate --pid {pid}` first."
+                f"No experiment database found for '{paths.label()}'. "
+                f"Run `experiment generate --pid {pid}{paths.exp_flag()}` first."
             )
-        return db_path, experiment_subdir_path
+        return db_path, paths
 
-    db_path = file if os.path.isabs(file) else os.path.join(experiment_subdir_path, file)
+    db_path = file if os.path.isabs(file) else os.path.join(paths.work_dir, file)
 
     if not os.path.exists(db_path):
         raise LLMExerException(f"Experiment database not found: '{db_path}'.")
 
-    return db_path, experiment_subdir_path
+    return db_path, paths
 
 
 def _filter_pairs(provider: str, model_name: str, profile_name: str) -> list[tuple[str, str]]:
@@ -348,14 +409,20 @@ def _write_csv_with_backup(folder: str, filename: str, df: pd.DataFrame) -> tupl
     return path, backup_name
 
 
-def _write_data_csv(experiment_subdir_path: str, df: pd.DataFrame) -> tuple[str, str]:
-    """Write ``df`` to ``experiment/data.csv``, backing up any existing file first.
+def _write_csv_at(path: str, df: pd.DataFrame) -> tuple[str, str]:
+    """``_write_csv_with_backup`` for a full file path."""
+
+    return _write_csv_with_backup(os.path.dirname(path), os.path.basename(path), df)
+
+
+def _write_data_csv(paths: ExperimentPaths, df: pd.DataFrame) -> tuple[str, str]:
+    """Write ``df`` to the experiment's ``data.csv``, backing up any existing file first.
 
     Returns ``(data_path, backup_name)`` where ``backup_name`` is ``""`` when no
     prior ``data.csv`` existed.
     """
 
-    return _write_csv_with_backup(experiment_subdir_path, FILE_DATA, df)
+    return _write_csv_at(paths.data, df)
 
 
 def _format_year(value: Any) -> str:
@@ -426,74 +493,195 @@ def _resolve_prompt_ids(prompts_subdir: str, prompt: list[str] | None) -> list[s
     return prompt_ids
 
 
+_TEMPLATE_LLMS_CSV = (
+    "provider;model_name;profile_name;notes\n"
+    "ollama;phi4:14b;ollama-phi4-creative;local model\n"
+    "litellm;gemma4:31b;litellm-gemma4-default;local model\n"
+    "openrouter;google/gemini-3.8-flash;openrouter-gemini-default;via the OpenRouter gateway\n"
+)
+
+_TEMPLATE_DATA_CSV = (
+    "ID;Title;Abstract\n"
+    "D01;Sample Paper Title One;This is the abstract of the first sample paper.\n"
+    "D02;Sample Paper Title Two;This is the abstract of the second sample paper.\n"
+)
+
+_TEMPLATE_MAPPING_CSV = "data_id;prompt_id\nD01;prompt01\nD02;prompt01\n"
+
+_TEMPLATE_LLM_PARAMS_CSV = (
+    "provider;model_name;profile_name;temperature;top_p;max_tokens;"
+    "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level;"
+    "litellm_min_p;litellm_best_of;openrouter_provider_order;openrouter_reasoning_effort\n"
+    "ollama;gemma4:31b;ollama-gemma4-default;0.7;1.0;512;4096;1.1;;;;;;;;\n"
+    "ollama;phi4:14b;ollama-phi4-creative;1.2;0.95;512;4096;1.0;;;;;;;;\n"
+    "openai;gpt-4o;openai-default;0.7;1.0;512;;;;;42;;;;;\n"
+    "vllm;meta-llama/Llama-3-8b;vllm-default;0.7;0.9;512;;;0.05;1;;;;;;\n"
+    "gemini;gemini-2.0-flash;gemini-default;0.7;1.0;512;;;;;;standard;;;;\n"
+    "litellm;deepseek-ai/DeepSeek-V4-Flash-0731;litellm-minimax-m2-default;0.7;0.9;4096;;;;;;;0.05;1;;\n"
+    "litellm;gemma4:31b;litellm-gemma4-default;0.7;0.9;512;;;;;;;;1;;\n"
+    "openrouter;google/gemini-3.8-flash;openrouter-gemini-default;0.7;1.0;512;;;;;;;;;Google;low\n"
+)
+
+
+@dataclass(frozen=True)
+class CustomInputs:
+    """Files the user passed to copy into a (sub-)experiment instead of the templates."""
+
+    data: str | None = None
+    mapping: str | None = None
+    llms: str | None = None
+
+
+def _validate_custom_inputs(inputs: CustomInputs, pid: str) -> None:
+    """Check custom input files before anything is copied, so a bad file creates nothing."""
+
+    checks = [
+        (inputs.data, FILE_DATA, ["ID"]),
+        (inputs.mapping, FILE_MAPPING, ["data_id", "prompt_id"]),
+        (inputs.llms, FILE_LLMS_FOR_EXPERIMENT, CSV_JOIN_KEY_COLUMNS),
+    ]
+    for source, label, required_columns in checks:
+        if source is None:
+            continue
+        if not os.path.isfile(source):
+            raise LLMExerException(f"File for {label} not found: '{source}'.")
+        try:
+            df = pd.read_csv(source, sep=";", encoding="utf-8")
+        except (pd.errors.ParserError, UnicodeDecodeError, pd.errors.EmptyDataError) as e:
+            raise LLMExerException(f"Could not read '{source}' as a ';'-separated UTF-8 CSV: {e}") from e
+        missing = [column for column in required_columns if column not in df.columns]
+        if missing:
+            raise LLMExerException(
+                f"'{source}' cannot be used as {label}: missing column(s) {', '.join(missing)} "
+                "(the file must be ';'-separated)."
+            )
+        if label == FILE_LLMS_FOR_EXPERIMENT:
+            _check_unique_join_keys(df, label, pid)
+
+
+def _write_text(path: str, content: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def _write_shared_files(root: str) -> None:
+    """``llm-params.csv`` and ``prompts/prompt01.txt``: shared by every sub-experiment."""
+
+    prompts_subdir = os.path.join(root, DIR_PROMPTS)
+    ensure_directory_exists(root)
+    ensure_directory_exists(prompts_subdir)
+    _write_text(os.path.join(prompts_subdir, FILE_PROMPT_EXAMPLE), read_prompt_example())
+    _write_text(os.path.join(root, FILE_LLM_PARAMS), _TEMPLATE_LLM_PARAMS_CSV)
+
+
+def _write_sub_experiment_files(work_dir: str, inputs: CustomInputs) -> None:
+    """``data.csv``, ``mapping.csv`` and ``llms-for-experiment.csv``: copied or from the templates."""
+
+    ensure_directory_exists(work_dir)
+    for source, filename, template in [
+        (inputs.data, FILE_DATA, _TEMPLATE_DATA_CSV),
+        (inputs.mapping, FILE_MAPPING, _TEMPLATE_MAPPING_CSV),
+        (inputs.llms, FILE_LLMS_FOR_EXPERIMENT, _TEMPLATE_LLMS_CSV),
+    ]:
+        target = os.path.join(work_dir, filename)
+        if source is None:
+            _write_text(target, template)
+        else:
+            shutil.copyfile(source, target)
+
+
+def _custom_input_options():
+    return (
+        typer.Option(None, "--data", help=f"CSV to copy in as {FILE_DATA} instead of the template."),
+        typer.Option(None, "--mapping", help=f"CSV to copy in as {FILE_MAPPING} instead of the template."),
+        typer.Option(None, "--llms", help=f"CSV to copy in as {FILE_LLMS_FOR_EXPERIMENT} instead of the template."),
+    )
+
+
+_DATA_OPTION, _MAPPING_OPTION, _LLMS_OPTION = _custom_input_options()
+
+
 @app.command()
 def init(
     pid: str = typer.Option(
         None,
         "--pid",
         help="Project ID to initialise. If not provided, uses PROJECT_ID from .env.",
-    )
+    ),
+    layout: Layout = typer.Option(
+        Layout.single,
+        "--layout",
+        help="'single': one experiment in experiments/. 'multiple': named sub-experiments in "
+        "experiments/<name>/ that share llm-params.csv and prompts/.",
+    ),
+    exp: list[str] = typer.Option(
+        None,
+        "--exp",
+        help="Sub-experiment name (repeatable). Required for --layout multiple; the first becomes the default.",
+    ),
+    data: str = _DATA_OPTION,
+    mapping: str = _MAPPING_OPTION,
+    llms: str = _LLMS_OPTION,
 ) -> None:
-    """Initialise a project with a standard folder structure and template files"""
+    """Initialise a project with a standard folder structure and template files
+
+    With ``--data`` / ``--mapping`` / ``--llms`` the given files are copied in
+    instead of the templates (into every sub-experiment, for several ``--exp``).
+    """
 
     pid = get_proper_pid(pid)
     project_path = get_project_directory_path(pid)
+    names = _validate_params__init_layout(layout, exp)
+    inputs = CustomInputs(data=data, mapping=mapping, llms=llms)
+    _validate_custom_inputs(inputs, pid)
 
-    # Raise if already initialised
-    experiment_subdir_path = os.path.join(project_path, DIR_EXPERIMENT)
-    if os.path.exists(experiment_subdir_path):
+    root = experiment_root(project_path)
+    if os.path.exists(root):
         raise LLMExerException(f"Project '{pid}' has already been initialised.")
 
-    # Create subfolders
-    prompts_subdir = os.path.join(experiment_subdir_path, DIR_PROMPTS)
-    ensure_directory_exists(experiment_subdir_path)
-    ensure_directory_exists(prompts_subdir)
+    if settings.dry_run:
+        targets = [root] if layout == Layout.single else [os.path.join(root, name) for name in names]
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would initialise {', '.join(targets)}")
+        return
 
-    # llms-for-experiment.csv
-    models_path = os.path.join(experiment_subdir_path, FILE_LLMS_FOR_EXPERIMENT)
-    with open(models_path, "w", encoding="utf-8") as f:
-        f.write("provider;model_name;profile_name;notes\n")
-        f.write("ollama;phi4:14b;ollama-phi4-creative;local model\n")
-        f.write("litellm;gemma4:31b;litellm-gemma4-default;local model\n")
-        f.write("openrouter;google/gemini-3.8-flash;openrouter-gemini-default;via the OpenRouter gateway\n")
+    _write_shared_files(root)
+    if layout == Layout.single:
+        _write_sub_experiment_files(root, inputs)
+        cprint(f"Initialize project with standard configurations: [bold yellow]{pid}[/bold yellow]")
+        return
 
-    # data.csv
-    data_path = os.path.join(experiment_subdir_path, FILE_DATA)
-    with open(data_path, "w", encoding="utf-8") as f:
-        f.write("ID;Title;Abstract\n")
-        f.write("D01;Sample Paper Title One;This is the abstract of the first sample paper.\n")
-        f.write("D02;Sample Paper Title Two;This is the abstract of the second sample paper.\n")
+    manifest = Manifest(default=names[0])
+    for name in names:
+        _write_sub_experiment_files(os.path.join(root, name), inputs)
+        manifest.experiments[name] = default_files()
+    save_manifest(root, manifest)
 
-    # mapping.csv
-    mapping_path = os.path.join(experiment_subdir_path, FILE_MAPPING)
-    with open(mapping_path, "w", encoding="utf-8") as f:
-        f.write("data_id;prompt_id\n")
-        f.write("D01;prompt01\n")
-        f.write("D02;prompt01\n")
+    cprint(
+        f"Initialize project with standard configurations: [bold yellow]{pid}[/bold yellow] — "
+        f"experiments: [bold yellow]{', '.join(names)}[/bold yellow] (default: {names[0]})"
+    )
 
-    # prompts/prompt01.txt - the bundled example, copied as it is
-    prompt_path = os.path.join(prompts_subdir, FILE_PROMPT_EXAMPLE)
-    with open(prompt_path, "w", encoding="utf-8") as f:
-        f.write(read_prompt_example())
 
-    # llm-params.csv
-    llm_params_path = os.path.join(experiment_subdir_path, FILE_LLM_PARAMS)
-    with open(llm_params_path, "w", encoding="utf-8") as f:
-        f.write(
-            "provider;model_name;profile_name;temperature;top_p;max_tokens;"
-            "ollama_context_window;ollama_repeat_penalty;vllm_min_p;vllm_best_of;openai_seed;gemini_thinking_level;"
-            "litellm_min_p;litellm_best_of;openrouter_provider_order;openrouter_reasoning_effort\n"
-        )
-        f.write("ollama;gemma4:31b;ollama-gemma4-default;0.7;1.0;512;4096;1.1;;;;;;;;\n")
-        f.write("ollama;phi4:14b;ollama-phi4-creative;1.2;0.95;512;4096;1.0;;;;;;;;\n")
-        f.write("openai;gpt-4o;openai-default;0.7;1.0;512;;;;;42;;;;;\n")
-        f.write("vllm;meta-llama/Llama-3-8b;vllm-default;0.7;0.9;512;;;0.05;1;;;;;;\n")
-        f.write("gemini;gemini-2.0-flash;gemini-default;0.7;1.0;512;;;;;;standard;;;;\n")
-        f.write("litellm;deepseek-ai/DeepSeek-V4-Flash-0731;litellm-minimax-m2-default;0.7;0.9;4096;;;;;;;0.05;1;;\n")
-        f.write("litellm;gemma4:31b;litellm-gemma4-default;0.7;0.9;512;;;;;;;;1;;\n")
-        f.write("openrouter;google/gemini-3.8-flash;openrouter-gemini-default;0.7;1.0;512;;;;;;;;;Google;low\n")
+def _validate_params__init_layout(layout: Layout, exp: list[str] | None) -> list[str]:
+    """``--exp`` is required (and must be unique, valid names) for multiple, rejected for single."""
 
-    cprint(f"Initialize project with standard configurations: [bold yellow]{pid}[/bold yellow]")
+    names = []
+    for value in exp or []:
+        names.extend(part.strip() for part in value.split(",") if part.strip())
+
+    if layout == Layout.single:
+        if names:
+            raise UnexpectedCLIParamsException("--exp needs --layout multiple.")
+        return []
+
+    if not names:
+        raise UnexpectedCLIParamsException("--layout multiple needs at least one --exp NAME.")
+    duplicates = [name for name, count in Counter(names).items() if count > 1]
+    if duplicates:
+        raise UnexpectedCLIParamsException(f"Duplicate --exp name(s): {', '.join(duplicates)}.")
+    for name in names:
+        validate_name(name)
+    return names
 
 
 @app.command(name="copy-papers")
@@ -503,6 +691,7 @@ def copy_papers(
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
+    exp: str = _exp_option(),
 ) -> None:
     """Copy parsed papers (.md/.txt) from the project's papers/ folder into data.csv
 
@@ -513,7 +702,7 @@ def copy_papers(
     """
 
     pid = get_proper_pid(pid)
-    experiment_subdir_path = get_experiment_subdir_path(pid)
+    paths = _experiment_paths(pid, exp)
     papers_path = os.path.join(get_project_directory_path(pid), PAPERS_DIR)
 
     if not os.path.isdir(papers_path):
@@ -543,7 +732,7 @@ def copy_papers(
         rows.append({"ID": f"P{index:02d}", "filename": fname, "content": content})
 
     df = pd.DataFrame(rows, columns=["ID", "filename", "content"])
-    _, backup_name = _write_data_csv(experiment_subdir_path, df)
+    _, backup_name = _write_data_csv(paths, df)
 
     backup_note = f" (backed up previous {FILE_DATA} → {backup_name})" if backup_name else ""
     cprint(
@@ -559,6 +748,7 @@ def copy_search(
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
+    exp: str = _exp_option(),
     file: str = typer.Option(
         ...,
         "--file",
@@ -573,7 +763,7 @@ def copy_search(
     """
 
     pid = get_proper_pid(pid)
-    experiment_subdir_path = get_experiment_subdir_path(pid)
+    paths = _experiment_paths(pid, exp)
 
     search_path = file if os.path.isabs(file) else os.path.join(get_project_directory_path(pid), SEARCHES_DIR, file)
     if not os.path.exists(search_path):
@@ -596,7 +786,7 @@ def copy_search(
             "authors": source["authors"].values,
         }
     )
-    _, backup_name = _write_data_csv(experiment_subdir_path, df)
+    _, backup_name = _write_data_csv(paths, df)
 
     backup_note = f" (backed up previous {FILE_DATA} → {backup_name})" if backup_name else ""
     cprint(
@@ -612,6 +802,7 @@ def map_data(
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
+    exp: str = _exp_option(),
     prompt: list[str] = typer.Option(
         None,
         "--prompt",
@@ -628,10 +819,10 @@ def map_data(
     """
 
     pid = get_proper_pid(pid)
-    experiment_subdir_path = get_experiment_subdir_path(pid)
+    paths = _experiment_paths(pid, exp)
 
-    data_path = os.path.join(experiment_subdir_path, FILE_DATA)
-    prompts_subdir = os.path.join(experiment_subdir_path, DIR_PROMPTS)
+    data_path = paths.data
+    prompts_subdir = paths.prompts_dir
 
     for label, path in [(FILE_DATA, data_path), (f"{DIR_PROMPTS}/", prompts_subdir)]:
         if not os.path.exists(path):
@@ -655,12 +846,12 @@ def map_data(
     rows = [{"data_id": data_id, "prompt_id": prompt_id} for prompt_id in prompt_ids for data_id in data_ids]
     df = pd.DataFrame(rows, columns=["data_id", "prompt_id"])
 
-    mapping_path = os.path.join(experiment_subdir_path, FILE_MAPPING)
+    mapping_path = paths.mapping
     if settings.dry_run:
         cprint(f"[bold yellow]Dry run:[/bold yellow] would write {len(rows)} row(s) to '{mapping_path}'")
         return
 
-    _, backup_name = _write_csv_with_backup(experiment_subdir_path, FILE_MAPPING, df)
+    _, backup_name = _write_csv_at(mapping_path, df)
 
     backup_note = f" (backed up previous {FILE_MAPPING} \u2192 {backup_name})" if backup_name else ""
     cprint(
@@ -672,7 +863,7 @@ def map_data(
 
 
 def _load_experiment_inputs(
-    pid: str, experiment_subdir_path: str
+    pid: str, paths: ExperimentPaths
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, str]:
     """Read and validate the four CSVs describing an experiment.
 
@@ -682,17 +873,17 @@ def _load_experiment_inputs(
 
     Args:
         pid (str): project ID, used in the error messages.
-        experiment_subdir_path (str): the project's ``experiment/`` folder.
+        paths (ExperimentPaths): the (sub-)experiment's files.
 
     Returns:
         tuple: ``(models_df, data_df, mapping_df, params_df, prompts_subdir)``.
     """
 
-    models_path = os.path.join(experiment_subdir_path, FILE_LLMS_FOR_EXPERIMENT)
-    data_path = os.path.join(experiment_subdir_path, FILE_DATA)
-    mapping_path = os.path.join(experiment_subdir_path, FILE_MAPPING)
-    llm_params_path = os.path.join(experiment_subdir_path, FILE_LLM_PARAMS)
-    prompts_subdir = os.path.join(experiment_subdir_path, DIR_PROMPTS)
+    models_path = paths.llms
+    data_path = paths.data
+    mapping_path = paths.mapping
+    llm_params_path = paths.llm_params
+    prompts_subdir = paths.prompts_dir
 
     for label, path in [
         (FILE_LLMS_FOR_EXPERIMENT, models_path),
@@ -702,7 +893,7 @@ def _load_experiment_inputs(
         (f"{DIR_PROMPTS}/", prompts_subdir),
     ]:
         if not os.path.exists(path):
-            raise LLMExerException(f"Required file or directory not found for project '{pid}': {label}")
+            raise LLMExerException(f"Required file or directory not found for '{paths.label()}': {label}")
 
     models_df = pd.read_csv(models_path, sep=";", encoding="utf-8")
     data_df = pd.read_csv(data_path, sep=";", encoding="utf-8")
@@ -1045,13 +1236,14 @@ def generate(
         "--pid",
         help="Project ID to generate prompts for. If not provided, uses PROJECT_ID from .env.",
     ),
+    exp: str = _exp_option(),
 ) -> None:
     """Generate rendered prompts for all data-model combinations defined in the project"""
 
     pid = get_proper_pid(pid)
-    experiment_subdir_path = get_experiment_subdir_path(pid)
+    paths = _experiment_paths(pid, exp)
 
-    models_df, data_df, mapping_df, params_df, prompts_subdir = _load_experiment_inputs(pid, experiment_subdir_path)
+    models_df, data_df, mapping_df, params_df, prompts_subdir = _load_experiment_inputs(pid, paths)
 
     if params_df.empty:
         cprint(f"[bold yellow]Warning:[/bold yellow] {FILE_LLM_PARAMS} is empty — no rows will be generated.")
@@ -1075,8 +1267,8 @@ def generate(
     for new_id, row in enumerate(rows, start=1):
         row["ID"] = new_id
 
-    output_filename = next_db_filename(experiment_subdir_path)
-    output_path = os.path.join(experiment_subdir_path, output_filename)
+    output_filename = next_db_filename(paths.work_dir)
+    output_path = os.path.join(paths.work_dir, output_filename)
 
     if settings.dry_run:
         cprint(f"[bold yellow]Dry run:[/bold yellow] would write {len(rows)} row(s) to '{output_path}'")
@@ -1106,6 +1298,7 @@ def update(
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
+    exp: str = _exp_option(),
     file: str = typer.Option(
         None,
         "--file",
@@ -1122,10 +1315,10 @@ def update(
     """
 
     pid = get_proper_pid(pid)
-    db_path, experiment_subdir_path = _resolve_experiment_db(pid, file)
+    db_path, paths = _resolve_experiment_db(pid, file, exp=exp)
     db_name = os.path.basename(db_path)
 
-    models_df, data_df, mapping_df, params_df, prompts_subdir = _load_experiment_inputs(pid, experiment_subdir_path)
+    models_df, data_df, mapping_df, params_df, prompts_subdir = _load_experiment_inputs(pid, paths)
 
     if params_df.empty:
         cprint(f"[bold yellow]Warning:[/bold yellow] {FILE_LLM_PARAMS} is empty — nothing to add.")
@@ -1306,6 +1499,7 @@ def run(
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
+    exp: str = _exp_option(),
     file: str = typer.Option(
         None,
         "--file",
@@ -1348,7 +1542,7 @@ def run(
         raise UnexpectedCLIParamsException("--parallel-calls must be 1 or greater.")
 
     pid = get_proper_pid(pid)
-    db_path, experiment_subdir_path = _resolve_experiment_db(pid, file)
+    db_path, paths = _resolve_experiment_db(pid, file, exp=exp)
 
     pairs = _filter_pairs(filter_provider, filter_model, filter_profile)
     active_filters = _describe_filters(pairs)
@@ -1376,7 +1570,7 @@ def run(
             _report_no_rows_to_run(active_filters, code)
             return
 
-        responses_dir = os.path.join(experiment_subdir_path, DIR_RESPONSES)
+        responses_dir = paths.responses_dir
         if not settings.dry_run:
             ensure_directory_exists(responses_dir)
             cprint(f"JSON responses will be saved into: [bold yellow]{responses_dir}[/bold yellow]")
@@ -1540,7 +1734,9 @@ def _print_try_header(model_name: str, provider: str, experiment: Any = None) ->
     console.print(header)
 
 
-def _suggest_try_command(pid: str, data_df: pd.DataFrame, models_df: pd.DataFrame, prompts_subdir: str) -> str:
+def _suggest_try_command(
+    pid: str, data_df: pd.DataFrame, models_df: pd.DataFrame, prompts_subdir: str, exp_name: str | None = None
+) -> str:
     """Build one `experiment try` invocation from random inputs of the project.
 
     The three choices come from the three files that describe an experiment: a
@@ -1585,6 +1781,7 @@ def _suggest_try_command(pid: str, data_df: pd.DataFrame, models_df: pd.DataFram
             "_provider": provider_name,
         },
         pid,
+        exp_name=exp_name,
     )
 
 
@@ -1612,6 +1809,7 @@ def try_one(
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
+    exp: str = _exp_option(),
     prompt: str = typer.Option(
         None,
         "--prompt",
@@ -1675,16 +1873,16 @@ def try_one(
     """
 
     pid = get_proper_pid(pid)
-    db_path, experiment_subdir_path = _resolve_experiment_db(pid, file, required=False)
+    db_path, paths = _resolve_experiment_db(pid, file, required=False, exp=exp)
 
     if suggest:
         # Ahead of the no-database warning: a suggestion stores nothing either
         # way, so the warning would be noise.
-        models_df, data_df, _mapping_df, _params_df, prompts_subdir = _load_experiment_inputs(
-            pid, experiment_subdir_path
-        )
+        models_df, data_df, _mapping_df, _params_df, prompts_subdir = _load_experiment_inputs(pid, paths)
         cprint("Suggesting a random experiment to try:")
-        cprint(f"[bold yellow]{_suggest_try_command(pid, data_df, models_df, prompts_subdir)}[/bold yellow]\n")
+        cprint(
+            f"[bold yellow]{_suggest_try_command(pid, data_df, models_df, prompts_subdir, paths.name)}[/bold yellow]\n"
+        )
         return
 
     _validate_params__try_names(prompt, profile, data_id)
@@ -1693,8 +1891,8 @@ def try_one(
     # a provider before the user learns it will not be stored.
     if db_path is None:
         cprint(
-            f"[bold yellow]Warning:[/bold yellow] No experiment database found for project '{pid}' — "
-            f"this try will not be stored. Run `experiment generate --pid {pid}` first to keep tries "
+            f"[bold yellow]Warning:[/bold yellow] No experiment database found for '{paths.label()}' — "
+            f"this try will not be stored. Run `experiment generate --pid {pid}{paths.exp_flag()}` first to keep tries "
             "as history."
         )
 
@@ -1708,7 +1906,7 @@ def try_one(
     # `llmexer experiment try --dry-run`; neither spelling can switch the other off.
     dry_run = dry_run or settings.dry_run
 
-    _models_df, data_df, _mapping_df, params_df, prompts_subdir = _load_experiment_inputs(pid, experiment_subdir_path)
+    _models_df, data_df, _mapping_df, params_df, prompts_subdir = _load_experiment_inputs(pid, paths)
 
     # Everything is resolved before a single token is sent
     prompt_id = _resolve_prompt_ids(prompts_subdir, [prompt])[0]
@@ -1759,7 +1957,7 @@ def try_one(
         with console.status("[bold blue]Waiting for LLM provider to answer ...[/bold blue]", spinner="dots"):
             experiment = run_experiment_row(row)
 
-        responses_dir = os.path.join(experiment_subdir_path, DIR_RESPONSES)
+        responses_dir = paths.responses_dir
         ensure_directory_exists(responses_dir)
         file_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
         safe_model = str(model_name).replace("/", "-").replace(":", "-")
@@ -1940,6 +2138,7 @@ def fix(
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
+    exp: str = _exp_option(),
     file: str = typer.Option(
         None,
         "--file",
@@ -1996,7 +2195,7 @@ def fix(
     _validate_params__fix_kind(ensure_json_format, rename_old)
 
     pid = get_proper_pid(pid)
-    db_path, _ = _resolve_experiment_db(pid, file)
+    db_path, _ = _resolve_experiment_db(pid, file, exp=exp)
     db_name = os.path.basename(db_path)
 
     with ExperimentDAO(db_path) as dao:
@@ -2109,6 +2308,7 @@ def stats(
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
+    exp: str = _exp_option(),
     file: str = typer.Option(
         None,
         "--file",
@@ -2123,20 +2323,21 @@ def stats(
 
     pid = get_proper_pid(pid)
     if file is not None:
-        db_path, _ = _resolve_experiment_db(pid, file)
+        db_path, paths = _resolve_experiment_db(pid, file, exp=exp)
     else:
-        experiment_subdir_path = get_experiment_subdir_path(pid)
-        db_files = _find_db_files(experiment_subdir_path)
+        paths = _experiment_paths(pid, exp)
+        db_files = _find_db_files(paths.work_dir)
         if not db_files:
             raise LLMExerException(
-                f"No experiment database found for project '{pid}'. " f"Run `experiment generate --pid {pid}` first."
+                f"No experiment database found for '{paths.label()}'. "
+                f"Run `experiment generate --pid {pid}{paths.exp_flag()}` first."
             )
         if len(db_files) > 1:
             joined = ", ".join(db_files)
             raise LLMExerException(
-                f"Multiple experiment databases found for project '{pid}': {joined}. " f"Pass --file to choose one."
+                f"Multiple experiment databases found for '{paths.label()}': {joined}. " f"Pass --file to choose one."
             )
-        db_path = os.path.join(experiment_subdir_path, db_files[0])
+        db_path = os.path.join(paths.work_dir, db_files[0])
 
     with ExperimentDAO(db_path) as dao:
         data = dao.stats()
@@ -2200,6 +2401,7 @@ def export(
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
+    exp: str = _exp_option(),
     file: str = typer.Option(
         None,
         "--file",
@@ -2259,7 +2461,7 @@ def export(
     """
 
     pid = get_proper_pid(pid)
-    db_path, _ = _resolve_experiment_db(pid, file)
+    db_path, paths = _resolve_experiment_db(pid, file, exp=exp)
 
     pairs = _filter_pairs(filter_provider, filter_model, filter_profile) + _pattern_pairs(filter_code, filter_response)
     active_filters = _describe_filters(pairs)
@@ -2291,6 +2493,7 @@ def export(
         generated_at,
         filters=", ".join(active_filters),
         row_filter=row_filter,
+        exp_name=paths.name,
         **_filter_values(pairs),
     )
 
@@ -2309,6 +2512,7 @@ def compact(
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
+    exp: str = _exp_option(),
     file: str = typer.Option(
         None,
         "--file",
@@ -2328,7 +2532,7 @@ def compact(
     """
 
     pid = get_proper_pid(pid)
-    db_path, _ = _resolve_experiment_db(pid, file)
+    db_path, _ = _resolve_experiment_db(pid, file, exp=exp)
 
     archive_path = f"{os.path.splitext(db_path)[0]}.7z"
 
@@ -2351,12 +2555,11 @@ def compact(
     cprint(f"File with archive ([magenta]7z[/magenta]) — {ratio:.1f}% of the original:\n  {archive_path}")
 
 
-def _read_view_csv(experiment_subdir_path: str, filename: str, pid: str) -> pd.DataFrame:
+def _read_view_csv(path: str, paths: ExperimentPaths) -> pd.DataFrame:
     """Read one experiment CSV for ``experiment view``, raising if it is missing."""
 
-    path = os.path.join(experiment_subdir_path, filename)
     if not os.path.exists(path):
-        raise LLMExerException(f"Required file or directory not found for project '{pid}': {filename}")
+        raise LLMExerException(f"Required file or directory not found for '{paths.label()}': {os.path.basename(path)}")
 
     # Read as text, so a whole number in a column with blanks is not shown as ``4096.0``.
     return pd.read_csv(path, sep=";", encoding="utf-8", dtype=str)
@@ -2369,29 +2572,28 @@ def _view_cell(value: Any) -> str:
     return text if text else "-"
 
 
-def _print_edit_hint(pid: str, *filenames: str) -> None:
-    """Print the command that opens each of ``filenames`` in an editor."""
+def _print_edit_hint(*file_paths: str) -> None:
+    """Print the command that opens each of ``file_paths`` in an editor."""
 
     commands = []
-    for filename in filenames:
-        file_path = os.path.join(_constants.PROJECTS_PATH, pid, DIR_EXPERIMENT, filename)
+    for file_path in file_paths:
         commands.append(f"[bold yellow]nano {file_path}[/bold yellow]")
 
     cprint("To edit use:\n" + "\n".join(commands) + "\n")
 
 
-def _format_view_params(pid: str, experiment_subdir_path: str) -> None:
+def _format_view_params(paths: ExperimentPaths) -> None:
     """Print ``llm-params.csv`` as one table per provider.
 
     Each table holds the join key, the parameters shared by every provider and
     the columns of that provider only. A column missing from the file is skipped.
     """
 
-    params_df = _read_view_csv(experiment_subdir_path, FILE_LLM_PARAMS, pid)
+    params_df = _read_view_csv(paths.llm_params, paths)
 
     if params_df.empty or "provider" not in params_df.columns:
         cprint(f"[dim]{FILE_LLM_PARAMS} has no rows.[/dim]")
-        _print_edit_hint(pid, FILE_LLM_PARAMS)
+        _print_edit_hint(paths.llm_params)
         return
 
     provider_keys = params_df["provider"].map(lambda value: _key_part(value).lower())
@@ -2419,17 +2621,17 @@ def _format_view_params(pid: str, experiment_subdir_path: str) -> None:
 
         console.print(table)
 
-    _print_edit_hint(pid, FILE_LLM_PARAMS)
+    _print_edit_hint(paths.llm_params)
 
 
-def _format_view_llms(pid: str, experiment_subdir_path: str) -> None:
+def _format_view_llms(paths: ExperimentPaths) -> None:
     """Print ``llms-for-experiment.csv`` as one table, columns in file order."""
 
-    models_df = _read_view_csv(experiment_subdir_path, FILE_LLMS_FOR_EXPERIMENT, pid)
+    models_df = _read_view_csv(paths.llms, paths)
 
     if models_df.empty:
         cprint(f"[dim]{FILE_LLMS_FOR_EXPERIMENT} has no rows.[/dim]")
-        _print_edit_hint(pid, FILE_LLMS_FOR_EXPERIMENT)
+        _print_edit_hint(paths.llms)
         return
 
     table = Table(title=f"[bold cyan]{FILE_LLMS_FOR_EXPERIMENT}[/bold cyan]", title_justify="left")
@@ -2442,23 +2644,23 @@ def _format_view_llms(pid: str, experiment_subdir_path: str) -> None:
         table.add_row(str(i), *cells)
 
     console.print(table)
-    _print_edit_hint(pid, FILE_LLMS_FOR_EXPERIMENT)
+    _print_edit_hint(paths.llms)
 
 
-def _format_view_data(pid: str, experiment_subdir_path: str) -> None:
+def _format_view_data(paths: ExperimentPaths) -> None:
     """Print a summary of ``data.csv``, ``prompts/`` and ``mapping.csv``.
 
     Shows the number of unique data IDs, the number of prompt templates and,
     per prompt in ``mapping.csv``, how many unique data IDs are mapped to it.
     """
 
-    data_df = _read_view_csv(experiment_subdir_path, FILE_DATA, pid)
-    mapping_df = _read_view_csv(experiment_subdir_path, FILE_MAPPING, pid)
+    data_df = _read_view_csv(paths.data, paths)
+    mapping_df = _read_view_csv(paths.mapping, paths)
 
     data_ids = data_df["ID"].map(_key_part) if "ID" in data_df.columns else pd.Series(dtype=str)
     unique_data_ids = data_ids[data_ids != ""].nunique()
 
-    prompts_subdir = os.path.join(experiment_subdir_path, DIR_PROMPTS)
+    prompts_subdir = paths.prompts_dir
     prompt_files = []
     if os.path.isdir(prompts_subdir):
         prompt_files = [fname for fname in os.listdir(prompts_subdir) if fname.lower().endswith(".txt")]
@@ -2481,7 +2683,7 @@ def _format_view_data(pid: str, experiment_subdir_path: str) -> None:
         table.add_row(f"Mapping in [bold cyan]{FILE_MAPPING}[/bold cyan]", "[dim]-[/dim]")
 
     console.print(table)
-    _print_edit_hint(pid, FILE_DATA, FILE_MAPPING)
+    _print_edit_hint(paths.data, paths.mapping)
 
 
 @app.command(name="show", hidden=True)
@@ -2492,6 +2694,7 @@ def view(
         "--pid",
         help="Project ID. If not provided, uses PROJECT_ID from .env.",
     ),
+    exp: str = _exp_option(),
     params: bool = typer.Option(
         False, "--params", help=f"Show {FILE_LLM_PARAMS}, one table per provider (the default)."
     ),
@@ -2503,17 +2706,155 @@ def view(
     """Show the experiment setup files as tables (alias: show)"""
 
     pid = get_proper_pid(pid)
-    experiment_subdir_path = get_experiment_subdir_path(pid)
+    paths = _experiment_paths(pid, exp)
 
     if not (params or llms or data):
         params = True
 
     if params:
-        _format_view_params(pid, experiment_subdir_path)
+        _format_view_params(paths)
     if llms:
-        _format_view_llms(pid, experiment_subdir_path)
+        _format_view_llms(paths)
     if data:
-        _format_view_data(pid, experiment_subdir_path)
+        _format_view_data(paths)
+
+
+@app.command()
+def add(
+    name: str = typer.Argument(..., help="Name of the new sub-experiment (its folder in experiments/)."),
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    from_exp: str = typer.Option(
+        None,
+        "--from",
+        help="Existing sub-experiment whose data, mapping and LLM list are copied as the starting point.",
+    ),
+    data: str = _DATA_OPTION,
+    mapping: str = _MAPPING_OPTION,
+    llms: str = _LLMS_OPTION,
+    make_default: bool = typer.Option(False, "--default", help="Make the new sub-experiment the default."),
+) -> None:
+    """Add a sub-experiment to a project with several experiments
+
+    Its data.csv, mapping.csv and llms-for-experiment.csv come from --data /
+    --mapping / --llms, else from --from, else from the templates. It shares
+    llm-params.csv and prompts/ with the other sub-experiments.
+    """
+
+    pid = get_proper_pid(pid)
+    root = experiment_root(get_project_directory_path(pid))
+    if not os.path.exists(root):
+        raise LLMExerException(f"Project '{pid}' has not been initialised. Run `experiment init --pid {pid}` first.")
+
+    manifest = load_manifest(root)
+    if manifest is None:
+        raise ExperimentLayoutException(
+            f"Project '{pid}' uses the single layout. "
+            f"Run `experiment convert --pid {pid} --exp <name>` first to name the existing experiment."
+        )
+
+    validate_name(name)
+    work_dir = os.path.join(root, name)
+    if name in manifest.experiments or os.path.exists(work_dir):
+        raise ExperimentLayoutException(f"Experiment '{name}' already exists in project '{pid}'.")
+
+    inputs = CustomInputs(data=data, mapping=mapping, llms=llms)
+    if from_exp is not None:
+        source = resolve_experiment(pid, from_exp)
+        inputs = CustomInputs(
+            data=data or source.data,
+            mapping=mapping or source.mapping,
+            llms=llms or source.llms,
+        )
+    _validate_custom_inputs(inputs, pid)
+
+    if settings.dry_run:
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would create '{work_dir}'")
+        return
+
+    _write_sub_experiment_files(work_dir, inputs)
+    manifest.experiments[name] = default_files()
+    if make_default:
+        manifest.default = name
+    save_manifest(root, manifest)
+
+    default_note = " (now the default)" if make_default else ""
+    cprint(
+        f"Added experiment [bold yellow]{name}[/bold yellow] to project [bold yellow]{pid}[/bold yellow]{default_note}"
+    )
+    cprint(f"Next: [bold yellow]llmexer experiment generate --pid {pid} --exp {name}[/bold yellow]")
+
+
+def _convert_moves(root: str) -> list[str]:
+    """Entries of a single-layout ``experiments/`` that belong to the experiment, not to the shared part."""
+
+    shared_prefix = os.path.splitext(FILE_LLM_PARAMS)[0] + "_backup_"
+    moves = []
+    for entry in sorted(os.listdir(root)):
+        if entry in (FILE_LLM_PARAMS, DIR_PROMPTS, EXPERIMENTS_YAML) or entry.startswith(shared_prefix):
+            continue
+        moves.append(entry)
+    return moves
+
+
+@app.command()
+def convert(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    exp: str = typer.Option(..., "--exp", help="Name for the existing experiment, e.g. 'abstracts'."),
+) -> None:
+    """Switch a single-experiment project to several sub-experiments
+
+    Everything in experiments/ except llm-params.csv and prompts/ (data, mapping,
+    LLM list, their backups, databases, exports and responses/) moves into
+    experiments/<exp>/, and experiments.yaml is written with it as the default.
+    """
+
+    pid = get_proper_pid(pid)
+    root = experiment_root(get_project_directory_path(pid))
+    if not os.path.exists(root):
+        raise LLMExerException(f"Project '{pid}' has not been initialised. Run `experiment init --pid {pid}` first.")
+    if load_manifest(root) is not None:
+        raise ExperimentLayoutException(f"Project '{pid}' already has several experiments ({EXPERIMENTS_YAML}).")
+
+    validate_name(exp)
+    work_dir = os.path.join(root, exp)
+    if os.path.exists(work_dir):
+        raise ExperimentLayoutException(f"'{work_dir}' already exists; choose another --exp name.")
+
+    moves = _convert_moves(root)
+    cprint(f"Moving into [bold yellow]{work_dir}[/bold yellow]:")
+    for entry in moves:
+        cprint(f"  {entry}")
+
+    if settings.dry_run:
+        cprint("[bold yellow]Dry run:[/bold yellow] nothing moved.")
+        return
+
+    ensure_directory_exists(work_dir)
+    moved = []
+    for entry in moves:
+        try:
+            shutil.move(os.path.join(root, entry), os.path.join(work_dir, entry))
+        except OSError as e:
+            remaining = [name for name in moves if name not in moved]
+            raise LLMExerException(
+                f"Could not move '{entry}': {e}. Moved so far: {', '.join(moved) or 'nothing'}. "
+                f"Still in {root}: {', '.join(remaining)}. {EXPERIMENTS_YAML} was not written, "
+                "so the project still uses the single layout."
+            ) from e
+        moved.append(entry)
+
+    # Written last: until it exists, the project is still read as single.
+    save_manifest(root, Manifest(default=exp, experiments={exp: default_files()}))
+    cprint(f"Project [bold yellow]{pid}[/bold yellow] now has experiment [bold yellow]{exp}[/bold yellow] (default).")
+    cprint(f"Add more with: [bold yellow]llmexer experiment add <name> --pid {pid} --from {exp}[/bold yellow]")
 
 
 @app.command(name="list")
@@ -2539,26 +2880,51 @@ def list_experiments(
     table.add_column("Experiments", style="white")
 
     current_pid = settings.project_id
-    experiment_file_to_run = ""
-    for i, entry in enumerate(entries, start=1):
+    run_hint = "llmexer experiment run --file "
+    row_number = 0
+    for entry in entries:
         ctime = format_created(entry)
-        is_initialized = _is_experiment_initialized(entry.path)
-        init_display = "[green]Yes[/green]" if is_initialized else "[dim]No[/dim]"
-
-        generated_files = _get_generated_experiment_files(entry.path)
-        files_display = "\n".join(generated_files) if generated_files else "[dim]-[/dim]"
-        files_display_plain = "\n".join(generated_files) if generated_files else "-"
-
-        # Check if this is the current project
         is_current = bool(current_pid) and entry.name == current_pid
+        sub_experiments = list_sub_experiments(entry.path)
+        default = default_name(entry.path)
 
-        plain_cells = [entry.name, ctime, "Yes" if is_initialized else "No", files_display_plain]
-        display_cells = [entry.name, ctime, init_display, files_display]
-        table.add_row(*project_row(i, plain_cells, display_cells, is_current))
+        if not sub_experiments:
+            row_number += 1
+            plain_cells = [entry.name, ctime, "No", "-"]
+            display_cells = [entry.name, ctime, "[dim]No[/dim]", "[dim]-[/dim]"]
+            table.add_row(*project_row(row_number, plain_cells, display_cells, is_current))
+            continue
 
-        if is_current and len(generated_files) > 0:
-            experiment_file_to_run = generated_files[-1]
+        for paths in sub_experiments:
+            row_number += 1
+            name = entry.name
+            if paths.name is not None:
+                name = f"{entry.name} / {paths.name}" + (" *" if paths.name == default else "")
+
+            is_initialized = _is_experiment_initialized(paths)
+            init_display = "[green]Yes[/green]" if is_initialized else "[dim]No[/dim]"
+
+            generated_files = _get_generated_experiment_files(paths)
+            files_display = "\n".join(generated_files) if generated_files else "[dim]-[/dim]"
+            files_display_plain = "\n".join(generated_files) if generated_files else "-"
+
+            plain_cells = [name, ctime, "Yes" if is_initialized else "No", files_display_plain]
+            display_cells = [name, ctime, init_display, files_display]
+            table.add_row(*project_row(row_number, plain_cells, display_cells, is_current))
+
+            is_default_sub = paths.name is None or paths.name == default
+            if is_current and is_default_sub and generated_files:
+                run_hint = f"llmexer experiment run{paths.exp_flag()} --file {generated_files[-1]}"
 
     console.print(table)
+    legacy_projects = [entry.name for entry in entries if legacy_folder_hint(entry.path)]
+    if legacy_projects:
+        cprint(
+            f"[bold yellow]Warning:[/bold yellow] still in the old '{_constants.LEGACY_EXPERIMENTS_DIR}/' folder "
+            f"(shown as not initialised): {', '.join(legacy_projects)}. "
+            f"Rename it to '{experiments_dir_name()}/', or set 'experiments_dir' in .llmexer/llmexer.ini."
+        )
+    if any(len(list_sub_experiments(entry.path)) > 1 for entry in entries):
+        cprint("[dim]* = default sub-experiment, used when --exp is not given[/dim]")
     cprint("\nExample to run an experiment:")
-    cprint(f"[bold yellow]llmexer experiment run --file {experiment_file_to_run}[/bold yellow]")
+    cprint(f"[bold yellow]{run_hint}[/bold yellow]")

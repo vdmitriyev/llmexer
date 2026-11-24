@@ -66,7 +66,7 @@ def initialised_experiment(projects_dir):
     """
     pid = "test-exp"
     exp_path = projects_dir / pid
-    exp_subdir = exp_path / "experiment"
+    exp_subdir = exp_path / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -264,7 +264,7 @@ def test_generate_original_data_hash_is_sha256(initialised_experiment, projects_
 def test_generate_multiple_models_multiple_rows(projects_dir):
     """With 2 data rows, 2 models, and 1 param profile, should produce 4 result rows."""
     pid = "multi-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -301,7 +301,7 @@ def test_generate_multiple_models_multiple_rows(projects_dir):
 def test_generate_sorted_by_model_order(projects_dir):
     """Output rows should be grouped by model in llms-for-experiment.csv order (model-first, then mapping order)."""
     pid = "sort-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -383,7 +383,7 @@ def test_generate_prints_success_message(initialised_experiment, projects_dir):
 def test_generate_prompt_hash_deterministic(projects_dir):
     """Rows from the same prompt+data share the same prompt_hash regardless of model/profile."""
     pid = "hash-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -469,7 +469,7 @@ def test_generate_uninitialised_experiment_raises(projects_dir):
 def test_generate_missing_models_csv_raises(projects_dir):
     """Missing llms-for-experiment.csv should raise LLMExerException."""
     pid = "no-models-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
     (exp_subdir / "data.csv").write_text("ID;Title\nD01;T\n", encoding="utf-8")
@@ -486,7 +486,7 @@ def test_generate_missing_models_csv_raises(projects_dir):
 def test_generate_missing_data_csv_raises(projects_dir):
     """Missing data.csv should raise LLMExerException."""
     pid = "no-data-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
     (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + "p;m;default;\n", encoding="utf-8")
@@ -503,7 +503,7 @@ def test_generate_missing_data_csv_raises(projects_dir):
 def test_generate_missing_mapping_csv_raises(projects_dir):
     """Missing mapping.csv should raise LLMExerException."""
     pid = "no-mapping-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
     (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + "p;m;default;\n", encoding="utf-8")
@@ -520,7 +520,7 @@ def test_generate_missing_mapping_csv_raises(projects_dir):
 def test_generate_missing_data_id_skips_row(projects_dir):
     """When a mapping data_id is not in data.csv, that row is skipped with a warning."""
     pid = "bad-data-id-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -543,7 +543,7 @@ def test_generate_missing_data_id_skips_row(projects_dir):
 def test_generate_missing_prompt_file_skips_row(projects_dir):
     """When a mapping prompt_id has no matching .txt file, that row is skipped."""
     pid = "bad-prompt-id-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -562,7 +562,7 @@ def test_generate_missing_prompt_file_skips_row(projects_dir):
 def test_generate_uses_current_experiment_from_env(projects_dir, mock_no_dotenv, monkeypatch):
     """When --pid is omitted, generate should use PROJECT_ID from the environment."""
     pid = "env-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -602,7 +602,7 @@ def test_generate_without_eid_and_no_env_raises(projects_dir, mock_no_dotenv, mo
 def test_generate_missing_llm_params_raises(projects_dir):
     """Missing llm-params.csv should raise LLMExerException."""
     pid = "no-params-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -661,7 +661,7 @@ def test_generate_row_count_with_the_same_model_under_two_profiles(projects_dir)
     over several profiles means listing it once per profile.
     """
     pid = "two-profiles-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -720,7 +720,7 @@ def test_generate_params_code_value_format(initialised_experiment, projects_dir)
 def test_generate_params_rows_are_deduplicated(projects_dir):
     """3 data rows × the same model under 2 profiles = 6 rows, 2 params rows."""
     pid = "dedup-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -813,7 +813,7 @@ def test_generate_code_includes_profile_name(initialised_experiment, projects_di
 
 def _write_join_project(projects_dir, pid, models_csv, params_rows):
     """Write a minimal project with one data row and one prompt."""
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
 
@@ -867,7 +867,7 @@ def test_generate_warns_and_skips_model_without_a_profile(projects_dir):
 
 def test_generate_warns_once_per_unmatched_model_not_per_data_row(projects_dir):
     """The unmatched-model warning is emitted once, not once per data row."""
-    exp_subdir = projects_dir / "join-warn-once" / "experiment"
+    exp_subdir = projects_dir / "join-warn-once" / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
     (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + "ollama;model-y;prof-a;\n", encoding="utf-8")
@@ -1046,7 +1046,7 @@ def test_generate_models_csv_without_profile_name_raises(projects_dir):
 
 def test_generate_params_csv_without_profile_name_raises(projects_dir):
     """The same column check guards llm-params.csv."""
-    exp_subdir = projects_dir / "old-params-format" / "experiment"
+    exp_subdir = projects_dir / "old-params-format" / "experiments"
     prompts_dir = exp_subdir / "prompts"
     os.makedirs(prompts_dir)
     (exp_subdir / "llms-for-experiment.csv").write_text(_MODELS_HEADER + "ollama;model-x;prof-a;\n", encoding="utf-8")

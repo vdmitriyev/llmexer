@@ -112,22 +112,6 @@ def get_project_directory_path(pid: str):
     return project_path
 
 
-def get_experiment_subdir_path(pid: str) -> str:
-    """Return the ``experiment/`` subdir for a project, raising if missing.
-
-    Raises ``LLMExerException`` if the project has not been initialised.
-    """
-    from llmexer.base.experiment import DIR_EXPERIMENT
-
-    project_path = get_project_directory_path(pid)
-    experiment_subdir_path = os.path.join(project_path, DIR_EXPERIMENT)
-    if not os.path.exists(experiment_subdir_path):
-        raise LLMExerException(
-            f"Project '{pid}' has not been initialised. " f"Run `experiment init --pid {pid}` first."
-        )
-    return experiment_subdir_path
-
-
 def strip_code_fence(text: str) -> str:
     """Drop a Markdown code fence wrapping a value, if there is one.
 

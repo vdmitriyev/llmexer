@@ -48,8 +48,8 @@ def test_list_empty(projects_dir):
 def test_list_parts(projects_dir):
     """A part counts only when its folder exists and holds something."""
     project_path = projects_dir / "my-project"
-    os.makedirs(project_path / "experiment")
-    (project_path / "experiment" / "data.csv").write_text("ID;Title;Abstract\n", encoding="utf-8")
+    os.makedirs(project_path / "experiments")
+    (project_path / "experiments" / "data.csv").write_text("ID;Title;Abstract\n", encoding="utf-8")
     os.makedirs(project_path / "papers")
 
     result = runner.invoke(app, ["project", "list"], env=WIDE)

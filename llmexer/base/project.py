@@ -13,6 +13,7 @@ SOURCE_GITIGNORE = "gitignore.txt"
 SOURCE_README = "README.md"
 
 README_VERSION_PLACEHOLDER = "{version}"
+EXPERIMENTS_DIR_PLACEHOLDER = "{experiments_dir}"
 
 
 def read_project_template(filename: str) -> str:

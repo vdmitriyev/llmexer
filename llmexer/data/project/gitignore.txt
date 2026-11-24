@@ -4,8 +4,10 @@
 *.7z
 
 # files
-experiment/data_backup_*.csv
-experiment/mapping_backup_*.csv
+{experiments_dir}/data_backup_*.csv
+{experiments_dir}/mapping_backup_*.csv
+{experiments_dir}/*/data_backup_*.csv
+{experiments_dir}/*/mapping_backup_*.csv
 papers/*.[pP][dD][fF]
 papers/*.[tT][xX][tT]
 papers/*.[mM][dD]
@@ -13,6 +15,7 @@ papers/*.[mM][dD]
 # folders
 searches/jsons/*
 papers/*
-experiment/responses/*
+{experiments_dir}/responses/*
+{experiments_dir}/*/responses/*
 analysis/.backup/*
 analysis/kappa_values/*

@@ -54,7 +54,7 @@ def mock_no_dotenv(monkeypatch):
 def experiment_with_db(projects_dir):
     """Create a test experiment with a generated single-ollama-row database."""
     pid = "run-test-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(exp_subdir / _EXPERIMENT_DB_NAME, {"ollama": [dict(OLLAMA_ROW)]})
     return pid, exp_subdir
@@ -224,7 +224,7 @@ def test_run_creates_individual_json_files(experiment_with_db, mock_providers):
 def test_run_uses_current_experiment_from_env(projects_dir, mock_no_dotenv, mock_providers, monkeypatch):
     """When --pid is omitted, run should use PROJECT_ID from the environment."""
     pid = "env-run-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(exp_subdir / _EXPERIMENT_DB_NAME, {"ollama": [dict(OLLAMA_ROW)]})
     monkeypatch.setenv("PROJECT_ID", pid)
@@ -302,7 +302,7 @@ def test_run_failed_call_still_writes_row(experiment_with_db, monkeypatch):
 def test_run_skips_already_successful_row(projects_dir, mock_providers):
     """A row already in 'success' state is skipped (no LLM call, result untouched)."""
     pid = "skip-success-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _EXPERIMENT_DB_NAME,
@@ -327,7 +327,7 @@ def test_run_skips_already_successful_row(projects_dir, mock_providers):
 def test_run_skips_success_runs_only_pending(projects_dir, mock_providers):
     """With one success and one pending row, only the pending row is executed."""
     pid = "skip-mixed-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _EXPERIMENT_DB_NAME,
@@ -379,7 +379,7 @@ def test_run_uninitialised_experiment_raises(projects_dir):
 def test_run_no_experiment_db_raises(projects_dir):
     """run when experiment/ has no experiment_*.db should raise LLMExerException."""
     pid = "no-db"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
 
     result = runner.invoke(app, ["experiment", "run", "--pid", pid])
@@ -589,7 +589,7 @@ def test_run_provider_key_defaults_to_na_when_absent(experiment_with_db, monkeyp
 def experiment_with_two_provider_rows(projects_dir):
     """Experiment database with one ollama row and one openai row."""
     pid = "filter-test-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _EXPERIMENT_DB_NAME,
@@ -771,7 +771,7 @@ def _ollama_row(row_id, model_name, profile_name):
 def experiment_with_model_profile_matrix(projects_dir):
     """Database with one ollama table holding two models × two profiles."""
     pid = "filter-matrix-exp"
-    exp_subdir = projects_dir / pid / "experiment"
+    exp_subdir = projects_dir / pid / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _EXPERIMENT_DB_NAME,

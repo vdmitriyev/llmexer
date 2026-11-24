@@ -75,7 +75,7 @@ def _ran_row(row_id, code_suffix, response, **overrides):
 @pytest.fixture()
 def experiment_with_results(projects_dir):
     """A database with one valid, three broken, one prose and one unrun answer."""
-    exp_subdir = projects_dir / PID / "experiment"
+    exp_subdir = projects_dir / PID / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _DB_NAME,
@@ -352,7 +352,7 @@ def test_rename_skips_and_says_why(source, reason):
 @pytest.fixture()
 def experiment_with_fields(projects_dir):
     """Rows carrying the field to rename, one of them behind a fence."""
-    exp_subdir = projects_dir / PID / "experiment"
+    exp_subdir = projects_dir / PID / "experiments"
     os.makedirs(exp_subdir)
     seed_db(
         exp_subdir / _DB_NAME,
