@@ -23,7 +23,8 @@ def test_envs_lists_every_provider(monkeypatch):
         assert f"PROVIDER_{provider.upper()}_URL" in output
         assert f"PROVIDER_{provider.upper()}_KEY" in output
     assert "PROVIDER_OPENROUTER_MAX_SPEND" in output
-    assert "MAX_OPEN_ALEX_RESPONSES" in output
+    assert "OPEN_ALEX_MAX_RESPONSES" in output
+    assert "CORE_MAX_RESPONSES" in output
     assert "APP_LOG_LEVEL" in output
 
 

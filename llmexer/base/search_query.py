@@ -139,3 +139,118 @@ def to_semantic_scholar_query(query: str) -> str:
     if not query or detect_notation(query) != QueryNotation.OPENALEX:
         return query
     return _convert_unquoted(query, _openalex_segment_to_s2)
+
+
+# A quoted phrase (possibly unclosed), a bracket, or a run of other characters.
+_TOKEN = re.compile(r'"[^"]*"?|[()]|[^\s()"]+')
+
+
+def to_europepmc_query(query: str) -> str:
+    """``query`` for Europe PMC: OpenAlex notation, searched in title and abstract."""
+
+    oa_query = to_openalex_query(query)
+    return f"TITLE_ABS:({oa_query})" if oa_query else ""
+
+
+def _join_parts(parts: list[str]) -> str:
+    text = ""
+    for part in parts:
+        if not text or text.endswith("(") or part == ")":
+            text += part
+        else:
+            text += f" {part}"
+    return text
+
+
+def _scope_each_term(query: str, wrap, and_not: str, lone_not: str | None, engine: str) -> str:
+    """``query`` with every term or phrase wrapped by ``wrap`` (e.g. into title OR abstract).
+
+    The operators and brackets stay at the top level, outside any field. Terms written
+    side by side are joined with AND. ``NOT`` after a term, and ``AND NOT``, become
+    ``and_not``; any other ``NOT`` (at the start, after ``OR``) becomes ``lone_not``.
+
+    Raises:
+        SearchQueryNotationException: for a lone ``NOT`` when ``lone_not`` is ``None``.
+    """
+
+    parts: list[str] = []
+    after_operand = False
+    for word in _TOKEN.findall(to_openalex_query(query) or ""):
+        if word in ("AND", "OR"):
+            parts.append(word)
+            after_operand = False
+        elif word == "NOT":
+            if after_operand:
+                parts.append(and_not)
+            elif parts and parts[-1] == "AND":
+                parts[-1] = and_not
+            elif lone_not is not None:
+                parts.append(lone_not)
+            else:
+                raise SearchQueryNotationException(
+                    f"{engine} can only exclude terms after another term ('A AND NOT B'), "
+                    "not at the start of a query or after OR."
+                )
+            after_operand = False
+        elif word == "(":
+            if after_operand:
+                parts.append("AND")
+            parts.append("(")
+            after_operand = False
+        elif word == ")":
+            parts.append(")")
+            after_operand = True
+        else:
+            if after_operand:
+                parts.append("AND")
+            parts.append(wrap(word))
+            after_operand = True
+    return _join_parts(parts)
+
+
+def to_arxiv_query(query: str) -> str:
+    """``query`` for the arXiv API: every term searched in title or abstract.
+
+    arXiv has no field for title and abstract together, so each term or phrase
+    becomes ``(ti:x OR abs:x)``. Terms written side by side are joined with AND,
+    and ``NOT`` / ``AND NOT`` become ``ANDNOT``, the only negation arXiv knows.
+
+    Raises:
+        SearchQueryNotationException: for a negation arXiv cannot express
+            (a query starting with NOT, or ``OR NOT``).
+    """
+
+    return _scope_each_term(query, lambda word: f"(ti:{word} OR abs:{word})", "ANDNOT", None, "arXiv")
+
+
+def to_core_query(query: str) -> str:
+    """``query`` for the CORE API: every term searched in title or abstract.
+
+    Each term or phrase becomes ``(title:x OR abstract:x)``, with the brackets and
+    operators of the query kept outside the fields. CORE drops the AND between
+    bracketed groups nested inside one field (``title:((a OR b) AND c)`` matched
+    ``a OR b`` only), so the whole query must not be wrapped in a field.
+    """
+
+    return _scope_each_term(query, lambda word: f"(title:{word} OR abstract:{word})", "AND NOT", "NOT", "CORE")
+
+
+def to_pubmed_query(query: str) -> str:
+    """``query`` for PubMed as a self-contained string: every term tagged ``[tiab]``.
+
+    ``search run`` normally sends ``to_openalex_query(query)`` with ``field=tiab``; an own
+    string from ``queries:`` is sent without that field, so this form carries the tags
+    itself. ``NOT`` / ``AND NOT`` become PubMed's ``NOT``.
+
+    Raises:
+        SearchQueryNotationException: for a negation PubMed cannot express
+            (a query starting with NOT, or ``OR NOT``).
+    """
+
+    return _scope_each_term(query, lambda word: f"{word}[tiab]", "NOT", None, "PubMed")
+
+
+def to_zenodo_query(query: str) -> str:
+    """``query`` for Zenodo: every term searched in title or description (the abstract)."""
+
+    return _scope_each_term(query, lambda word: f"(title:{word} OR description:{word})", "AND NOT", "NOT", "Zenodo")

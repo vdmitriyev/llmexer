@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import typer
 import yaml
+from rich.markup import escape
 from rich.table import Table
 
 from llmexer.base.search import (
@@ -18,15 +19,23 @@ from llmexer.base.search import (
     gather_search_csvs,
     generate_search_id,
     merge_search_csvs,
+    read_search_engines,
     read_search_params,
+    read_search_queries,
     save_search_query,
     synf_df_runs_of_search_and_papers,
     write_records_to_csv,
+    write_search_queries,
+)
+from llmexer.base.search_engines import (
+    ENGINES,
+    check_search_queries,
+    convert_query,
+    raw_file_suffixes,
+    resolve_engines,
 )
 from llmexer.base.search_export import export_csv_to_html
-from llmexer.base.search_openalex import run_openalex_search
 from llmexer.base.search_query import describe_notation, detect_notation
-from llmexer.base.search_semantic_scholar import run_semantic_scholar_search
 from llmexer.common import (
     ensure_directory_exists,
     get_project_directory_path,
@@ -36,6 +45,7 @@ from llmexer.configs import console, cprint, settings
 from llmexer.constants import PAPERS_DIR, SEARCHES_DIR, SEARCHES_LOGS_DIR
 from llmexer.exceptions import (
     LLMExerException,
+    SearchQueryNotationException,
     SearchResultsAlreadyExistException,
     UnexpectedCLIParamsException,
 )
@@ -77,7 +87,6 @@ FILTERS_LOG_FILENAME = "filters-applied.log"
 
 # Raw JSON responses live in the `jsons/` subdir; the download-failed CSV lives in the
 # `logs/` subdir; the rest sit directly in `searches/`.
-_SEARCH_JSON_SUFFIX = "__results_raw.json"
 _SEARCH_DOWNLOAD_FAILED_SUFFIX = "__results_download_failed.csv"
 # Records found per engine before duplicates were removed, for PRISMA (`analysis draw-prisma`).
 _SEARCH_COUNTS_SUFFIX = "__counts.json"
@@ -274,15 +283,101 @@ def create(
     """Create a new search configuration YAML file"""
 
     detect_notation(query)
+    engines = resolve_engines()
     pid = get_proper_pid(pid)
     experiment_path = get_project_directory_path(pid)
 
     search_id, yaml_filename = save_search_query(
-        experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM
+        experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM, engines
     )
 
     cprint(f"Created search config: [bold yellow]{yaml_filename}[/bold yellow]")
     cprint(f"Query: [bold green]{query}[/bold green]")
+    cprint(f"Engines: [bold cyan]{', '.join(engines)}[/bold cyan]")
+
+
+def _convert_for_engines(query: str, engines: list[str]) -> dict[str, tuple[str | None, str | None]]:
+    """Engine key -> ``(converted string, None)``, or ``(None, reason)`` when it cannot be converted."""
+
+    converted = {}
+    for key in engines:
+        try:
+            converted[key] = (convert_query(query, key), None)
+        except SearchQueryNotationException as e:
+            converted[key] = (None, str(e))
+    return converted
+
+
+@app.command()
+def convert(
+    query: str = typer.Option(None, "--query", help=QUERY_HELP),
+    file: str = typer.Option(None, "--file", help="Name of the YAML search file whose `query` is converted"),
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID of the search file. If not provided, uses PROJECT_ID from .env.",
+    ),
+) -> None:
+    """Convert a query into the syntax of each search engine
+
+    With --query, prints the query converted for every engine. With --file,
+    converts the file's `query` for the file's engines and writes the results into
+    its `queries:`, where they can be edited; engines that already have their own
+    string there keep it. Supports --dry-run.
+    """
+
+    if (query is None) == (file is None):
+        raise UnexpectedCLIParamsException("Give exactly one of --query or --file.")
+
+    if query is not None:
+        detect_notation(query)
+        engines = list(ENGINES)
+        table = Table(title="Query per search engine", border_style="bright_blue", show_lines=True)
+        table.add_column("Engine", style="bold cyan", no_wrap=True)
+        table.add_column("Search string")
+        for key, (converted, reason) in _convert_for_engines(query, engines).items():
+            table.add_row(key, escape(converted) if converted is not None else f"[red]{escape(reason)}[/red]")
+        console.print(table)
+        return
+
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
+    search_id, file_query, _, _ = read_search_params(file, experiment_path)
+    if not file_query:
+        raise LLMExerException(f"The search file '{file}' has no `query` to convert.")
+    detect_notation(file_query)
+    engines = resolve_engines(read_search_engines(file, experiment_path))
+    existing = read_search_queries(file, experiment_path)
+    check_search_queries(existing, engines)  # unknown engine names or non-string values stop here
+    existing = {str(key).strip().lower(): value for key, value in (existing or {}).items()}
+
+    queries: dict[str, str] = {}
+    table = Table(title=f"Search '{search_id}': query per search engine", border_style="bright_blue", show_lines=True)
+    table.add_column("Engine", style="bold cyan", no_wrap=True)
+    table.add_column("Search string")
+    table.add_column("In the file")
+    for key, (converted, reason) in _convert_for_engines(file_query, engines).items():
+        own = existing.get(key)
+        if isinstance(own, str) and own.strip():
+            queries[key] = own
+            table.add_row(key, escape(own), "[yellow]kept: own string already in queries:[/yellow]")
+        elif converted is None:
+            table.add_row(key, f"[red]{escape(reason)}[/red]", "[red]not written[/red]")
+        else:
+            queries[key] = converted
+            table.add_row(key, escape(converted), "[green]written[/green]")
+    for key, value in existing.items():
+        if key not in queries and isinstance(value, str) and value.strip():
+            queries[key] = value  # an own string for an engine the search does not use: left as it is
+    console.print(table)
+
+    if settings.dry_run:
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would update `queries:` in '{file}'")
+        return
+    path = write_search_queries(file, experiment_path, queries)
+    logger.info("search convert: wrote queries for %s into '%s'", ", ".join(queries) or "no engine", path)
+    cprint(f"Updated `queries:` in: [bold yellow]{path}[/bold yellow]")
+    cprint("Edit a string there to change what that engine is sent; `search run --file` uses it as written.")
 
 
 @app.command(name="list")
@@ -385,10 +480,10 @@ def rename_search(
 
     # The raw JSON responses live in the `jsons/` subdirectory.
     jsons_path = os.path.join(searches_path, SEARCH_JSONS_DIR)
-    json_src = os.path.join(jsons_path, f"{old_id}{_SEARCH_JSON_SUFFIX}")
-    json_dst = os.path.join(jsons_path, f"{new_id}{_SEARCH_JSON_SUFFIX}")
-    if os.path.exists(json_src):
-        os.rename(json_src, json_dst)
+    for suffix in raw_file_suffixes():
+        json_src = os.path.join(jsons_path, f"{old_id}{suffix}")
+        if os.path.exists(json_src):
+            os.rename(json_src, os.path.join(jsons_path, f"{new_id}{suffix}"))
 
     # The download-failed CSV lives in the `logs/` subdirectory.
     logs_path = os.path.join(searches_path, SEARCHES_LOGS_DIR)
@@ -453,16 +548,23 @@ def run(
     pid = get_proper_pid(pid)
     experiment_path = get_project_directory_path(pid)
 
+    own_queries: dict[str, str] = {}
     if query:
         detect_notation(query)
         year = DEFAULT_SEARCH_YEAR_PARAM
         only_open_access = DEFAULT_OPEN_ACCESS_PARAM
+        engines = resolve_engines()
         search_id, yaml_filename = save_search_query(
-            experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM
+            experiment_path, query, DEFAULT_SEARCH_YEAR_PARAM, DEFAULT_OPEN_ACCESS_PARAM, engines
         )
         cprint(f"Query saved to: [bold blue]{yaml_filename}[/bold blue]")
     if file:
         search_id, query, year, only_open_access = read_search_params(file, experiment_path, query)
+        engines = resolve_engines(read_search_engines(file, experiment_path))
+        own_queries, query_warnings = check_search_queries(read_search_queries(file, experiment_path), engines)
+        for warning in query_warnings:
+            logger.warning(warning)
+            cprint(f"[bold yellow]Warning:[/bold yellow] {warning}")
         cprint(f"Loaded config from: [bold blue]{file}[/bold blue]")
     elif not query:
         raise LLMExerException("No query provided. Use --query or --file with a YAML file.")
@@ -475,54 +577,71 @@ def run(
     jsons_path = os.path.join(searches_path, SEARCH_JSONS_DIR)
     ensure_directory_exists(jsons_path)
 
-    json_path = os.path.join(jsons_path, f"{search_id}{_SEARCH_JSON_SUFFIX}")
     csv_path = os.path.join(searches_path, f"{search_id}__results.csv")
+    raw_paths = {key: os.path.join(jsons_path, f"{search_id}{ENGINES[key].raw_suffix}") for key in engines}
 
     if not rewrite:
-        existing = [p for p in [json_path, csv_path] if os.path.exists(p)]
+        existing = [p for p in [*raw_paths.values(), csv_path] if os.path.exists(p)]
         if existing:
             raise SearchResultsAlreadyExistException(
                 f"Result files already exist: {existing}. Use --rewrite to overwrite."
             )
 
     if settings.dry_run:
-        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{json_path}'")
-        cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{csv_path}'")
+        cprint(f"[bold yellow]Dry run:[/bold yellow] engines {', '.join(engines)}")
+        for path in [*raw_paths.values(), csv_path]:
+            cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{path}'")
         return
 
     print_search_header(pid, search_id, query, year, only_open_access)
+    cprint(f"Engines: [bold cyan]{', '.join(engines)}[/bold cyan]")
+    logger.info(
+        "Search '%s' (project '%s'): query %r (%s notation), year %s, only open access %s, engines %s; "
+        "own strings from queries: %s",
+        search_id,
+        pid,
+        query,
+        describe_notation(query),
+        year,
+        only_open_access,
+        ", ".join(engines),
+        ", ".join(own_queries) or "none",
+    )
 
-    records = run_semantic_scholar_search(query, year, only_open_access, batch, limit, json_path, csv_path, cprint)
-    cprint(f"[bold green]Semantic Scholar:[/bold green] {len(records)} paper(s)")
-
-    counts = {"semantic_scholar": len(records), "openalex": 0, "openalex_duplicates": 0}
-    openalex_key = os.getenv("OPENALEX_API_KEY")
-    if openalex_key:
-        oa_json_path = os.path.join(jsons_path, f"{search_id}__openalex_results_raw.json")
-        oa_records = run_openalex_search(
-            query,
-            year,
-            only_open_access,
-            batch,
-            limit,
-            oa_json_path,
-            openalex_key,
-            cprint,
-        )
+    records: list[dict] = []
+    counts: dict = {}
+    for index, key in enumerate(engines):
+        engine_info = ENGINES[key]
+        if engine_info.required_env and not os.getenv(engine_info.required_env):
+            cprint(f"[yellow]{engine_info.label} skipped[/yellow] ({engine_info.required_env} not set)")
+            found = []
+        else:
+            found = engine_info.runner(
+                query,
+                year,
+                only_open_access,
+                batch,
+                limit,
+                raw_paths[key],
+                csv_path,
+                cprint,
+                custom_query=own_queries.get(key),
+            )
         before = len(records)
-        records = combine_new_records(records, oa_records)
-        counts["openalex"] = len(oa_records)
-        counts["openalex_duplicates"] = len(oa_records) - (len(records) - before)
+        records = combine_new_records(records, found)
+        added = len(records) - before
+        counts[key] = len(found)
+        # The first engine has nothing to duplicate; the key layout matches files written before 0.6.2.
+        if index:
+            counts[f"{key}_duplicates"] = len(found) - added
         write_records_to_csv(records, csv_path)
-        cprint(f"[bold green]OpenAlex:[/bold green] {len(oa_records)} found, " f"{len(records) - before} new added")
-        cprint(f"File with OpenAlex raw responses ([magenta]JSON[/magenta]):\n  {oa_json_path}")
-    else:
-        cprint("[yellow]OpenAlex skipped[/yellow] (OPENALEX_API_KEY not set)")
+        if found or not engine_info.required_env or os.getenv(engine_info.required_env):
+            cprint(f"[bold green]{engine_info.label}:[/bold green] {len(found)} found, {added} new added")
+            cprint(f"File with {engine_info.label} raw responses ([magenta]JSON[/magenta]):\n  {raw_paths[key]}")
 
     _write_search_counts(jsons_path, search_id, counts)
 
     cprint(f"[bold green]Total retrieved:[/bold green] {len(records)} paper(s)")
-    cprint(f"File with raw responses ([magenta]JSON[/magenta]):\n  {json_path}")
     cprint(f"File with results ([magenta]CSV[/magenta]):\n  {csv_path}")
 
 

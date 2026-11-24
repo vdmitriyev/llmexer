@@ -1,4 +1,4 @@
-"""Tests for the OpenAlex result ceiling (MAX_OPEN_ALEX_RESPONSES)."""
+"""Tests for the OpenAlex result ceiling (OPEN_ALEX_MAX_RESPONSES)."""
 
 from unittest.mock import Mock, patch
 
@@ -69,7 +69,7 @@ def _run(tmp_path, on_progress=None, limit_size=None):
 
 def test_cap_enforced_and_message_emitted(tmp_path, patch_session, monkeypatch):
     """With the cap at 150, a large query yields exactly 150 records and warns once."""
-    monkeypatch.setenv("MAX_OPEN_ALEX_RESPONSES", "150")
+    monkeypatch.setenv("OPEN_ALEX_MAX_RESPONSES", "150")
     patch_session(
         [
             _page([_work(i) for i in range(100)], total=1000, next_cursor="c1"),
@@ -85,8 +85,8 @@ def test_cap_enforced_and_message_emitted(tmp_path, patch_session, monkeypatch):
 
 
 def test_env_override_respected(tmp_path, patch_session, monkeypatch):
-    """MAX_OPEN_ALEX_RESPONSES=1 truncates the output to a single record."""
-    monkeypatch.setenv("MAX_OPEN_ALEX_RESPONSES", "1")
+    """OPEN_ALEX_MAX_RESPONSES=1 truncates the output to a single record."""
+    monkeypatch.setenv("OPEN_ALEX_MAX_RESPONSES", "1")
     patch_session([_page([_work(i) for i in range(100)], total=1000, next_cursor="c1")])
 
     records = _run(tmp_path)
@@ -96,7 +96,7 @@ def test_env_override_respected(tmp_path, patch_session, monkeypatch):
 
 def test_no_warning_when_under_cap(tmp_path, patch_session, monkeypatch):
     """A query with fewer results than the cap returns everything and does not warn."""
-    monkeypatch.delenv("MAX_OPEN_ALEX_RESPONSES", raising=False)
+    monkeypatch.delenv("OPEN_ALEX_MAX_RESPONSES", raising=False)
     patch_session([_page([_work(i) for i in range(3)], total=3, next_cursor=None)])
 
     messages: list[str] = []
@@ -108,7 +108,7 @@ def test_no_warning_when_under_cap(tmp_path, patch_session, monkeypatch):
 
 def test_explicit_limit_smaller_than_cap_wins_without_cap_message(tmp_path, patch_session, monkeypatch):
     """An explicit --limit below the cap bounds the output and suppresses the cap warning."""
-    monkeypatch.delenv("MAX_OPEN_ALEX_RESPONSES", raising=False)
+    monkeypatch.delenv("OPEN_ALEX_MAX_RESPONSES", raising=False)
     patch_session([_page([_work(i) for i in range(100)], total=1000, next_cursor="c1")])
 
     messages: list[str] = []
@@ -119,11 +119,25 @@ def test_explicit_limit_smaller_than_cap_wins_without_cap_message(tmp_path, patc
 
 
 def test_invalid_env_value_falls_back_to_default(tmp_path, patch_session, monkeypatch):
-    """A non-integer MAX_OPEN_ALEX_RESPONSES falls back to the default (no crash)."""
-    monkeypatch.setenv("MAX_OPEN_ALEX_RESPONSES", "abc")
+    """A non-integer OPEN_ALEX_MAX_RESPONSES falls back to the default (no crash)."""
+    monkeypatch.setenv("OPEN_ALEX_MAX_RESPONSES", "abc")
     assert DEFAULT_MAX_OPENALEX_RESPONSES >= 3
     patch_session([_page([_work(i) for i in range(3)], total=3, next_cursor=None)])
 
     records = _run(tmp_path)
 
     assert len(records) == 3
+
+
+def test_old_variable_name_still_works_with_a_warning(monkeypatch, caplog):
+    """MAX_OPEN_ALEX_RESPONSES (before 0.6.2) is read when OPEN_ALEX_MAX_RESPONSES is not set."""
+    from llmexer.base.search_openalex import _max_openalex_responses
+
+    monkeypatch.delenv("OPEN_ALEX_MAX_RESPONSES", raising=False)
+    monkeypatch.setenv("MAX_OPEN_ALEX_RESPONSES", "7")
+    with caplog.at_level("WARNING", logger="llmexer"):
+        assert _max_openalex_responses() == 7
+    assert "renamed to OPEN_ALEX_MAX_RESPONSES" in caplog.text
+
+    monkeypatch.setenv("OPEN_ALEX_MAX_RESPONSES", "9")
+    assert _max_openalex_responses() == 9

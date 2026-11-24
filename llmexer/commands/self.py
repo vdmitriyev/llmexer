@@ -12,11 +12,14 @@ from llmexer.base.llm_provider import URL_MAP
 from llmexer.common import get_user_agent
 from llmexer.configs import console, cprint
 from llmexer.constants import (
+    DEFAULT_CORE_MAX_RESPONSES,
     DEFAULT_DOCLING_URL,
     DEFAULT_EXPERIMENTS_DIR,
     DEFAULT_MAX_OPENALEX_RESPONSES,
     DEFAULT_OPENROUTER_MAX_SPEND_USD,
     DEFAULT_PROJECTS_DIR,
+    DEFAULT_SEARCH_ENGINES,
+    DEFAULT_SEARCH_MAX_RESPONSES,
 )
 from llmexer.paths import resolve_paths
 from llmexer.version import package_version
@@ -41,12 +44,18 @@ GENERAL_ENV_VARS = [
     EnvVar("LLMEXER_BASEDIR", default="<from llmexer.ini>"),
     EnvVar("LLMEXER_PROJECTS_DIR", default=DEFAULT_PROJECTS_DIR),
     EnvVar("LLMEXER_EXPERIMENTS_DIR", default=DEFAULT_EXPERIMENTS_DIR),
+    EnvVar("LLMEXER_SEARCH_ENGINES", default=DEFAULT_SEARCH_ENGINES),
 ]
 
 PAPERS_SEARCH_ENV_VARS = [
     EnvVar("UNPAYWALL_EMAIL"),
     EnvVar("OPENALEX_API_KEY", secret=True),
-    EnvVar("MAX_OPEN_ALEX_RESPONSES", default=str(DEFAULT_MAX_OPENALEX_RESPONSES)),
+    EnvVar("CORE_API_KEY", secret=True),
+    EnvVar("ZENODO_API_KEY", secret=True),
+    EnvVar("OPEN_ALEX_MAX_RESPONSES", default=str(DEFAULT_MAX_OPENALEX_RESPONSES)),
+    EnvVar("CORE_MAX_RESPONSES", default=str(DEFAULT_CORE_MAX_RESPONSES)),
+    EnvVar("SEARCH_MAX_RESPONSES", default=str(DEFAULT_SEARCH_MAX_RESPONSES)),
+    EnvVar("NCBI_API_KEY", secret=True),
     EnvVar("DOCLING_URL", default=DEFAULT_DOCLING_URL),
     EnvVar("DOCLING_USER"),
     EnvVar("DOCLING_PASSWORD", secret=True),
@@ -144,5 +153,6 @@ def paths():
     table.add_row("Basedir", f"{runtime_paths.basedir} [dim]({runtime_paths.basedir_source})[/dim]")
     table.add_row("Projects folder", str(runtime_paths.projects_path))
     table.add_row("Experiments folder", f"<project>/{runtime_paths.experiments_dir}")
+    table.add_row("Search engines (default)", runtime_paths.search_engines)
     table.add_row("Temp folder", str(runtime_paths.temp_path))
     console.print(table)

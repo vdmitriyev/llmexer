@@ -45,6 +45,17 @@ CSV_SEPARATOR = ";"
 
 SOURCE_SEMANTIC_SCHOLAR = "Semantic Scholar"
 SOURCE_OPENALEX = "OpenAlex"
+# Engine key in `logs/<id>__counts.json` -> its name (copy of llmexer.base.search_engines).
+ENGINE_LABELS = {
+    "semantic_scholar": SOURCE_SEMANTIC_SCHOLAR,
+    "openalex": SOURCE_OPENALEX,
+    "core": "CORE",
+    "europepmc": "Europe PMC",
+    "pubmed": "PubMed",
+    "arxiv": "arXiv",
+    "zenodo": "Zenodo",
+}
+DUPLICATES_SUFFIX = "_duplicates"
 
 EXPERIMENT_TABLE_PREFIX = "experiment_"
 _PROVIDER_RE = re.compile(r"^[a-z0-9_]+$")
@@ -178,8 +189,9 @@ def identified_by_database(project_dir, searches) -> tuple[dict, str]:
         counts_path = searches_dir / SEARCH_LOGS_DIR / f"{search_id}{COUNTS_SUFFIX}"
         if counts_path.is_file():
             counts = json.loads(counts_path.read_text(encoding="utf-8"))
-            totals[SOURCE_SEMANTIC_SCHOLAR] += int(counts.get("semantic_scholar", 0))
-            totals[SOURCE_OPENALEX] += int(counts.get("openalex", 0))
+            for key, count in counts.items():
+                if not key.endswith(DUPLICATES_SUFFIX):
+                    totals[ENGINE_LABELS.get(key, key)] += int(count or 0)
             continue
 
         approximate.append(search_id)
@@ -205,7 +217,7 @@ def _within_search_duplicates(project_dir, searches) -> int:
         counts_path = searches_dir / SEARCH_LOGS_DIR / f"{search_id}{COUNTS_SUFFIX}"
         if counts_path.is_file():
             counts = json.loads(counts_path.read_text(encoding="utf-8"))
-            total += int(counts.get("openalex_duplicates", 0))
+            total += sum(int(count or 0) for key, count in counts.items() if key.endswith(DUPLICATES_SUFFIX))
     return total
 
 
@@ -232,7 +244,7 @@ def duplicates_removed(project_dir, searches) -> tuple[int, str]:
     unique = len(_record_keys(project_dir, searches, RESULTS_SUFFIX))
     across = rows - unique
     note = (
-        f"{within} between Semantic Scholar and OpenAlex (counts files) + {across} between searches "
+        f"{within} between the search engines (counts files) + {across} between searches "
         "or without DOI/title (same DOI, else same title)"
     )
     return within + across, note

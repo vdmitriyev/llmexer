@@ -347,6 +347,8 @@ def test_search_run_writes_engine_counts(projects_dir, mock_no_dotenv, mock_s2_s
         "semantic_scholar": 1,
         "openalex": 0,
         "openalex_duplicates": 0,
+        "core": 0,
+        "core_duplicates": 0,
     }
 
 
@@ -369,4 +371,10 @@ def test_search_run_counts_openalex_duplicates(projects_dir, mock_no_dotenv, moc
 
     assert result.exit_code == 0, result.output
     counts_file = next((projects_dir / "test-exp" / "searches" / "logs").glob("*__counts.json"))
-    assert json.loads(counts_file.read_text()) == {"semantic_scholar": 1, "openalex": 2, "openalex_duplicates": 1}
+    assert json.loads(counts_file.read_text()) == {
+        "semantic_scholar": 1,
+        "openalex": 2,
+        "openalex_duplicates": 1,
+        "core": 0,
+        "core_duplicates": 0,
+    }

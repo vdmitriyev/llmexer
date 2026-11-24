@@ -307,8 +307,11 @@ def save_search_query(
     query: str,
     year: str = DEFAULT_SEARCH_YEAR_PARAM,
     only_open_access: bool = DEFAULT_OPEN_ACCESS_PARAM,
+    engines: list[str] | None = None,
 ) -> tuple[str, str]:
     """Save a search query to a YAML config file in the experiment's searches directory.
+
+    ``engines`` (engine keys) is written as ``engines:`` so a re-run uses the same engines.
 
     Returns:
         (search_id, yaml_filename)
@@ -321,12 +324,28 @@ def save_search_query(
     yaml_path = os.path.join(searches_path, yaml_filename)
 
     search_config = {"query": QuotedQuery(query), "year": year, "onlyOpenAccess": only_open_access}
+    if engines:
+        search_config["engines"] = list(engines)
 
     with open(yaml_path, "w", encoding="utf-8") as f:
         # ``width`` keeps the query on one line instead of folding it mid-expression.
         yaml.dump(search_config, f, default_flow_style=False, sort_keys=False, width=4096)
+        f.write(_queries_hint(engines))
 
     return search_id, yaml_filename
+
+
+def _queries_hint(engines: list[str] | None) -> str:
+    """A commented `queries:` example for a new search file (YAML ignores it)."""
+
+    lines = [
+        "# Own search string per engine, used as written instead of the one converted from `query`",
+        "# (in the engine's own syntax; `year` and `onlyOpenAccess` are still applied). For example:",
+        "# queries:",
+    ]
+    for engine in engines or ["pubmed"]:
+        lines.append(f"#   {engine}: '...'")
+    return "\n".join(lines) + "\n"
 
 
 def write_records_to_csv(records: list[dict], csv_path: str) -> None:
@@ -387,3 +406,55 @@ def read_search_params(file: str, experiment_path: str, query_default: str = Non
     only_open_access = search_params.get("onlyOpenAccess", DEFAULT_OPEN_ACCESS_PARAM)
 
     return search_id, query, year, only_open_access
+
+
+def read_search_engines(file: str, experiment_path: str):
+    """The ``engines:`` of a search file, or ``None`` when it names none (files before 0.6.2)."""
+    from llmexer.constants import SEARCHES_DIR
+
+    if os.path.isabs(file):
+        search_file_path = file
+    else:
+        search_file_path = os.path.join(experiment_path, SEARCHES_DIR, file)
+    if not os.path.exists(search_file_path):
+        return None
+    with open(search_file_path, "r", encoding="utf-8") as f:
+        search_params = yaml.safe_load(f) or {}
+    return search_params.get("engines")
+
+
+def read_search_queries(file: str, experiment_path: str):
+    """The ``queries:`` of a search file (own search string per engine), or ``None`` when absent."""
+    from llmexer.constants import SEARCHES_DIR
+
+    if os.path.isabs(file):
+        search_file_path = file
+    else:
+        search_file_path = os.path.join(experiment_path, SEARCHES_DIR, file)
+    if not os.path.exists(search_file_path):
+        return None
+    with open(search_file_path, "r", encoding="utf-8") as f:
+        search_params = yaml.safe_load(f) or {}
+    return search_params.get("queries")
+
+
+def write_search_queries(file: str, experiment_path: str, queries: dict[str, str]) -> str:
+    """Set ``queries:`` of a search file, keeping its other keys and their order; returns its path.
+
+    Comments in the file are not kept (PyYAML drops them).
+    """
+    from llmexer.constants import SEARCHES_DIR
+
+    if os.path.isabs(file):
+        search_file_path = file
+    else:
+        search_file_path = os.path.join(experiment_path, SEARCHES_DIR, file)
+    with open(search_file_path, "r", encoding="utf-8") as f:
+        search_params = yaml.safe_load(f) or {}
+
+    if "query" in search_params and search_params["query"] is not None:
+        search_params["query"] = QuotedQuery(search_params["query"])
+    search_params["queries"] = {key: QuotedQuery(value) for key, value in queries.items()}
+    with open(search_file_path, "w", encoding="utf-8") as f:
+        yaml.dump(search_params, f, default_flow_style=False, sort_keys=False, width=4096, allow_unicode=True)
+    return search_file_path

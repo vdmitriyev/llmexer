@@ -13,6 +13,7 @@ from llmexer.base.search import (
     detect_publication_lang,
 )
 from llmexer.base.search_query import to_semantic_scholar_query
+from llmexer.base.search_record import announce_query
 from llmexer.common import make_http_session
 from llmexer.logger import get_logger
 
@@ -37,6 +38,7 @@ def run_semantic_scholar_search(
     json_path: str,
     csv_path: str,
     on_progress: Optional[Callable[[str], None]] = None,
+    custom_query: str | None = None,
 ) -> list[dict]:
     """Call the Semantic Scholar bulk search API with pagination.
 
@@ -54,9 +56,9 @@ def run_semantic_scholar_search(
     )
     session.mount("https://", HTTPAdapter(max_retries=retries))
 
-    s2_query = to_semantic_scholar_query(query)
-    if on_progress is not None:
-        on_progress(f"Semantic Scholar query: {s2_query}")
+    s2_query = custom_query or to_semantic_scholar_query(query)
+    shown = s2_query + (f" [year={year}]" if year else "") + (" [openAccessPdf]" if only_open_access else "")
+    announce_query(ENTRY_SOURCE_SEMANTIC_SCHOLAR, shown, bool(custom_query), on_progress)
 
     params: dict = {
         "query": s2_query,

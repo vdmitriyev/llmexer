@@ -15,6 +15,7 @@ from requests.adapters import HTTPAdapter, Retry
 from llmexer.base.papers import make_structured_filename
 from llmexer.base.search import SEARCH_HTTP_TIMEOUT, detect_publication_lang
 from llmexer.base.search_query import to_openalex_query
+from llmexer.base.search_record import announce_query, env_cap
 from llmexer.common import make_http_session
 from llmexer.constants import DEFAULT_MAX_OPENALEX_RESPONSES
 from llmexer.logger import get_logger
@@ -24,25 +25,27 @@ logger = get_logger()
 ENTRY_SOURCE_OPENALEX = "OpenAlex"
 
 
+OPEN_ALEX_MAX_RESPONSES_ENV_VAR = "OPEN_ALEX_MAX_RESPONSES"
+# The name before 0.6.2, still read when the new one is not set.
+_LEGACY_MAX_RESPONSES_ENV_VAR = "MAX_OPEN_ALEX_RESPONSES"
+
+
 def _max_openalex_responses() -> int:
-    """Resolve the OpenAlex result ceiling from ``MAX_OPEN_ALEX_RESPONSES`` (else the default).
+    """Resolve the OpenAlex result ceiling from ``OPEN_ALEX_MAX_RESPONSES`` (else the default).
 
     Read at call time (not import time) so ``.env`` values loaded by the CLI are honored.
-    Falls back to the default on an unset, non-positive, or non-integer value.
+    Falls back to the default on an unset, non-positive, or non-integer value. The old
+    name ``MAX_OPEN_ALEX_RESPONSES`` still works, with a warning.
     """
-    raw = os.getenv("MAX_OPEN_ALEX_RESPONSES")
-    if raw:
-        try:
-            value = int(raw)
-            if value > 0:
-                return value
-        except ValueError:
-            logger.warning(
-                "Invalid MAX_OPEN_ALEX_RESPONSES=%r; using default %d",
-                raw,
-                DEFAULT_MAX_OPENALEX_RESPONSES,
-            )
-    return DEFAULT_MAX_OPENALEX_RESPONSES
+    env_var = OPEN_ALEX_MAX_RESPONSES_ENV_VAR
+    if not os.getenv(env_var) and os.getenv(_LEGACY_MAX_RESPONSES_ENV_VAR):
+        logger.warning(
+            "%s is renamed to %s; please rename it in your .env.",
+            _LEGACY_MAX_RESPONSES_ENV_VAR,
+            OPEN_ALEX_MAX_RESPONSES_ENV_VAR,
+        )
+        env_var = _LEGACY_MAX_RESPONSES_ENV_VAR
+    return env_cap(env_var, DEFAULT_MAX_OPENALEX_RESPONSES)
 
 
 # OpenAlex API constants
@@ -128,6 +131,7 @@ def run_openalex_search(
     json_path: str,
     api_key: str,
     on_progress: Optional[Callable[[str], None]] = None,
+    custom_query: str | None = None,
 ) -> list[dict]:
     """Call the OpenAlex Works API with cursor pagination.
 
@@ -152,7 +156,8 @@ def run_openalex_search(
         "cursor": "*",
     }
 
-    oa_query = to_openalex_query(query)
+    # OpenAlex has no field syntax inside a query: an own string is searched in title and abstract too.
+    oa_query = custom_query or to_openalex_query(query)
 
     filters = []
     # NOTE: a query containing a literal comma would be misread as a filter separator
@@ -167,8 +172,7 @@ def run_openalex_search(
     if filters:
         params["filter"] = ",".join(filters)
 
-    if on_progress is not None:
-        on_progress(f"OpenAlex query: {oa_query}")
+    announce_query(ENTRY_SOURCE_OPENALEX, params.get("filter", ""), bool(custom_query), on_progress)
 
     # Hard ceiling on processed works: the configurable cap, tightened by an explicit --limit.
     max_responses = _max_openalex_responses()
@@ -241,7 +245,7 @@ def run_openalex_search(
             message = (
                 f"The max output processed is capped by configs to {max_responses}. "
                 "Change the search criteria or set a bigger upper limit via "
-                "environment variable MAX_OPEN_ALEX_RESPONSES."
+                f"environment variable {OPEN_ALEX_MAX_RESPONSES_ENV_VAR}."
             )
             logger.warning(message)
             if on_progress is not None:

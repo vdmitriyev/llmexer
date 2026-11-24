@@ -114,9 +114,14 @@ Category: **search**
 
 | NAME | Default | Explanation |
 |---|---|---|
-| `OPENALEX_API_KEY` | *unset* | Enables OpenAlex as a second source in `search run`, after Semantic Scholar. Unset, OpenAlex is skipped. |
-| `MAX_OPEN_ALEX_RESPONSES` | `5000` | Cap on the works processed per OpenAlex query. |
-| `UNPAYWALL_EMAIL` | `llmexer.openalex@local.local` | Contact address for DOI downloads via Unpaywall, and the OpenAlex polite-pool `mailto`. |
+| `OPENALEX_API_KEY` | *unset* | Turns on the OpenAlex engine of `search run`. Unset, OpenAlex is skipped. |
+| `CORE_API_KEY` | *unset* | Turns on the CORE engine of `search run` (free key from core.ac.uk). Unset, CORE is skipped. |
+| `NCBI_API_KEY` | *unset* | Optional for PubMed: raises NCBI's limit from 3 to 10 requests per second. |
+| `ZENODO_API_KEY` | *unset* | Optional for Zenodo: a personal access token raises the page size from 25 to 100 records and the rate limit. |
+| `OPEN_ALEX_MAX_RESPONSES` | `5000` | Cap on the works processed per OpenAlex query. Called `MAX_OPEN_ALEX_RESPONSES` before 0.6.2; the old name still works, with a warning. |
+| `CORE_MAX_RESPONSES` | `5000` | Cap on the works processed per CORE query. |
+| `SEARCH_MAX_RESPONSES` | `5000` | Cap on the records processed per Europe PMC, PubMed, arXiv or Zenodo query. |
+| `UNPAYWALL_EMAIL` | `llmexer.openalex@local.local` | Contact address for DOI downloads via Unpaywall, the OpenAlex polite-pool `mailto`, and the `email` sent to PubMed. |
 
 Category: **docling**
 
@@ -133,6 +138,7 @@ Category: **CLI**
 | `LLMEXER_BASEDIR` | `basedir` in `llmexer.ini` | Where the CLI writes `.projects/` and `temp/`. |
 | `LLMEXER_PROJECTS_DIR` | `.projects` | Name of the projects folder inside the basedir. |
 | `LLMEXER_EXPERIMENTS_DIR` | `experiments` | Name of the folder inside each project that holds its experiment(s). It was `experiment` before 0.6.0. |
+| `LLMEXER_SEARCH_ENGINES` | `search_engines` in `llmexer.ini` | The search engines `search run` uses by default, comma-separated (see [CLI category: search](#-cli-category-search)). |
 
 ### Where llmexer keeps its data
 
@@ -146,11 +152,14 @@ Category: **CLI**
 basedir = .
 projects_dir = .projects
 experiments_dir = experiments
+search_engines = semantic_scholar, openalex, core
 ```
 
-> ⚠️ **Upgrading from 0.5.x:** the experiment folder of a project is now called `experiments/` (it was `experiment/`). Old projects are not read until you rename the folder, e.g. `mv .projects/my-project/experiment .projects/my-project/experiments`. To keep the old name instead, set `experiments_dir = experiment` in `llmexer.ini`. `llmexer experiment list` marks the projects that still use the old name.
+> ⚠️ **Upgrading from 0.5.x:** the experiment folder of a project is now called `experiments/` (it was `experiment/`)
 
-`LLMEXER_BASEDIR` and `LLMEXER_PROJECTS_DIR` override these values. Set them in the shell, in a `.env` file in the current folder, or in a file passed with `--env-file`. Run `llmexer self paths` to see the paths in use.
+`search_engines` is the default list of search engines for `search run`; see [CLI category: search](#-cli-category-search). An `llmexer.ini` created before 0.6.2 has no such line and uses the default above.
+
+`LLMEXER_BASEDIR`, `LLMEXER_PROJECTS_DIR`, `LLMEXER_EXPERIMENTS_DIR` and `LLMEXER_SEARCH_ENGINES` override these values. Set them in the shell, in a `.env` file in the current folder, or in a file passed with `--env-file`. Run `llmexer self paths` to see the paths in use.
 
 ## 🚀 Getting started
 
@@ -395,6 +404,15 @@ Or run a query directly:
 ```bash
 llmexer search run --pid llm-survey-2026 --query "large language models" --limit 500
 ```
+
+To search more engines, list them in the search file. The free biomedical and preprint engines are off by default:
+```bash
+llmexer search create --pid llm-survey-2026 --query '"large language models" AND diagnosis'
+# edit searches/<ID>.yaml:  engines: [semantic_scholar, europepmc, pubmed, arxiv]
+llmexer search run --pid llm-survey-2026 --file <ID>.yaml --limit 500
+```
+
+To use them in every new search, set `search_engines = semantic_scholar, openalex, core, europepmc, pubmed, arxiv` in `.llmexer/llmexer.ini` instead.
 
 Results are saved as `<ID>__results.csv` in `searches/`.
 
@@ -711,12 +729,41 @@ The `papers` category manages the PDFs of a project.
 
 ## 🔍 CLI category: **search**
 
-The `search` category manages and runs literature searches. `search run` queries the Semantic Scholar bulk API. If you set `OPENALEX_API_KEY`, it then queries the OpenAlex Works API as a second engine and keeps only the publications Semantic Scholar did not already return, matched by DOI or by title. Without the key, OpenAlex is skipped.
+The `search` category manages and runs literature searches. `search run` sends one query to several search engines, one after the other. The first engine adds all its results; each later one adds only the papers the earlier ones did not return, matched by DOI or else by title. The `entry_source` column says which engine found a paper.
+
+| Engine (key) | Covers | Needs | How it is switched on |
+|---|---|---|---|
+| Semantic Scholar (`semantic_scholar`) | all fields | nothing | default list |
+| OpenAlex (`openalex`) | all fields | `OPENALEX_API_KEY` | **API key**: in the default list, runs once the key is set |
+| CORE (`core`) | open-access papers from repositories and journals | `CORE_API_KEY` (free) | **API key**: in the default list, runs once the key is set |
+| Europe PMC (`europepmc`) | life sciences: PubMed, PubMed Central, preprints | nothing | **list**: add it to `search_engines` or to the search file |
+| PubMed (`pubmed`) | biomedicine (MEDLINE) | nothing (`NCBI_API_KEY` optional, for speed) | **list**: add it to `search_engines` or to the search file |
+| arXiv (`arxiv`) | preprints: physics, mathematics, computer science, … | nothing (one request every 3 s) | **list**: add it to `search_engines` or to the search file |
+| Zenodo (`zenodo`) | research outputs of every field; only publications are searched (see below) | nothing (`ZENODO_API_KEY` optional, for bigger pages) | **list**: add it to `search_engines` or to the search file |
+
+So there are two ways to switch an engine on:
+
+- **By API key.** OpenAlex and CORE are in the default list but need a key. Set `OPENALEX_API_KEY` or `CORE_API_KEY` (in the shell or `.env`) and they run; without the key they are skipped with a message.
+- **By the engine list.** Europe PMC, PubMed, arXiv and Zenodo need no key, so they would run on every search; they are off until you list them. Europe PMC and PubMed cover medicine and the life sciences, arXiv mostly the natural sciences, Zenodo every field.
+
+Zenodo also holds data, software and slides. llmexer searches only its **publications**, and leaves out the project paperwork among them: data management plans, deliverables, milestones and proposals. This filter is added to an own search string from `queries:` too.
+
+llmexer takes the engine list from the first of these places that has one, and ignores the rest (lists are not combined):
+1. `engines:` in the search file, e.g. `engines: [semantic_scholar, europepmc, pubmed]`. `search create` and `search run --query` write the list in use into the new file, so a re-run uses the same engines. Edit it to change the engines of one search.
+2. `LLMEXER_SEARCH_ENGINES`
+3. `search_engines` in `.llmexer/llmexer.ini` (see [Where llmexer keeps its data](#where-llmexer-keeps-its-data)), e.g. `search_engines = semantic_scholar, openalex, core, europepmc, pubmed`
+4. the default: `semantic_scholar, openalex, core`
+
+For example, with `search_engines = semantic_scholar, europepmc` in `llmexer.ini`, a search file with `engines: [arxiv]` searches arXiv only, not arXiv plus the two engines from the ini file. To add one engine to your usual ones, list them all: `engines: [semantic_scholar, europepmc, arxiv]`. OpenAlex and CORE also need their API key; without it they are skipped even when listed.
+
+Each engine's raw responses go to `searches/jsons/<ID>__<engine>_results_raw.json` (Semantic Scholar keeps `<ID>__results_raw.json`), and the number of papers per engine to `searches/logs/<ID>__counts.json`, which the PRISMA diagram uses.
 
 | Command   | What it does | Example |
 |-----------|-------------|-----------------|
 | `create` | Creates a search configuration file in the project's `searches/` folder. | `llmexer search create --query "machine learning"` |
 | `list` | Lists the search configurations of a project as a table. | `llmexer search list --pid my-project` |
+| `convert --query` | Prints a query converted into the syntax of every search engine. Writes nothing. | `llmexer search convert --query '"air quality" + monitoring'` |
+| `convert --file` | Converts the `query` of a search file for each of its engines and writes the results into its `queries:`, ready to edit. Engines that already have an own string there keep it. Supports `--dry-run`. | `llmexer search convert --file 20260401-abc123.yaml` |
 | `run --query` | Runs a search from a query string and saves the results as a CSV in `searches/`. | `llmexer search run --query "neural networks" --limit 200` |
 | `run --file` | Runs a search from a configuration file. Use `--rewrite` to replace existing result files. | `llmexer search run --file 20260401-abc123.yaml` |
 | `rename` | Renames a search and all the files that belong to it. | `llmexer search rename --old-id 20260401-abc123 --new-id my-search` |
@@ -726,7 +773,7 @@ The `search` category manages and runs literature searches. `search run` queries
 | `sync` | Reconciles a search against the project's `papers/` folder and updates which files each row has. Pass `--add-local-extra-pdfs` to also list PDFs that no row mentions yet. Leave out `--file` to sync every search. Supports `--dry-run`. | `llmexer search sync --file 20260401-abc123.yaml` |
 | `export` | Renders search results as an HTML page next to the CSV, with sortable columns, per-column filters, clickable DOIs and collapsible abstracts. Leave out `--file` and `--csv-file` to export the whole project. Supports `--rewrite` and `--dry-run`. | `llmexer search export --file 20260401-abc123.yaml` |
 
-Write the query in **one** of the two notations. `llmexer` translates it for the other engine. A query that mixes both is rejected.
+Write the query in **one** of the two notations. `llmexer` translates it for each engine. A query that mixes both is rejected. Every engine searches title and abstract.
 
 | Meaning | Semantic Scholar | OpenAlex |
 |---|---|---|
@@ -735,12 +782,55 @@ Write the query in **one** of the two notations. `llmexer` translates it for the
 | not | `llm -survey` | `llm NOT survey` |
 | phrase, grouping | `"abstract screening"`, `( ... )` | same |
 
-OpenAlex operators count only in uppercase, so `rock and roll` is three search words. Nothing inside quotes is translated.
+OpenAlex operators count only in uppercase, so `rock and roll` is three search words. Nothing inside quotes is translated. arXiv can only exclude a term after another one (`llm NOT survey`), not at the start or after `OR`.
 
-To write more precise queries, see the API documentation of both engines:
+#### Own search string per engine
+
+`query` is converted for every engine. When a conversion does not fit an engine, give that engine its own search string under `queries:` in the search file:
+
+```yaml
+query: '"air quality" + monitoring'
+year: 2020-2025
+onlyOpenAccess: false
+engines: [semantic_scholar, core, pubmed]
+queries:
+  core: '(title:"air quality" OR abstract:"air quality") AND title:monitoring'
+  pubmed: '"air quality"[tiab] AND monitoring[mh]'
+```
+
+- An engine **without** an entry gets `query`, converted as described above (here: Semantic Scholar).
+- An engine **with** an entry gets that string **as written**, in the engine's own syntax: llmexer does not translate it and does not limit it to title and abstract, so choose the fields yourself (`[tiab]` in PubMed, `title:` / `abstract:` in CORE, `TITLE_ABS:` in Europe PMC, `ti:` / `abs:` in arXiv). `year` and `onlyOpenAccess` are still added for you.
+- OpenAlex has no fields inside a query, so its own string is still searched in title and abstract.
+- An entry for an engine the search does not use only prints a warning; an unknown engine name stops the run.
+
+`search create` and `search run --query` put a commented `queries:` example at the end of each new search file.
+
+To start from llmexer's own conversion instead of writing the strings from scratch, run `search convert`. It writes `query`, converted for each of the file's engines, into `queries:`; edit what you need and run the search as usual:
+
+```bash
+llmexer search convert --file 20260401-abc123.yaml   # fills queries: (own strings already there are kept)
+# edit searches/20260401-abc123.yaml
+llmexer search run --file 20260401-abc123.yaml
+```
+
+A converted string sends the same search as the automatic conversion; for PubMed it tags every term `[tiab]` instead. `search convert` rewrites the YAML file, so comments in it are lost. Once an engine has a string in `queries:`, a later change of `query` no longer reaches that engine: delete its line (or run `search convert` after deleting it) to go back to the automatic conversion.
+
+Every search string llmexer sends is written to `llmexer.log` (see [Where llmexer keeps its data](#where-llmexer-keeps-its-data)), one line per engine, saying whether it was converted from `query` or taken from `queries:`:
+
+```
+INFO - PubMed query (own string from queries:): "air quality"[tiab] AND monitoring[mh] [publication date 2020-2025]
+INFO - Europe PMC query (converted from query): TITLE_ABS:("air quality" AND monitoring) AND PUB_YEAR:[2020 TO 2025]
+```
+
+To write more precise queries, see the API documentation of the engines:
 
 * Semantic Scholar: [Paper bulk search](https://api.semanticscholar.org/api-docs/#tag/Paper-Data/operation/get_graph_paper_bulk_search)
 * OpenAlex: [Works](https://docs.openalex.org/api-entities/works)
+* CORE: [API v3](https://api.core.ac.uk/docs/v3)
+* Europe PMC: [search syntax](https://europepmc.org/searchsyntax)
+* PubMed: [E-utilities](https://www.ncbi.nlm.nih.gov/books/NBK25499/)
+* arXiv: [API user manual](https://info.arxiv.org/help/api/user-manual.html)
+* Zenodo: [search guide](https://help.zenodo.org/guides/search/)
 
 ## 🔎 CLI category: **self**
 
@@ -785,7 +875,7 @@ If you use `llmexer` in your research, please cite it. The metadata is in [CITAT
 @software{dmitriyev_llmexer_2026,
   author    = {Dmitriyev, Viktor and Valko, Danila},
   title     = {llmexer},
-  version   = {0.6.1},
+  version   = {0.6.2},
   year      = {2026},
   month     = {11},
   doi       = {10.5281/zenodo.23646932},

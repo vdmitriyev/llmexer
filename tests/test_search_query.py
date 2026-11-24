@@ -6,8 +6,12 @@ from llmexer.base.search_query import (
     QueryNotation,
     describe_notation,
     detect_notation,
+    to_arxiv_query,
+    to_core_query,
+    to_europepmc_query,
     to_openalex_query,
     to_semantic_scholar_query,
+    to_zenodo_query,
 )
 from llmexer.exceptions import SearchQueryNotationException
 
@@ -110,3 +114,72 @@ def test_plain_and_empty_queries_pass_through():
 
 def test_unbalanced_quote_keeps_the_rest_unconverted():
     assert to_openalex_query('a +"b | c') == 'a AND "b | c'
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("llm", "(ti:llm OR abs:llm)"),
+        ('"air quality" + sensor', '(ti:"air quality" OR abs:"air quality") AND (ti:sensor OR abs:sensor)'),
+        ("a AND NOT b", "(ti:a OR abs:a) ANDNOT (ti:b OR abs:b)"),
+        ("a -b", "(ti:a OR abs:a) ANDNOT (ti:b OR abs:b)"),
+        ("(a OR b) c", "((ti:a OR abs:a) OR (ti:b OR abs:b)) AND (ti:c OR abs:c)"),
+        ('"a AND b" OR c', '(ti:"a AND b" OR abs:"a AND b") OR (ti:c OR abs:c)'),
+    ],
+)
+def test_to_arxiv_query(query, expected):
+    assert to_arxiv_query(query) == expected
+
+
+@pytest.mark.parametrize("query", ["NOT a", "a OR NOT b"])
+def test_to_arxiv_query_rejects_a_negation_arxiv_cannot_express(query):
+    with pytest.raises(SearchQueryNotationException, match="arXiv"):
+        to_arxiv_query(query)
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ('"air quality" + sensor -indoor', 'TITLE_ABS:("air quality" AND sensor NOT indoor)'),
+        ("a OR b", "TITLE_ABS:(a OR b)"),
+        ("", ""),
+    ],
+)
+def test_to_europepmc_query(query, expected):
+    assert to_europepmc_query(query) == expected
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("llm", "(title:llm OR abstract:llm)"),
+        (
+            '("air quality" | smog) + (sensor | monitoring)',
+            '((title:"air quality" OR abstract:"air quality") OR (title:smog OR abstract:smog)) AND '
+            "((title:sensor OR abstract:sensor) OR (title:monitoring OR abstract:monitoring))",
+        ),
+        ("a -b", "(title:a OR abstract:a) AND NOT (title:b OR abstract:b)"),
+        ("a OR NOT b", "(title:a OR abstract:a) OR NOT (title:b OR abstract:b)"),
+        ("NOT a", "NOT (title:a OR abstract:a)"),
+    ],
+)
+def test_to_core_query_scopes_each_term(query, expected):
+    """No field wraps a bracketed group: CORE dropped the AND between groups nested in one field."""
+    assert to_core_query(query) == expected
+    assert "title:(" not in to_core_query(query)
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("llm", "(title:llm OR description:llm)"),
+        (
+            '("air quality" OR smog) AND sensor',
+            '((title:"air quality" OR description:"air quality") OR (title:smog OR description:smog)) AND '
+            "(title:sensor OR description:sensor)",
+        ),
+        ("a -b", "(title:a OR description:a) AND NOT (title:b OR description:b)"),
+    ],
+)
+def test_to_zenodo_query(query, expected):
+    assert to_zenodo_query(query) == expected

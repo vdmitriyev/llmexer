@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llmexer"
 description = "Framework and CLI utility to create and curate datasets (e.g., publications, metadata, LLM prompts, etc.) and orchestrate (design, run, evaluate) various LLM experiments on them"
-version = "0.6.1"
+version = "0.6.2"
 readme = "README.md"
 keywords = [
     "large language models",
@@ -50,6 +50,7 @@ dependencies = [
     "tornado>=6.6.1",
     "urllib3>=2.8.0",
     "virtualenv>=21.7.13",
+    "defusedxml>=0.7.1",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

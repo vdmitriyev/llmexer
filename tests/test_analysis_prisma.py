@@ -247,7 +247,7 @@ def test_duplicates_and_automation(project):
     automation, automation_note = prisma.removed_by_automation(project, ["s1", "s2"])
 
     assert duplicates == 2
-    assert "1 between Semantic Scholar and OpenAlex" in note
+    assert "1 between the search engines" in note
     assert automation == 1
     assert "language=de" in automation_note
     assert prisma.records_after_identification(project, ["s1", "s2"]) == 4

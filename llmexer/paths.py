@@ -18,6 +18,7 @@ INI_SECTION = "llmexer"
 BASEDIR_ENV_VAR = "LLMEXER_BASEDIR"
 PROJECTS_DIR_ENV_VAR = "LLMEXER_PROJECTS_DIR"
 EXPERIMENTS_DIR_ENV_VAR = "LLMEXER_EXPERIMENTS_DIR"
+SEARCH_ENGINES_ENV_VAR = "LLMEXER_SEARCH_ENGINES"
 
 
 @dataclass
@@ -31,6 +32,8 @@ class RuntimePaths:
     basedir_source: str
     projects_dir: str
     experiments_dir: str
+    # Comma-separated engine keys; checked by `base/search_engines.py`, not here.
+    search_engines: str
     projects_path: Path
     temp_path: Path
     log_file_path: Path
@@ -79,6 +82,10 @@ def ensure_ini(home: Path, venv: bool) -> Path:
         f"projects_dir = {_constants.DEFAULT_PROJECTS_DIR}\n"
         "; Name of the folder (inside each project) that holds its experiment(s).\n"
         f"experiments_dir = {_constants.DEFAULT_EXPERIMENTS_DIR}\n"
+        "; Search engines `search run` uses when the search file names none,\n"
+        "; comma-separated: semantic_scholar, openalex, core, europepmc, pubmed, arxiv, zenodo.\n"
+        "; openalex and core run only when OPENALEX_API_KEY / CORE_API_KEY is set.\n"
+        f"search_engines = {_constants.DEFAULT_SEARCH_ENGINES}\n"
     )
     ini_file.write_text(content, encoding="utf-8")
     return ini_file
@@ -140,6 +147,10 @@ def resolve_paths() -> RuntimePaths:
     experiments_dir = env_experiments_dir or ini_experiments_dir or _constants.DEFAULT_EXPERIMENTS_DIR
     _check_folder_name(experiments_dir, "experiments_dir")
 
+    env_search_engines = os.getenv(SEARCH_ENGINES_ENV_VAR, "").strip()
+    ini_search_engines = ini.get("search_engines", "").strip()
+    search_engines = env_search_engines or ini_search_engines or _constants.DEFAULT_SEARCH_ENGINES
+
     return RuntimePaths(
         venv=venv,
         home=home,
@@ -149,6 +160,7 @@ def resolve_paths() -> RuntimePaths:
         projects_dir=projects_dir,
         projects_path=basedir / projects_dir,
         experiments_dir=experiments_dir,
+        search_engines=search_engines,
         temp_path=basedir / _constants.TEMP_DIR,
         log_file_path=home / _constants.LOG_FILE_NAME,
     )
@@ -162,6 +174,7 @@ def apply_paths(paths: RuntimePaths) -> None:
         "PROJECTS_DIR": paths.projects_dir,
         "PROJECTS_PATH": str(paths.projects_path),
         "EXPERIMENTS_DIR": paths.experiments_dir,
+        "SEARCH_ENGINES": paths.search_engines,
         "TEMP_PATH": str(paths.temp_path),
         "LOG_FILE_PATH": str(paths.log_file_path),
     }

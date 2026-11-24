@@ -11,6 +11,8 @@ DEFAULT_PROJECTS_DIR = ".projects"
 # Folder of a project that holds its experiment(s). Before 0.6.0 it was "experiment".
 DEFAULT_EXPERIMENTS_DIR = "experiments"
 LEGACY_EXPERIMENTS_DIR = "experiment"
+# Search engines `search run` uses when the search YAML names none.
+DEFAULT_SEARCH_ENGINES = "semantic_scholar, openalex, core"
 LLMEXER_HOME_DIR = ".llmexer"
 INI_FILE_NAME = "llmexer.ini"
 TEMP_DIR = "temp"
@@ -33,12 +35,17 @@ BASEDIR = None
 PROJECTS_DIR = None
 PROJECTS_PATH = None
 EXPERIMENTS_DIR = None
+SEARCH_ENGINES = None
 TEMP_PATH = None
 LOG_FILE_PATH = None
 
 # Hard ceiling on the number of works processed from a single OpenAlex query.
-# Overridable at runtime via the MAX_OPEN_ALEX_RESPONSES environment variable.
+# Overridable at runtime via the OPEN_ALEX_MAX_RESPONSES environment variable.
 DEFAULT_MAX_OPENALEX_RESPONSES = 5000
+# Ceiling on the records one Europe PMC / PubMed / arXiv query returns (SEARCH_MAX_RESPONSES overrides it).
+DEFAULT_SEARCH_MAX_RESPONSES = 5000
+# Ceiling on the works one CORE query returns (CORE_MAX_RESPONSES overrides it).
+DEFAULT_CORE_MAX_RESPONSES = 5000
 
 # Default ceiling on what one `experiment run` may spend through OpenRouter, in USD.
 # Overridable at runtime via the PROVIDER_OPENROUTER_MAX_SPEND environment variable.

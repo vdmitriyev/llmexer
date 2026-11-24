@@ -2,6 +2,21 @@
 History
 =======
 
+0.6.2 (2026-11-24)
+-------------------
+
+* ``search run`` queries more engines: CORE (needs ``CORE_API_KEY``), Europe PMC, PubMed, arXiv and Zenodo (no key).
+* Zenodo is searched for publications only, without data management plans, deliverables, milestones and proposals.
+* Optional keys for higher limits: ``NCBI_API_KEY`` (PubMed) and ``ZENODO_API_KEY`` (Zenodo).
+* Choose the engines with ``engines:`` in the search file, or ``search_engines`` in ``llmexer.ini`` / ``LLMEXER_SEARCH_ENGINES``. The default stays Semantic Scholar, plus OpenAlex and CORE when their key is set.
+* A search file can give an engine its own search string under ``queries:``, used as written.
+* Add ``search convert``: shows a query in every engine's syntax (``--query``) or writes it into a search file's ``queries:`` (``--file``).
+* Every search string sent to an engine is written to ``llmexer.log``.
+* ``analysis draw-prisma`` counts the records of every engine.
+* ``search rename`` now also moves the OpenAlex raw responses.
+* ``MAX_OPEN_ALEX_RESPONSES`` is renamed to ``OPEN_ALEX_MAX_RESPONSES`` (the old name still works, with a warning). New caps: ``CORE_MAX_RESPONSES`` and ``SEARCH_MAX_RESPONSES`` (Europe PMC, PubMed, arXiv, Zenodo).
+* New dependency: ``defusedxml``.
+
 0.6.1 (2026-11-24)
 -------------------
 
