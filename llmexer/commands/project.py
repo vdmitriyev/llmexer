@@ -5,6 +5,7 @@ import os
 import typer
 from rich.table import Table
 
+import llmexer.constants as _constants
 from llmexer.base.experiment import DIR_EXPERIMENT, generate_project_id
 from llmexer.base.project import (
     README_VERSION_PLACEHOLDER,
@@ -19,7 +20,7 @@ from llmexer.base.project import (
 )
 from llmexer.common import ensure_directory_exists
 from llmexer.configs import console, cprint, settings
-from llmexer.constants import ANALYSIS_DIR, PAPERS_DIR, PROJECTS_PATH, SEARCHES_DIR
+from llmexer.constants import ANALYSIS_DIR, PAPERS_DIR, SEARCHES_DIR
 from llmexer.exceptions import LLMExerException, ProjectAlreadyExistsException
 from llmexer.version import package_version
 
@@ -29,13 +30,13 @@ app = typer.Typer(help="Manage projects.")
 def _print_current_project() -> None:
     """Print the active project, saying so when its folder is not there."""
 
-    project_path = os.path.join(PROJECTS_PATH, settings.project_id)
+    project_path = os.path.join(_constants.PROJECTS_PATH, settings.project_id)
     if os.path.exists(project_path):
         cprint(f"Current project: [bold yellow]{settings.project_id}[/bold yellow]")
     else:
         cprint(
             f"Current project: [bold yellow]{settings.project_id}[/bold yellow] "
-            f"[bold red](not found in {PROJECTS_PATH})[/bold red]"
+            f"[bold red](not found in {_constants.PROJECTS_PATH})[/bold red]"
         )
 
 
@@ -68,7 +69,7 @@ def create(
 ) -> None:
     """Create a new project folder under .projects"""
     project_id = id if id else generate_project_id()
-    project_path = os.path.join(PROJECTS_PATH, project_id)
+    project_path = os.path.join(_constants.PROJECTS_PATH, project_id)
 
     if os.path.exists(project_path):
         raise ProjectAlreadyExistsException(f"Project '{project_id}' already exists.")
@@ -107,7 +108,7 @@ def list_projects(
 ) -> None:
     """List all projects under .projects with the parts they hold"""
 
-    entries = scan_projects(PROJECTS_PATH, sort_by, desc)
+    entries = scan_projects(_constants.PROJECTS_PATH, sort_by, desc)
     if not entries:
         cprint("No projects found.")
         return
@@ -156,8 +157,8 @@ def rename(
         else:
             raise LLMExerException("No project ID provided. Use --old-id or set PROJECT_ID in .env file.")
 
-    old_path = os.path.join(PROJECTS_PATH, old_id)
-    new_path = os.path.join(PROJECTS_PATH, new_id)
+    old_path = os.path.join(_constants.PROJECTS_PATH, old_id)
+    new_path = os.path.join(_constants.PROJECTS_PATH, new_id)
 
     if not os.path.exists(old_path):
         raise LLMExerException(f"Project '{old_id}' does not exist.")

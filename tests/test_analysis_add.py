@@ -27,11 +27,9 @@ NOTEBOOK = ADDON_NOTEBOOKS["agreements"]
 @pytest.fixture()
 def projects_dir(tmp_path, monkeypatch):
     """Redirect PROJECTS_PATH to a temporary directory for each test."""
-    import llmexer.commands.project as project_module
     import llmexer.constants as constants
 
     monkeypatch.setattr(constants, "PROJECTS_PATH", str(tmp_path))
-    monkeypatch.setattr(project_module, "PROJECTS_PATH", str(tmp_path))
     return tmp_path
 
 

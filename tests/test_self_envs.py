@@ -38,3 +38,10 @@ def test_envs_shows_custom_provider(monkeypatch):
     assert "PROVIDER_MYLAB_URL" in output
     assert "PROVIDER_MYLAB_KEY" in output
     assert "http://mylab.example/v1" in output
+
+
+def test_envs_lists_basedir_vars(monkeypatch):
+    output = _invoke_envs(monkeypatch, LLMEXER_PROJECTS_DIR="my-projects")
+    assert "LLMEXER_BASEDIR" in output
+    assert "LLMEXER_PROJECTS_DIR" in output
+    assert "my-projects" in output

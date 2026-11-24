@@ -15,11 +15,9 @@ runner = CliRunner()
 @pytest.fixture()
 def projects_dir(tmp_path, monkeypatch):
     """Redirect PROJECTS_PATH to a temporary directory for each test."""
-    import llmexer.commands.experiment as experiment_module
     import llmexer.constants as constants
 
     monkeypatch.setattr(constants, "PROJECTS_PATH", str(tmp_path))
-    monkeypatch.setattr(experiment_module, "PROJECTS_PATH", str(tmp_path))
     return tmp_path
 
 

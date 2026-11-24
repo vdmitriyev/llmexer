@@ -45,11 +45,9 @@ def db_file(tmp_path):
 
 @pytest.fixture()
 def projects_dir(tmp_path, monkeypatch):
-    import llmexer.commands.project as project_module
     import llmexer.constants as constants
 
     monkeypatch.setattr(constants, "PROJECTS_PATH", str(tmp_path))
-    monkeypatch.setattr(project_module, "PROJECTS_PATH", str(tmp_path))
     return tmp_path
 
 

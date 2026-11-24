@@ -36,11 +36,9 @@ _MAPPING_CSV = "data_id;prompt_id\n" "D01;prompt01\n" "D02;prompt01\n" "D03;prom
 @pytest.fixture()
 def projects_dir(tmp_path, monkeypatch):
     """Redirect PROJECTS_PATH to a temporary directory for each test."""
-    import llmexer.commands.project as project_module
     import llmexer.constants as constants
 
     monkeypatch.setattr(constants, "PROJECTS_PATH", str(tmp_path))
-    monkeypatch.setattr(project_module, "PROJECTS_PATH", str(tmp_path))
     return tmp_path
 
 
@@ -120,17 +118,19 @@ def test_view_unknown_provider_shows_common_columns_only(experiment):
     assert "ollama_context_window" not in acme and "openai_seed" not in acme
 
 
-def test_view_params_edit_hint(experiment):
+def test_view_params_edit_hint(experiment, projects_dir, monkeypatch):
     pid, _ = experiment
+    monkeypatch.setenv("COLUMNS", "500")
 
     result = _invoke("--pid", pid)
 
-    expected = os.path.join(".projects", pid, "experiment", "llm-params.csv")
+    expected = os.path.join(str(projects_dir), pid, "experiment", "llm-params.csv")
     assert f"To edit use:\nnano {expected}" in result.output
 
 
-def test_view_llms(experiment):
+def test_view_llms(experiment, projects_dir, monkeypatch):
     pid, _ = experiment
+    monkeypatch.setenv("COLUMNS", "500")
 
     result = _invoke("--pid", pid, "--llms")
 
@@ -138,11 +138,12 @@ def test_view_llms(experiment):
     assert "llama3.3:latest" in result.output and "gpt-4o" in result.output
     assert "local model" in result.output
     assert "Provider: ollama" not in result.output
-    assert f"nano {os.path.join('.projects', pid, 'experiment', 'llms-for-experiment.csv')}" in result.output
+    assert f"nano {os.path.join(str(projects_dir), pid, 'experiment', 'llms-for-experiment.csv')}" in result.output
 
 
-def test_view_data_counts(experiment):
+def test_view_data_counts(experiment, projects_dir, monkeypatch):
     pid, _ = experiment
+    monkeypatch.setenv("COLUMNS", "500")
 
     result = _invoke("--pid", pid, "--data")
 
@@ -151,8 +152,8 @@ def test_view_data_counts(experiment):
     assert re.search(r"Prompts in prompts/\s*│\s*2\s*│", result.output)
     assert re.search(r"Mapping: prompt01\s*│\s*3\s*│", result.output)
     assert re.search(r"Mapping: prompt02\s*│\s*1\s*│", result.output)
-    assert f"nano {os.path.join('.projects', pid, 'experiment', 'data.csv')}" in result.output
-    assert f"nano {os.path.join('.projects', pid, 'experiment', 'mapping.csv')}" in result.output
+    assert f"nano {os.path.join(str(projects_dir), pid, 'experiment', 'data.csv')}" in result.output
+    assert f"nano {os.path.join(str(projects_dir), pid, 'experiment', 'mapping.csv')}" in result.output
 
 
 def test_view_combined_flags(experiment):

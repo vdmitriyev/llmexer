@@ -19,11 +19,9 @@ WIDE = {"COLUMNS": "200"}
 @pytest.fixture()
 def projects_dir(tmp_path, monkeypatch):
     """Redirect PROJECTS_PATH to a temporary directory for each test."""
-    import llmexer.commands.project as project_module
     import llmexer.constants as constants
 
     monkeypatch.setattr(constants, "PROJECTS_PATH", str(tmp_path))
-    monkeypatch.setattr(project_module, "PROJECTS_PATH", str(tmp_path))
     monkeypatch.setattr(settings, "project_id", None)
     monkeypatch.delenv("PROJECT_ID", raising=False)
     monkeypatch.setattr("llmexer.cli.load_dotenv", lambda *args, **kwargs: None)

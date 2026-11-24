@@ -14,6 +14,7 @@ from requests.adapters import HTTPAdapter, Retry
 
 from llmexer.base.papers import make_structured_filename
 from llmexer.base.search import SEARCH_HTTP_TIMEOUT, detect_publication_lang
+from llmexer.base.search_query import to_openalex_query
 from llmexer.common import make_http_session
 from llmexer.constants import DEFAULT_MAX_OPENALEX_RESPONSES
 from llmexer.logger import get_logger
@@ -118,24 +119,6 @@ def _year_filter(year: str | None) -> str | None:
     return f"from_publication_date:{start}-01-01,to_publication_date:{end}-12-31"
 
 
-def _convert_query_notation(query: str) -> str:
-    """Translate a Semantic Scholar query into OpenAlex search notation.
-
-    ``+`` -> ``AND``, ``|`` -> ``OR``, prefix ``-`` -> ``NOT``. Phrases ("...") and
-    grouping ((...)) are identical in both notations and pass through unchanged.
-
-    A literal ``+``/``|`` inside a quoted phrase (e.g. ``"c++"``) would also be translated;
-    such queries are rare and not special-cased.
-    """
-    if not query:
-        return query
-    # Prefix negation only: "-term" / " -term" / "(-term" -> "NOT term".
-    # Leaves intra-word hyphens (e.g. "state-of-the-art") untouched.
-    converted = re.sub(r"(^|[\s(])-(?=[^\s)])", r"\1NOT ", query)
-    converted = converted.replace("+", " AND ").replace("|", " OR ")
-    return re.sub(r"\s+", " ", converted).strip()
-
-
 def run_openalex_search(
     query: str,
     year: str,
@@ -169,7 +152,7 @@ def run_openalex_search(
         "cursor": "*",
     }
 
-    oa_query = _convert_query_notation(query)
+    oa_query = to_openalex_query(query)
 
     filters = []
     # NOTE: a query containing a literal comma would be misread as a filter separator

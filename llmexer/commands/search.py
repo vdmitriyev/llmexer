@@ -24,6 +24,7 @@ from llmexer.base.search import (
 )
 from llmexer.base.search_export import export_csv_to_html
 from llmexer.base.search_openalex import run_openalex_search
+from llmexer.base.search_query import describe_notation, detect_notation
 from llmexer.base.search_semantic_scholar import run_semantic_scholar_search
 from llmexer.common import (
     ensure_directory_exists,
@@ -53,6 +54,8 @@ def main(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is None:
         list_searches(pid=None)
 
+
+QUERY_HELP = "Query string for the search, in Semantic Scholar ('+ | -') or OpenAlex ('AND OR NOT') notation, not both"
 
 # Default values
 DEFAULT_QUERY_PARAM = (
@@ -189,6 +192,7 @@ def print_search_header(pid, search_id, query, year, only_open_access):
     header.add_row("Project:", f"[bold yellow]{pid}[/bold yellow]")
     header.add_row("Search ID:", f"[bold yellow]{search_id}[/bold yellow]")
     header.add_row("Query:", f"[bold green]{query}[/bold green]")
+    header.add_row("Notation:", f"[bold cyan]{describe_notation(query)}[/bold cyan]")
     header.add_row("Year:", f"[bold cyan]{year}[/bold cyan]")
     header.add_row("Only Open Access:", f"[bold magenta]{only_open_access}[/bold magenta]")
     console.print(header)
@@ -256,7 +260,7 @@ def create(
     query: str = typer.Option(
         DEFAULT_QUERY_PARAM,
         "--query",
-        help="Query string for the search",
+        help=QUERY_HELP,
     ),
     pid: str = typer.Option(
         None,
@@ -266,6 +270,7 @@ def create(
 ) -> None:
     """Create a new search configuration YAML file"""
 
+    detect_notation(query)
     pid = get_proper_pid(pid)
     experiment_path = get_project_directory_path(pid)
 
@@ -397,7 +402,7 @@ def run(
     query: str = typer.Option(
         None,
         "--query",
-        help="Query string to be used during the search",
+        help=QUERY_HELP,
     ),
     file: str = typer.Option(
         None,
@@ -434,6 +439,7 @@ def run(
     experiment_path = get_project_directory_path(pid)
 
     if query:
+        detect_notation(query)
         year = DEFAULT_SEARCH_YEAR_PARAM
         only_open_access = DEFAULT_OPEN_ACCESS_PARAM
         search_id, yaml_filename = save_search_query(
@@ -445,6 +451,7 @@ def run(
         cprint(f"Loaded config from: [bold blue]{file}[/bold blue]")
     elif not query:
         raise LLMExerException("No query provided. Use --query or --file with a YAML file.")
+    detect_notation(query)
 
     cprint(f"Limit: [bold blue]{limit}[/bold blue]")
 

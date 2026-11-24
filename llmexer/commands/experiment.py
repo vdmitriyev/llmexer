@@ -19,6 +19,7 @@ from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
+import llmexer.constants as _constants
 from llmexer.base.dao import (
     COST_TABLE,
     DATAFIX_TABLE,
@@ -68,7 +69,7 @@ from llmexer.common import (
     safe_filename_part,
 )
 from llmexer.configs import console, cprint, settings
-from llmexer.constants import PAPERS_DIR, PROJECTS_DIR, PROJECTS_PATH, SEARCHES_DIR
+from llmexer.constants import PAPERS_DIR, SEARCHES_DIR
 from llmexer.exceptions import LLMExerException, UnexpectedCLIParamsException
 
 app = typer.Typer(help="Manage LLM experiments.")
@@ -87,9 +88,9 @@ def main(ctx: typer.Context) -> None:
 
     cprint(f"Current project: [bold yellow]{settings.project_id}[/bold yellow]")
 
-    project_path = os.path.join(PROJECTS_PATH, settings.project_id)
+    project_path = os.path.join(_constants.PROJECTS_PATH, settings.project_id)
     if not os.path.exists(project_path):
-        cprint(f"[bold red]Project not found in {PROJECTS_PATH}[/bold red]")
+        cprint(f"[bold red]Project not found in {_constants.PROJECTS_PATH}[/bold red]")
         return
 
     experiment_subdir_path = os.path.join(project_path, DIR_EXPERIMENT)
@@ -2373,8 +2374,8 @@ def _print_edit_hint(pid: str, *filenames: str) -> None:
 
     commands = []
     for filename in filenames:
-        relative_path = os.path.join(PROJECTS_DIR, pid, DIR_EXPERIMENT, filename)
-        commands.append(f"[bold yellow]nano {relative_path}[/bold yellow]")
+        file_path = os.path.join(_constants.PROJECTS_PATH, pid, DIR_EXPERIMENT, filename)
+        commands.append(f"[bold yellow]nano {file_path}[/bold yellow]")
 
     cprint("To edit use:\n" + "\n".join(commands) + "\n")
 
@@ -2525,7 +2526,7 @@ def list_experiments(
     desc: bool = typer.Option(False, "--desc", help="Sort in descending order."),
 ) -> None:
     """List all projects with their initialization state and generated experiments"""
-    entries = scan_projects(PROJECTS_PATH, sort_by, desc)
+    entries = scan_projects(_constants.PROJECTS_PATH, sort_by, desc)
     if not entries:
         cprint("No projects found.")
         return

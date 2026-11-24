@@ -10,7 +10,11 @@ import yaml
 from typer.testing import CliRunner
 
 from llmexer.cli import app
-from llmexer.exceptions import LLMExerException, SearchResultsAlreadyExistException
+from llmexer.exceptions import (
+    LLMExerException,
+    SearchQueryNotationException,
+    SearchResultsAlreadyExistException,
+)
 
 runner = CliRunner()
 
@@ -297,3 +301,32 @@ def test_search_run_dry_run_no_files(projects_dir, mock_no_dotenv, monkeypatch):
     if searches_dir.exists():
         assert not list((searches_dir / "jsons").glob("*__results_raw.json"))
         assert not list(searches_dir.glob("*__results.csv"))
+
+
+def test_search_run_converts_openalex_notation_for_semantic_scholar(
+    projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch
+):
+    """An OpenAlex-notation query reaches Semantic Scholar in its own notation."""
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
+    monkeypatch.setenv("COLUMNS", "200")
+
+    result = runner.invoke(app, ["search", "run", "--query", 'llm AND "abstract screening"'])
+
+    assert result.exit_code == 0, result.output
+    sent_query = mock_s2_session.get.call_args.kwargs["params"]["query"]
+    assert sent_query == 'llm +"abstract screening"'
+    assert "Notation:" in result.output and "OpenAlex" in result.output
+
+
+def test_search_run_rejects_mixed_notation(projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch):
+    """A query mixing both notations fails before any file is written or call is made."""
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
+
+    result = runner.invoke(app, ["search", "run", "--query", "a +b OR c"])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, SearchQueryNotationException)
+    assert not (projects_dir / "test-exp" / "searches").exists()
+    mock_s2_session.get.assert_not_called()

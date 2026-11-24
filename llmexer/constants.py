@@ -3,14 +3,13 @@
 import os
 from pathlib import Path
 
-DEFAULT_DIR = Path.cwd()
-BASEDIR = Path(os.getenv("LLMEXER_BASEDIR", DEFAULT_DIR))
-
 CLI_NAME = "llmexer"
 LOGGER_NAME = "llmexer"
 LOG_FILE_NAME = "llmexer.log"
 APP_LOG_LEVEL = os.environ.get("APP_LOG_LEVEL", "INFO").upper()
-PROJECTS_DIR = ".projects"
+DEFAULT_PROJECTS_DIR = ".projects"
+LLMEXER_HOME_DIR = ".llmexer"
+INI_FILE_NAME = "llmexer.ini"
 TEMP_DIR = "temp"
 SEARCHES_DIR = "searches"
 PAPERS_DIR = "papers"
@@ -19,16 +18,19 @@ ANALYSIS_DIR = "analysis"
 # Replaced notebooks/modules are kept here rather than beside the live ones.
 ANALYSIS_BACKUP_DIR = ".backup"
 
-# Package-relative paths. Unlike ``BASEDIR`` (which follows the current working
-# directory), these point inside the installed package, where bundled assets such as the
+# Package-relative paths. Unlike ``BASEDIR`` (set from `.llmexer/llmexer.ini`),
+# these point inside the installed package, where bundled assets such as the
 # Jinja2 HTML export template live.
 PACKAGE_PATH = Path(__file__).resolve().parent
 PACKAGE_DATA_DIR = "data"
 PACKAGE_DATA_PATH = PACKAGE_PATH / PACKAGE_DATA_DIR
 
-LOG_FILE_PATH = os.path.join(BASEDIR, LOG_FILE_NAME)
-TEMP_PATH = os.path.join(BASEDIR, TEMP_DIR)
-PROJECTS_PATH = os.path.join(BASEDIR, PROJECTS_DIR)
+# Set at CLI start-up by `llmexer.paths.apply_paths()`, after `.env` has been loaded.
+BASEDIR = None
+PROJECTS_DIR = None
+PROJECTS_PATH = None
+TEMP_PATH = None
+LOG_FILE_PATH = None
 
 # Hard ceiling on the number of works processed from a single OpenAlex query.
 # Overridable at runtime via the MAX_OPEN_ALEX_RESPONSES environment variable.

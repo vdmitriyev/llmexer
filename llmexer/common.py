@@ -7,7 +7,6 @@ import requests
 
 import llmexer.constants as _constants
 from llmexer.configs import settings
-from llmexer.constants import TEMP_PATH
 from llmexer.exceptions import (
     LLMExerException,
     ProjectIDRequiredException,
@@ -44,11 +43,11 @@ def __save_json__(content: dict, filepath: str = None):
                                     If None, a timestamped filename is used. Defaults to None.
     """
 
-    ensure_directory_exists(TEMP_PATH)
+    ensure_directory_exists(_constants.TEMP_PATH)
 
     if not filepath:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filepath = os.path.join(TEMP_PATH, f"dump_{timestamp}.json")
+        filepath = os.path.join(_constants.TEMP_PATH, f"dump_{timestamp}.json")
 
     try:
         with open(filepath, "w", encoding="utf-8") as f:

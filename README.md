@@ -130,7 +130,23 @@ Category: **CLI**
 
 | NAME | Default | Explanation |
 |---|---|---|
-| `LLMEXER_BASEDIR` | the current directory | Where the CLI writes `.projects/`, `temp/` and `llmexer.log`. |
+| `LLMEXER_BASEDIR` | `basedir` in `llmexer.ini` | Where the CLI writes `.projects/` and `temp/`. |
+| `LLMEXER_PROJECTS_DIR` | `.projects` | Name of the projects folder inside the basedir. |
+
+### Where llmexer keeps its data
+
+`llmexer` no longer writes into the folder you start it from. On the first run it creates a `.llmexer/` folder with an `llmexer.ini` file and the `llmexer.log` log file:
+
+- **Inside a virtualenv**: in the folder that holds the virtualenv (for `myproj/.venv`, that is `myproj/.llmexer/`). The default `basedir` is that same folder, written as `.`. Relative paths are resolved against it.
+- **Without a virtualenv**: in your home folder (`~/.llmexer/`). The default `basedir` is your home folder, and it must be an absolute path.
+
+```ini
+[llmexer]
+basedir = .
+projects_dir = .projects
+```
+
+`LLMEXER_BASEDIR` and `LLMEXER_PROJECTS_DIR` override these values. Set them in the shell, in a `.env` file in the current folder, or in a file passed with `--env-file`. Run `llmexer self paths` to see the paths in use.
 
 ## 🚀 Getting started
 
@@ -584,6 +600,17 @@ The `search` category manages and runs literature searches. `search run` queries
 | `sync` | Reconciles a search against the project's `papers/` folder and updates which files each row has. Pass `--add-local-extra-pdfs` to also list PDFs that no row mentions yet. Leave out `--file` to sync every search. Supports `--dry-run`. | `llmexer search sync --file 20260401-abc123.yaml` |
 | `export` | Renders search results as an HTML page next to the CSV, with sortable columns, per-column filters, clickable DOIs and collapsible abstracts. Leave out `--file` and `--csv-file` to export the whole project. Supports `--rewrite` and `--dry-run`. | `llmexer search export --file 20260401-abc123.yaml` |
 
+Write the query in **one** of the two notations. `llmexer` translates it for the other engine. A query that mixes both is rejected.
+
+| Meaning | Semantic Scholar | OpenAlex |
+|---|---|---|
+| and | `llm +survey` | `llm AND survey` |
+| or | `llm \| survey` | `llm OR survey` |
+| not | `llm -survey` | `llm NOT survey` |
+| phrase, grouping | `"abstract screening"`, `( ... )` | same |
+
+OpenAlex operators count only in uppercase, so `rock and roll` is three search words. Nothing inside quotes is translated.
+
 To write more precise queries, see the API documentation of both engines:
 
 * Semantic Scholar: [Paper bulk search](https://api.semanticscholar.org/api-docs/#tag/Paper-Data/operation/get_graph_paper_bulk_search)
@@ -596,6 +623,7 @@ The `self` category reports on the CLI itself.
 | Command   | What it does | Example |
 |-----------|-------------|-----------------|
 | `version` | Prints the installed version. | `llmexer self version` |
+| `paths` | Shows where `llmexer` keeps its ini file, log and projects, and where the base folder setting came from. | `llmexer self paths` |
 | `envs` | Lists the environment variables `llmexer` uses, with their defaults and with passwords and keys masked. Covers every provider, plus any custom `PROVIDER_<NAME>_URL`. | `llmexer self envs` |
 
 ## 🧩 Development Setup
@@ -631,9 +659,9 @@ If you use `llmexer` in your research, please cite it. The metadata is in [CITAT
 @software{dmitriyev_llmexer_2026,
   author    = {Dmitriyev, Viktor and Valko, Danila},
   title     = {llmexer},
-  version   = {0.5.0},
+  version   = {0.5.1},
   year      = {2026},
-  month     = {10},
+  month     = {11},
   doi       = {10.5281/zenodo.23646932},
   url       = {https://github.com/vdmitriyev/llmexer},
   license   = {MIT}

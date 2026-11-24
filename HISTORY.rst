@@ -2,6 +2,12 @@
 History
 =======
 
+0.5.1 (2026-11-24)
+-------------------
+
+* Keep the log and projects in one place: a ``.llmexer/llmexer.ini`` next to the virtualenv (or in the home folder) sets the base folder and the projects folder name. Overridable via ``LLMEXER_BASEDIR`` / ``LLMEXER_PROJECTS_DIR``. Add ``self paths``.
+* ``search create`` / ``search run`` accept a query in Semantic Scholar (``+ | -``) or OpenAlex (``AND OR NOT``) notation; each engine gets it translated. Mixing both is an error.
+
 0.5.0 (2026-10-25)
 -------------------
 

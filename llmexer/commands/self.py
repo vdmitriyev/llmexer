@@ -15,7 +15,9 @@ from llmexer.constants import (
     DEFAULT_DOCLING_URL,
     DEFAULT_MAX_OPENALEX_RESPONSES,
     DEFAULT_OPENROUTER_MAX_SPEND_USD,
+    DEFAULT_PROJECTS_DIR,
 )
+from llmexer.paths import resolve_paths
 from llmexer.version import package_version
 
 app = typer.Typer(help="Helps with the self-manage of the llmexer CLI.")
@@ -35,7 +37,8 @@ class EnvVar(NamedTuple):
 GENERAL_ENV_VARS = [
     EnvVar("PROJECT_ID", style="bold cyan"),
     EnvVar("APP_LOG_LEVEL", default="INFO"),
-    EnvVar("LLMEXER_BASEDIR", default="<current directory>"),
+    EnvVar("LLMEXER_BASEDIR", default="<from llmexer.ini>"),
+    EnvVar("LLMEXER_PROJECTS_DIR", default=DEFAULT_PROJECTS_DIR),
 ]
 
 PAPERS_SEARCH_ENV_VARS = [
@@ -120,4 +123,23 @@ def envs():
         for env_var in section:
             table.add_row(env_var.name, _display_value(env_var), env_var.default or "")
         table.add_section()
+    console.print(table)
+
+
+@app.command()
+def paths():
+    """Print where llmexer keeps its ini file, log, and projects"""
+    runtime_paths = resolve_paths()
+    mode = "virtualenv" if runtime_paths.venv else "user"
+
+    table = Table(title="llmexer Paths", border_style="bright_blue")
+    table.add_column("Item", style="white", no_wrap=True)
+    table.add_column("Value", style="cyan")
+    table.add_row("Mode", mode)
+    table.add_row("llmexer folder", str(runtime_paths.home))
+    table.add_row("Ini file", str(runtime_paths.ini_file))
+    table.add_row("Log file", str(runtime_paths.log_file_path))
+    table.add_row("Basedir", f"{runtime_paths.basedir} [dim]({runtime_paths.basedir_source})[/dim]")
+    table.add_row("Projects folder", str(runtime_paths.projects_path))
+    table.add_row("Temp folder", str(runtime_paths.temp_path))
     console.print(table)

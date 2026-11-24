@@ -12,6 +12,7 @@ from llmexer.base.search import (
     SEARCH_HTTP_TIMEOUT,
     detect_publication_lang,
 )
+from llmexer.base.search_query import to_semantic_scholar_query
 from llmexer.common import make_http_session
 from llmexer.logger import get_logger
 
@@ -53,8 +54,12 @@ def run_semantic_scholar_search(
     )
     session.mount("https://", HTTPAdapter(max_retries=retries))
 
+    s2_query = to_semantic_scholar_query(query)
+    if on_progress is not None:
+        on_progress(f"Semantic Scholar query: {s2_query}")
+
     params: dict = {
-        "query": query,
+        "query": s2_query,
         "fields": _SEM_SCHOLAR_FIELDS,
         "limit": min(batch_size, 1000),
     }

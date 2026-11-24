@@ -1,4 +1,4 @@
-from enum import Enum
+import os
 from pathlib import Path
 
 import typer
@@ -7,10 +7,13 @@ from rich.table import Table
 from rich.text import Text
 from typing_extensions import Annotated
 
+from llmexer import constants
 from llmexer.commands import analysis, experiment, papers, project, search
 from llmexer.commands import self as self_module
 from llmexer.common import ensure_directory_exists
 from llmexer.configs import console, cprint, settings
+from llmexer.logger import attach_file_handler
+from llmexer.paths import apply_paths, resolve_paths
 from llmexer.version import package_summary, package_version
 
 app = typer.Typer(
@@ -30,6 +33,24 @@ app.add_typer(analysis.app, name="analyze", hidden=True)
 app.add_typer(search.app, name="search")
 app.add_typer(papers.app, name="papers")
 app.add_typer(self_module.app, name="self")
+
+
+def _load_env(env_file: Path = None) -> None:
+    """Load `env_file`, or else the `.env` file in the current directory if there is one."""
+
+    if env_file:
+        cprint(
+            "Loading environment variables from:",
+            Text(f"{env_file}", style="bold blue"),
+        )
+        success = load_dotenv(env_file, override=True)
+        if not success:
+            typer.echo(f"Warning: Could not load variables from {env_file}", err=True)
+        return
+
+    cwd_env_file = Path.cwd() / ".env"
+    if cwd_env_file.is_file():
+        load_dotenv(cwd_env_file)
 
 
 @app.callback(invoke_without_command=True)
@@ -101,19 +122,7 @@ def main(
             Text("enabled", style="bold green"),
         )
 
-    if env_file:
-        cprint(
-            "Loading environment variables from:",
-            Text(f"{env_file}", style="bold blue"),
-        )
-        success = load_dotenv(env_file, override=True)
-        if not success:
-            typer.echo(f"Warning: Could not load variables from {env_file}", err=True)
-    else:
-        load_dotenv()
-
-    # Load PROJECT_ID from environment
-    import os
+    _load_env(env_file)
 
     project_id = os.getenv("PROJECT_ID")
     if project_id:
@@ -125,9 +134,10 @@ def main(
                 Text(f"{project_id}", style="bold yellow"),
             )
 
-    from llmexer.constants import PROJECTS_PATH
-
-    ensure_directory_exists(PROJECTS_PATH)
+    runtime_paths = resolve_paths()
+    apply_paths(runtime_paths)
+    attach_file_handler(constants.LOG_FILE_PATH, os.getenv("APP_LOG_LEVEL", "INFO"))
+    ensure_directory_exists(constants.PROJECTS_PATH)
 
     if version:
         if settings.verbose:

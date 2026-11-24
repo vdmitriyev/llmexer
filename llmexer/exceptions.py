@@ -44,3 +44,11 @@ class SearchResultsAlreadyExistException(LLMExerException):
 
 class ProviderConfigException(LLMExerException):
     """Raised when a provider is missing required configuration (e.g. API token or base URL)."""
+
+
+class ConfigException(LLMExerException):
+    """Raised when the `.llmexer/llmexer.ini` file is missing values or holds invalid ones."""
+
+
+class SearchQueryNotationException(LLMExerException):
+    """Raised when a search query mixes Semantic Scholar and OpenAlex operators."""

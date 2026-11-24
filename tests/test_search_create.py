@@ -12,6 +12,7 @@ from llmexer.commands.search import DEFAULT_QUERY_PARAM
 from llmexer.exceptions import (
     ProjectIDRequiredException,
     ProjectNotExistsException,
+    SearchQueryNotationException,
 )
 
 runner = CliRunner()
@@ -145,3 +146,25 @@ def test_search_create_filename_format(projects_dir, mock_no_dotenv, monkeypatch
     assert len(parts) == 2
     assert len(parts[0]) == 8  # YYYYMMDD
     assert len(parts[1]) == 8  # GUID
+
+
+@pytest.mark.parametrize("query", ["llm +survey", "llm AND survey"])
+def test_search_create_accepts_either_notation(projects_dir, mock_no_dotenv, monkeypatch, query):
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
+
+    result = runner.invoke(app, ["search", "create", "--query", query])
+
+    assert result.exit_code == 0, result.output
+    yaml_files = list((projects_dir / "test-exp" / "searches").glob("*.yaml"))
+    assert yaml.safe_load(yaml_files[0].read_text(encoding="utf-8"))["query"] == query
+
+
+def test_search_create_rejects_mixed_notation(projects_dir, mock_no_dotenv, monkeypatch):
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
+
+    result = runner.invoke(app, ["search", "create", "--query", "llm +survey OR review"])
+
+    assert isinstance(result.exception, SearchQueryNotationException)
+    assert not (projects_dir / "test-exp" / "searches").exists()
