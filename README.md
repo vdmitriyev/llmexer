@@ -546,6 +546,82 @@ llmexer experiment convert --pid llm-survey-2026 --exp abstracts
 
 `analysis init --exp NAME` and `analysis add-agreement --exp NAME` write notebooks with a `<NAME>__` prefix, so each sub-experiment gets its own.
 
+## 📢 Scenario 6: Draw a PRISMA 2020 flow diagram
+
+This scenario continues Scenario 5. The `abstracts` sub-experiment screens the search results, and `fulltext` checks the papers that pass. For the screening boxes, each prompt must ask for a yes/no field in its JSON answer, for example `{"include": "yes", "reason": "..."}`.
+
+**1. Look at the numbers first**
+
+`--dry-run` prints every PRISMA box with its number and where the number comes from. It writes nothing:
+```bash
+llmexer --dry-run analysis draw-prisma --pid llm-survey-2026
+```
+
+Without `--field`, only the identification boxes are filled: records per database, duplicates, and records removed by `search filter`. The other boxes show `n = ?`.
+
+**2. Add the screening decisions**
+
+`--field` names the yes/no field. `--llm-vote-rule` combines the models' answers for each paper:
+- `majority` (the default) keeps a paper if most answers are yes; a tie keeps it.
+- `any` keeps it if one answer is yes.
+- `all` excludes it if one answer is no.
+
+```bash
+llmexer analysis draw-prisma --pid llm-survey-2026 --exp abstracts --field include --llm-vote-rule majority
+```
+
+By default every answer in the experiment counts. To leave out a pilot prompt or a weak model, name the ones that should count. Each option can be repeated or take a comma-separated list:
+```bash
+llmexer analysis draw-prisma --pid llm-survey-2026 --exp abstracts --field include \
+  --prompt screening_v2 --filter-model gpt-4o,gemma4:31b
+```
+
+`--filter-provider`, `--filter-model` and `--filter-profile` apply to both stages; `--prompt` applies to screening and `--fulltext-prompt` to the full-text stage.
+
+**3. Add the full-text stage**
+
+```bash
+llmexer analysis draw-prisma --pid llm-survey-2026 --exp abstracts --field include \
+  --fulltext-exp fulltext --fulltext-field include --reason-field reason \
+  --title "LLM survey 2026"
+```
+
+This writes three files to `analysis/`:
+- `abstracts__prisma.svg`: the diagram.
+- `abstracts__prisma_counts.yaml`: the options you used (`settings`), the files read, and every number with its source.
+- `abstracts__prisma_decisions.csv`: one row per paper and stage, with the votes, the LLM decision and the final decision.
+
+The command remembers its options. Next time, `llmexer analysis draw-prisma --pid llm-survey-2026 --exp abstracts` is enough. Pass an option to change it, or `--ignore-settings` to start again.
+
+**4. Check papers by hand**
+
+To overrule the LLMs for a paper, open the decision file and write `yes` or `no` in its `manual` column. At the full-text stage, `manual_reason` sets the exclusion reason. Run the command again: the counts use your decision, and the `manual` columns are kept on every run.
+
+```
+stage;data_id;title;yes;no;unusable;llm_decision;llm_reason;manual;manual_reason;decision
+screening;S02;...;1;2;0;excluded;;yes;;kept
+fulltext;S04;...;0;3;0;excluded;Wrong population;no;Wrong outcome;excluded
+```
+
+**5. Correct a number by hand**
+
+If a total is wrong or missing, set it under `overrides` in the counts file and run the command again. Your overrides are kept on every run:
+```yaml
+overrides:
+  not_retrieved: 3
+  excluded_reasons: {Wrong population: 12, No LLM used: 7}
+```
+
+When a run changes any of the three files, the old one is first copied to `analysis/.backup/`.
+
+**6. Check the numbers in a notebook (optional)**
+
+```bash
+llmexer analysis add-prisma --pid llm-survey-2026 --exp abstracts
+```
+
+`analysis/abstracts__analyse_prisma.ipynb` takes the saved settings, shows each stage and the papers the models disagree on, then draws the same SVG. It reads and writes the same three files as `analysis draw-prisma`.
+
 #### Working with the current project
 
 Most commands take a `--pid` option to say which project to use. If you set `PROJECT_ID` in your `.env` file, you can leave it out:
@@ -607,6 +683,8 @@ The notebooks hold no logic of their own — the cells set the paths, call funct
 |-----------|-------------|-----------------|
 | `init` | Creates `<project>/analysis/` with `analyse_experiment.ipynb`, `analyse_searches.ipynb` and the modules they call. The experiment notebook loads the database, parses each answer from JSON into columns, exports them as a CSV, and prints the statistics and charts. The searches notebook breaks one search down by engine, year, open access and language. Both work on an empty project. Existing files are only replaced with `--rewrite`, which backs them up first. Supports `--dry-run`. | `llmexer analysis init --pid my-project` |
 | `add-agreement` | Adds `analyse_experiment_agreements.ipynb`, which reads the flattened CSV the experiment notebook writes and reports Cohen's kappa for every pair of profiles, one row per prompt and yes/no field. Each prompt is scored on its own (`prompt_id` is the set, `data_id` the item), and the notebook's `INTERMEDIATE_VALUES_DIR` can write the rows behind every kappa to CSV for checking by hand. Name the fields with `--fields`, or leave `--autodetect-fields` on to have the notebook find them. The modules it calls are copied alongside, so it also works without `init`. Existing files are only replaced with `--rewrite`, which backs them up first. Supports `--dry-run`. | `llmexer analysis add-agreement --pid my-project` |
+| `draw-prisma` | Draws a PRISMA 2020 flow diagram as `analysis/prisma.svg` from the project's searches (records per database, duplicates, filters) and, with `--field` and `--llm-vote-rule majority\|any\|all`, from the LLM screening answers. `--prompt`, `--filter-provider`, `--filter-model` and `--filter-profile` choose which answers count. `--fulltext-exp` / `--fulltext-field` / `--fulltext-prompt` / `--reason-field` fill the eligibility boxes from a full-text sub-experiment. Writes `analysis/prisma_counts.yaml` (the options used, every number and its source; set a number under `overrides` to change it) and `analysis/prisma_decisions.csv` (one row per paper; write yes/no in `manual` to overrule the LLMs). Options not given are taken from the last run (`--ignore-settings` drops them). Overrides and manual decisions are kept on every run, and a changed file is first copied to `analysis/.backup/`. Numbers that cannot be derived show as `n = ?`. Supports `--dry-run`. | `llmexer analysis draw-prisma --pid my-project --field include` |
+| `add-prisma` | Adds `analyse_prisma.ipynb`, which derives the same PRISMA numbers step by step (with the records the models disagree on), applies your overrides and manual decisions, and draws the SVG. Takes the same options as `draw-prisma`, falls back on its saved settings, and reads and writes the same files. Supports `--rewrite` and `--dry-run`. | `llmexer analysis add-prisma --pid my-project` |
 
 The notebooks read their database and search files set in the moment, when the folder is created, so you can edit them by hand. They do not refresh themselves: after another `experiment generate` or `search run`, change the value or run `init --rewrite`.
 
@@ -707,7 +785,7 @@ If you use `llmexer` in your research, please cite it. The metadata is in [CITAT
 @software{dmitriyev_llmexer_2026,
   author    = {Dmitriyev, Viktor and Valko, Danila},
   title     = {llmexer},
-  version   = {0.6.0},
+  version   = {0.6.1},
   year      = {2026},
   month     = {11},
   doi       = {10.5281/zenodo.23646932},

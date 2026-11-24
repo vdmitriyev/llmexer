@@ -330,3 +330,43 @@ def test_search_run_rejects_mixed_notation(projects_dir, mock_no_dotenv, mock_s2
     assert isinstance(result.exception, SearchQueryNotationException)
     assert not (projects_dir / "test-exp" / "searches").exists()
     mock_s2_session.get.assert_not_called()
+
+
+def test_search_run_writes_engine_counts(projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch):
+    """`search run` keeps the per-engine counts for the PRISMA diagram."""
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
+    monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
+
+    result = runner.invoke(app, ["search", "run", "--query", "test query"])
+
+    assert result.exit_code == 0, result.output
+    counts_files = list((projects_dir / "test-exp" / "searches" / "logs").glob("*__counts.json"))
+    assert len(counts_files) == 1
+    assert json.loads(counts_files[0].read_text()) == {
+        "semantic_scholar": 1,
+        "openalex": 0,
+        "openalex_duplicates": 0,
+    }
+
+
+def test_search_run_counts_openalex_duplicates(projects_dir, mock_no_dotenv, mock_s2_session, monkeypatch):
+    """An OpenAlex record Semantic Scholar already found is counted as a duplicate."""
+    os.makedirs(projects_dir / "test-exp")
+    monkeypatch.setenv("PROJECT_ID", "test-exp")
+    monkeypatch.setenv("OPENALEX_API_KEY", "key")
+    same_doi = {"doi": "https://doi.org/10.1234/test", "display_name": "Test Paper", "id": "W1"}
+    new_doi = {"doi": "https://doi.org/10.9/new", "display_name": "Other", "id": "W2"}
+    page = Mock()
+    page.raise_for_status = Mock()
+    page.json.return_value = {"results": [same_doi, new_doi], "meta": {"count": 2, "next_cursor": None}}
+    oa_session = Mock()
+    oa_session.get.return_value = page
+    monkeypatch.setattr("llmexer.base.search_openalex.make_http_session", Mock(return_value=oa_session))
+    monkeypatch.setattr("llmexer.base.search_openalex.detect_publication_lang", Mock(return_value="en"))
+
+    result = runner.invoke(app, ["search", "run", "--query", "test query"])
+
+    assert result.exit_code == 0, result.output
+    counts_file = next((projects_dir / "test-exp" / "searches" / "logs").glob("*__counts.json"))
+    assert json.loads(counts_file.read_text()) == {"semantic_scholar": 1, "openalex": 2, "openalex_duplicates": 1}

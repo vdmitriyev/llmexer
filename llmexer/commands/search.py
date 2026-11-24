@@ -1,5 +1,6 @@
 """Search group commands of the CLI interface."""
 
+import json
 import os
 from datetime import datetime
 from pathlib import Path
@@ -78,6 +79,8 @@ FILTERS_LOG_FILENAME = "filters-applied.log"
 # `logs/` subdir; the rest sit directly in `searches/`.
 _SEARCH_JSON_SUFFIX = "__results_raw.json"
 _SEARCH_DOWNLOAD_FAILED_SUFFIX = "__results_download_failed.csv"
+# Records found per engine before duplicates were removed, for PRISMA (`analysis draw-prisma`).
+_SEARCH_COUNTS_SUFFIX = "__counts.json"
 _SEARCH_FILE_SUFFIXES = [
     ".yaml",
     "__results.csv",
@@ -393,8 +396,20 @@ def rename_search(
     failed_dst = os.path.join(logs_path, f"{new_id}{_SEARCH_DOWNLOAD_FAILED_SUFFIX}")
     if os.path.exists(failed_src):
         os.rename(failed_src, failed_dst)
+    counts_src = os.path.join(logs_path, f"{old_id}{_SEARCH_COUNTS_SUFFIX}")
+    if os.path.exists(counts_src):
+        os.rename(counts_src, os.path.join(logs_path, f"{new_id}{_SEARCH_COUNTS_SUFFIX}"))
 
     cprint(f"Renamed search: [bold yellow]{old_id}[/bold yellow] → [bold yellow]{new_id}[/bold yellow]")
+
+
+def _write_search_counts(jsons_path: str, search_id: str, counts: dict) -> None:
+    """Keep the per-engine counts of one search run in ``logs/<id>__counts.json``."""
+
+    logs_path = os.path.join(os.path.dirname(jsons_path), SEARCHES_LOGS_DIR)
+    ensure_directory_exists(logs_path)
+    with open(os.path.join(logs_path, f"{search_id}{_SEARCH_COUNTS_SUFFIX}"), "w", encoding="utf-8") as f:
+        json.dump(counts, f, indent=2)
 
 
 @app.command()
@@ -480,6 +495,7 @@ def run(
     records = run_semantic_scholar_search(query, year, only_open_access, batch, limit, json_path, csv_path, cprint)
     cprint(f"[bold green]Semantic Scholar:[/bold green] {len(records)} paper(s)")
 
+    counts = {"semantic_scholar": len(records), "openalex": 0, "openalex_duplicates": 0}
     openalex_key = os.getenv("OPENALEX_API_KEY")
     if openalex_key:
         oa_json_path = os.path.join(jsons_path, f"{search_id}__openalex_results_raw.json")
@@ -495,11 +511,15 @@ def run(
         )
         before = len(records)
         records = combine_new_records(records, oa_records)
+        counts["openalex"] = len(oa_records)
+        counts["openalex_duplicates"] = len(oa_records) - (len(records) - before)
         write_records_to_csv(records, csv_path)
         cprint(f"[bold green]OpenAlex:[/bold green] {len(oa_records)} found, " f"{len(records) - before} new added")
         cprint(f"File with OpenAlex raw responses ([magenta]JSON[/magenta]):\n  {oa_json_path}")
     else:
         cprint("[yellow]OpenAlex skipped[/yellow] (OPENALEX_API_KEY not set)")
+
+    _write_search_counts(jsons_path, search_id, counts)
 
     cprint(f"[bold green]Total retrieved:[/bold green] {len(records)} paper(s)")
     cprint(f"File with raw responses ([magenta]JSON[/magenta]):\n  {json_path}")

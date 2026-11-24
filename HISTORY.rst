@@ -2,6 +2,14 @@
 History
 =======
 
+0.6.1 (2026-11-24)
+-------------------
+
+* Add ``analysis draw-prisma`` (PRISMA 2020 flow diagram as SVG, numbers derived from searches and LLM screening answers, answer filters, saved settings, a per-paper decision file with manual decisions, editable overrides).
+* Add ``analysis add-prisma`` (the same as a notebook).
+* ``search run`` now keeps per-engine counts in ``searches/logs/<id>__counts.json``.
+* `prisma` feature based on the (`#13 <https://github.com/vdmitriyev/llmexer/issues/13>`_).
+
 0.6.0 (2026-11-24)
 -------------------
 

@@ -167,3 +167,17 @@ def test_search_rename_nonexistent_experiment_raises(projects_dir, mock_no_doten
     )
     assert result.exit_code != 0
     assert isinstance(result.exception, ProjectNotExistsException)
+
+
+def test_search_rename_moves_the_counts_file(searches_dir, mock_no_dotenv):
+    """The per-engine counts used by `analysis draw-prisma` follow the search."""
+    _make_yaml(searches_dir, "old-search")
+    logs_dir = searches_dir / "logs"
+    logs_dir.mkdir()
+    (logs_dir / "old-search__counts.json").write_text("{}")
+
+    result = runner.invoke(app, ["search", "rename", "--old-id", "old-search", "--new-id", "new-search"])
+
+    assert result.exit_code == 0
+    assert (logs_dir / "new-search__counts.json").exists()
+    assert not (logs_dir / "old-search__counts.json").exists()

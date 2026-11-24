@@ -3,12 +3,13 @@
 import os
 import shutil
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 
 import typer
 from rich.table import Table
 
-from llmexer.base.analysis import COPIED_MODULES
+from llmexer.base.analysis import COPIED_MODULES, prisma
 from llmexer.base.analysis.notebook import (
     ADDON_NOTEBOOKS,
     NOTEBOOKS,
@@ -382,3 +383,428 @@ def add_agreement(
     notebook = os.path.join(analysis_path, notebook_name)
     cprint("\nNext step is to open Jupyter Notebook file and run all cells.")
     cprint(f"Jupyter Notebook: [bold yellow]{notebook}[/bold yellow]")
+
+
+# ---------------------------------------------------------------------------
+# PRISMA 2020 flow diagram
+# ---------------------------------------------------------------------------
+
+PRISMA_SVG = "prisma.svg"
+PRISMA_COUNTS = "prisma_counts.yaml"
+PRISMA_DECISIONS = "prisma_decisions.csv"
+
+# Settings key -> the option that sets it, for messages.
+PRISMA_SETTING_OPTIONS = {
+    "searches": "--search",
+    "field": "--field",
+    "llm_vote_rule": "--llm-vote-rule",
+    "prompt": "--prompt",
+    "filter_provider": "--filter-provider",
+    "filter_model": "--filter-model",
+    "filter_profile": "--filter-profile",
+    "fulltext_exp": "--fulltext-exp",
+    "fulltext_field": "--fulltext-field",
+    "fulltext_prompt": "--fulltext-prompt",
+    "reason_field": "--reason-field",
+    "title": "--title",
+}
+PRISMA_LIST_SETTINGS = ("searches", "prompt", "filter_provider", "filter_model", "filter_profile", "fulltext_prompt")
+
+
+class PrismaRule(str, Enum):
+    """How the answers of several models for one record become one decision."""
+
+    majority = "majority"
+    any = "any"
+    all = "all"
+
+
+def _prisma_experiment(pid: str, exp: str | None, label: str):
+    """``(paths, data_csv, newest_db)`` of a (sub-)experiment; ``data_csv`` is ``None`` when it has no data yet."""
+
+    paths = resolve_experiment(pid, exp, must_exist=False)
+    if not os.path.isfile(paths.data):
+        return paths, None, None
+    db_path = latest_db(paths.work_dir)
+    if db_path is None:
+        cprint(f"[bold yellow]Warning:[/bold yellow] {label} '{paths.label()}' has no database yet.")
+    return paths, paths.data, db_path
+
+
+def _relative(path, project_path: str):
+    """``path`` relative to the project, with ``/`` on every OS (it is saved in files)."""
+
+    return None if path is None else os.path.relpath(path, project_path).replace(os.sep, "/")
+
+
+def _split_values(values) -> list[str]:
+    """Repeatable, comma-separated option values (or a saved list / string) as one list."""
+
+    if isinstance(values, str):
+        values = [values]
+    return [value.strip() for item in (values or []) for value in str(item).split(",") if value.strip()]
+
+
+def _is_unset(value) -> bool:
+    return value is None or value == "" or value == [] or value == ()
+
+
+def _prisma_settings(counts_path: str, given: dict, ignore_settings: bool) -> tuple[dict, list[str]]:
+    """The options given, with the settings saved in the counts file filling the gaps.
+
+    Returns the settings and the keys taken from the file.
+    """
+
+    try:
+        saved = {} if ignore_settings else prisma.load_settings(counts_path)
+    except ValueError as e:
+        raise UnexpectedCLIParamsException(str(e)) from e
+
+    settings, reused = {}, []
+    for key in PRISMA_SETTING_OPTIONS:
+        value = given.get(key)
+        if _is_unset(value) and not _is_unset(saved.get(key)):
+            value = saved[key]
+            reused.append(key)
+        settings[key] = _split_values(value) if key in PRISMA_LIST_SETTINGS else value
+
+    if isinstance(settings["llm_vote_rule"], PrismaRule):
+        settings["llm_vote_rule"] = settings["llm_vote_rule"].value
+    settings["llm_vote_rule"] = settings["llm_vote_rule"] or PrismaRule.majority.value
+    if settings["llm_vote_rule"] not in prisma.RULES:
+        raise UnexpectedCLIParamsException(
+            f"llm_vote_rule '{settings['llm_vote_rule']}' in '{counts_path}' must be one of {', '.join(prisma.RULES)}."
+        )
+    return settings, reused
+
+
+def _prisma_inputs(pid: str, given: dict, ignore_settings: bool) -> dict:
+    """Everything `derive` needs, from the CLI options and the settings saved by the last run."""
+
+    project_path = get_project_directory_path(pid)
+    paths, screening_data, screening_db = _prisma_experiment(pid, given.get("exp"), "Screening experiment")
+    analysis_path = os.path.join(project_path, ANALYSIS_DIR)
+    prefix = _exp_prefix(paths)
+    counts_path = os.path.join(analysis_path, f"{prefix}{PRISMA_COUNTS}")
+
+    settings, reused = _prisma_settings(counts_path, given, ignore_settings)
+    settings["exp"] = paths.name
+
+    fulltext_data = fulltext_db = None
+    if settings["fulltext_exp"]:
+        if not settings["fulltext_field"]:
+            raise UnexpectedCLIParamsException("--fulltext-exp needs --fulltext-field.")
+        _, fulltext_data, fulltext_db = _prisma_experiment(pid, settings["fulltext_exp"], "Full-text experiment")
+    elif settings["fulltext_field"] or settings["reason_field"] or settings["fulltext_prompt"]:
+        raise UnexpectedCLIParamsException(
+            "--fulltext-field, --fulltext-prompt and --reason-field need --fulltext-exp."
+        )
+
+    known = prisma.list_searches(project_path)
+    unknown = [search_id for search_id in settings["searches"] if search_id not in known]
+    if unknown:
+        raise UnexpectedCLIParamsException(
+            f"Search(es) without a __results.csv: {', '.join(unknown)}. Known: {', '.join(known) or 'none'}."
+        )
+
+    return {
+        "project_path": project_path,
+        "analysis_path": analysis_path,
+        "paths": paths,
+        "prefix": prefix,
+        "counts_path": counts_path,
+        "svg_path": os.path.join(analysis_path, f"{prefix}{PRISMA_SVG}"),
+        "decisions_path": os.path.join(analysis_path, f"{prefix}{PRISMA_DECISIONS}"),
+        "settings": settings,
+        "reused": reused,
+        "screening_data": screening_data,
+        "screening_db": screening_db,
+        "fulltext_data": fulltext_data,
+        "fulltext_db": fulltext_db,
+    }
+
+
+def _prisma_files(inputs: dict) -> dict:
+    """The files a run read, relative to the project (saved as `inputs` in the counts file)."""
+
+    project_path = inputs["project_path"]
+    files = {"llmexer_version": package_version()}
+    for key in ("screening_data", "screening_db", "fulltext_data", "fulltext_db"):
+        if inputs[key] is not None:
+            files[key] = _relative(inputs[key], project_path)
+    return files
+
+
+def _print_reused_settings(inputs: dict) -> None:
+    if not inputs["reused"]:
+        return
+    shown = []
+    for key in inputs["reused"]:
+        value = inputs["settings"][key]
+        value = ",".join(value) if isinstance(value, list) else value
+        shown.append(f"{PRISMA_SETTING_OPTIONS[key]} {value}")
+    cprint(
+        f"Settings from {os.path.basename(inputs['counts_path'])} (pass an option to change it, "
+        f"`--ignore-settings` to drop them): [cyan]{' '.join(shown)}[/cyan]"
+    )
+
+
+def _derive_prisma(inputs: dict) -> tuple[dict, object]:
+    settings = inputs["settings"]
+    try:
+        manual = prisma.load_decisions_file(inputs["decisions_path"])
+        return prisma.derive(
+            inputs["project_path"],
+            searches=settings["searches"],
+            screening_data=inputs["screening_data"],
+            screening_db=inputs["screening_db"],
+            field=settings["field"],
+            rule=settings["llm_vote_rule"],
+            fulltext_data=inputs["fulltext_data"],
+            fulltext_db=inputs["fulltext_db"],
+            fulltext_field=settings["fulltext_field"],
+            reason_field=settings["reason_field"],
+            screening_filters=prisma.answer_filters(settings, prisma.STAGE_SCREENING),
+            fulltext_filters=prisma.answer_filters(settings, prisma.STAGE_FULLTEXT),
+            manual=manual,
+        )
+    except ValueError as e:
+        raise UnexpectedCLIParamsException(str(e)) from e
+
+
+def _format_count(value) -> str:
+    if value is None:
+        return "[bold red]?[/bold red]"
+    if isinstance(value, dict):
+        return ", ".join(f"{name}: {count}" for name, count in value.items()) or "-"
+    return str(value)
+
+
+def _print_prisma_table(derived: dict, overrides: dict, values: dict) -> None:
+    table = Table(title="PRISMA 2020 counts", border_style="bright_blue", show_lines=True)
+    table.add_column("Box", style="white")
+    table.add_column("Used", style="bold green")
+    table.add_column("Derived")
+    table.add_column("Override", style="yellow")
+    table.add_column("Source", style="dim")
+    for key, label in prisma.BOXES.items():
+        box = derived.get(key) or {}
+        override = _format_count(overrides[key]) if key in overrides else ""
+        table.add_row(
+            label, _format_count(values.get(key)), _format_count(box.get("value")), override, box.get("source", "")
+        )
+    console.print(table)
+
+
+_PRISMA_OPTIONS_HELP = {
+    "search": "Search id(s) to count (repeatable, or comma-separated). Default: every search with results.",
+    "field": "Yes/no field of the screening answers that keeps (yes) or excludes (no) a record.",
+    "llm_vote_rule": "How the LLM answers (votes) for one record are combined: 'majority' (tie keeps), "
+    "'any' (one yes keeps), 'all' (one no excludes). Default: majority.",
+    "prompt": "Count only the screening answers of these prompt(s) (repeatable, or comma-separated).",
+    "filter_provider": "Count only the answers of these provider(s), at both stages.",
+    "filter_model": "Count only the answers of these model(s), at both stages.",
+    "filter_profile": "Count only the answers of these profile(s), at both stages.",
+    "fulltext_exp": "Sub-experiment that assessed the full texts (fills the eligibility boxes).",
+    "fulltext_field": "Yes/no field of the full-text answers.",
+    "fulltext_prompt": "Count only the full-text answers of these prompt(s).",
+    "reason_field": "Field of the full-text answers holding the exclusion reason.",
+    "title": "Title drawn above the diagram.",
+    "ignore_settings": "Do not re-use the settings saved in the counts file by the last run.",
+}
+
+
+@app.command(name="draw-prisma")
+def draw_prisma(
+    pid: str = typer.Option(None, "--pid", help="Project ID. If not provided, uses PROJECT_ID from .env."),
+    exp: str = _exp_option(),
+    search: list[str] = typer.Option(None, "--search", help=_PRISMA_OPTIONS_HELP["search"]),
+    field: str = typer.Option(None, "--field", help=_PRISMA_OPTIONS_HELP["field"]),
+    llm_vote_rule: PrismaRule = typer.Option(None, "--llm-vote-rule", help=_PRISMA_OPTIONS_HELP["llm_vote_rule"]),
+    prompt: list[str] = typer.Option(None, "--prompt", help=_PRISMA_OPTIONS_HELP["prompt"]),
+    filter_provider: list[str] = typer.Option(None, "--filter-provider", help=_PRISMA_OPTIONS_HELP["filter_provider"]),
+    filter_model: list[str] = typer.Option(None, "--filter-model", help=_PRISMA_OPTIONS_HELP["filter_model"]),
+    filter_profile: list[str] = typer.Option(None, "--filter-profile", help=_PRISMA_OPTIONS_HELP["filter_profile"]),
+    fulltext_exp: str = typer.Option(None, "--fulltext-exp", help=_PRISMA_OPTIONS_HELP["fulltext_exp"]),
+    fulltext_field: str = typer.Option(None, "--fulltext-field", help=_PRISMA_OPTIONS_HELP["fulltext_field"]),
+    fulltext_prompt: list[str] = typer.Option(None, "--fulltext-prompt", help=_PRISMA_OPTIONS_HELP["fulltext_prompt"]),
+    reason_field: str = typer.Option(None, "--reason-field", help=_PRISMA_OPTIONS_HELP["reason_field"]),
+    title: str = typer.Option(None, "--title", help=_PRISMA_OPTIONS_HELP["title"]),
+    ignore_settings: bool = typer.Option(False, "--ignore-settings", help=_PRISMA_OPTIONS_HELP["ignore_settings"]),
+) -> None:
+    """Draw a PRISMA 2020 flow diagram (SVG) from the project's searches and screening
+
+    Writes analysis/prisma_counts.yaml (the settings, every number with its source),
+    analysis/prisma.svg and, with --field, analysis/prisma_decisions.csv (one row per
+    record). Options not given are taken from the settings of the last run. To change
+    a number, set it under `overrides` in the YAML; to overrule the LLMs for a record,
+    write yes/no in the `manual` column of the decision file. Both are kept on every
+    run. A file whose content changes is first copied to analysis/.backup/.
+    """
+
+    pid = get_proper_pid(pid)
+    given = dict(
+        exp=exp,
+        searches=search,
+        field=field,
+        llm_vote_rule=llm_vote_rule,
+        prompt=prompt,
+        filter_provider=filter_provider,
+        filter_model=filter_model,
+        filter_profile=filter_profile,
+        fulltext_exp=fulltext_exp,
+        fulltext_field=fulltext_field,
+        fulltext_prompt=fulltext_prompt,
+        reason_field=reason_field,
+        title=title,
+    )
+    inputs = _prisma_inputs(pid, given, ignore_settings)
+    _print_reused_settings(inputs)
+
+    derived, decisions = _derive_prisma(inputs)
+    try:
+        _, overrides = prisma.load_counts_file(inputs["counts_path"])
+    except ValueError as e:
+        raise UnexpectedCLIParamsException(str(e)) from e
+    values = prisma.effective_counts(derived, overrides)
+
+    _print_prisma_table(derived, overrides, values)
+    for warning in prisma.check_counts(values):
+        cprint(f"[bold yellow]Warning:[/bold yellow] {warning}")
+
+    outputs = prisma.output_texts(
+        inputs["counts_path"],
+        inputs["svg_path"],
+        derived,
+        overrides,
+        values,
+        inputs["settings"]["title"],
+        settings=inputs["settings"],
+        inputs=_prisma_files(inputs),
+        decisions_path=inputs["decisions_path"],
+        decisions=decisions,
+    )
+    planned = prisma.plan_outputs(outputs)
+
+    if settings.dry_run:
+        for path, _, backup in planned:
+            note = f", backing up the old one to {ANALYSIS_BACKUP_DIR}/{backup.name}" if backup else ""
+            cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{path}'{note}")
+        return
+
+    for backup in prisma.write_outputs(planned):
+        cprint(f"Backed up the previous version to {ANALYSIS_BACKUP_DIR}/{backup.name}")
+    cprint(f"Counts (edit `overrides` to change a number):\n  [bold yellow]{inputs['counts_path']}[/bold yellow]")
+    if any(str(path) == inputs["decisions_path"] for path, _, _ in planned):
+        cprint(
+            "Decisions per record (write yes/no in `manual` to overrule the LLMs):\n"
+            f"  [bold yellow]{inputs['decisions_path']}[/bold yellow]"
+        )
+    cprint(f"PRISMA diagram:\n  [bold yellow]{inputs['svg_path']}[/bold yellow]")
+
+
+@app.command(name="add-prisma")
+def add_prisma(
+    pid: str = typer.Option(None, "--pid", help="Project ID. If not provided, uses PROJECT_ID from .env."),
+    exp: str = _exp_option(),
+    search: list[str] = typer.Option(None, "--search", help=_PRISMA_OPTIONS_HELP["search"]),
+    field: str = typer.Option(None, "--field", help=_PRISMA_OPTIONS_HELP["field"]),
+    llm_vote_rule: PrismaRule = typer.Option(None, "--llm-vote-rule", help=_PRISMA_OPTIONS_HELP["llm_vote_rule"]),
+    prompt: list[str] = typer.Option(None, "--prompt", help=_PRISMA_OPTIONS_HELP["prompt"]),
+    filter_provider: list[str] = typer.Option(None, "--filter-provider", help=_PRISMA_OPTIONS_HELP["filter_provider"]),
+    filter_model: list[str] = typer.Option(None, "--filter-model", help=_PRISMA_OPTIONS_HELP["filter_model"]),
+    filter_profile: list[str] = typer.Option(None, "--filter-profile", help=_PRISMA_OPTIONS_HELP["filter_profile"]),
+    fulltext_exp: str = typer.Option(None, "--fulltext-exp", help=_PRISMA_OPTIONS_HELP["fulltext_exp"]),
+    fulltext_field: str = typer.Option(None, "--fulltext-field", help=_PRISMA_OPTIONS_HELP["fulltext_field"]),
+    fulltext_prompt: list[str] = typer.Option(None, "--fulltext-prompt", help=_PRISMA_OPTIONS_HELP["fulltext_prompt"]),
+    reason_field: str = typer.Option(None, "--reason-field", help=_PRISMA_OPTIONS_HELP["reason_field"]),
+    title: str = typer.Option(None, "--title", help=_PRISMA_OPTIONS_HELP["title"]),
+    ignore_settings: bool = typer.Option(False, "--ignore-settings", help=_PRISMA_OPTIONS_HELP["ignore_settings"]),
+    rewrite: bool = typer.Option(False, "--rewrite", help="Replace an existing PRISMA notebook, backing it up first."),
+) -> None:
+    """Add the PRISMA notebook: derive every count step by step and draw the SVG
+
+    Same counts as `analysis draw-prisma`, shown with the rows behind them (e.g. the
+    records the models disagree on), and the same counts and decision files.
+    Options not given are taken from the settings saved by the last run.
+    """
+
+    pid = get_proper_pid(pid)
+    given = dict(
+        exp=exp,
+        searches=search,
+        field=field,
+        llm_vote_rule=llm_vote_rule,
+        prompt=prompt,
+        filter_provider=filter_provider,
+        filter_model=filter_model,
+        filter_profile=filter_profile,
+        fulltext_exp=fulltext_exp,
+        fulltext_field=fulltext_field,
+        fulltext_prompt=fulltext_prompt,
+        reason_field=reason_field,
+        title=title,
+    )
+    inputs = _prisma_inputs(pid, given, ignore_settings)
+    _print_reused_settings(inputs)
+    project_path = inputs["project_path"]
+    analysis_path = inputs["analysis_path"]
+    prefix = inputs["prefix"]
+    notebook_name = f"{prefix}{ADDON_NOTEBOOKS['prisma']}"
+
+    planned = _plan(analysis_path, rewrite, [notebook_name] + list(COPIED_MODULES))
+    console.print(_render_plan_table(planned, analysis_path))
+
+    to_write = [item for item in planned if item[2] != "keep"]
+    if not to_write:
+        cprint("[bold yellow]Warning:[/bold yellow] the PRISMA notebook already exists. Use --rewrite to replace it.")
+        return
+
+    if settings.dry_run:
+        cprint(f"[bold yellow]Dry run:[/bold yellow] would write {len(to_write)} file(s) into '{analysis_path}'")
+        return
+
+    ensure_directory_exists(analysis_path)
+    backup_path = os.path.join(analysis_path, ANALYSIS_BACKUP_DIR)
+    if any(action == "rewrite" for _, _, action, _ in to_write):
+        ensure_directory_exists(backup_path)
+    for _, path, action, backup in to_write:
+        if action == "rewrite":
+            shutil.copy2(path, os.path.join(backup_path, backup))
+
+    run_settings = inputs["settings"]
+    context = {
+        "project_id": pid,
+        "package_version": package_version(),
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "exp_name": run_settings["exp"],
+        "searches": run_settings["searches"],
+        "screening_data": _relative(inputs["screening_data"], project_path),
+        "screening_db": _relative(inputs["screening_db"], project_path),
+        "field": run_settings["field"],
+        "llm_vote_rule": run_settings["llm_vote_rule"],
+        "prompts": run_settings["prompt"],
+        "filter_providers": run_settings["filter_provider"],
+        "filter_models": run_settings["filter_model"],
+        "filter_profiles": run_settings["filter_profile"],
+        "fulltext_exp": run_settings["fulltext_exp"],
+        "fulltext_data": _relative(inputs["fulltext_data"], project_path),
+        "fulltext_db": _relative(inputs["fulltext_db"], project_path),
+        "fulltext_field": run_settings["fulltext_field"],
+        "fulltext_prompts": run_settings["fulltext_prompt"],
+        "reason_field": run_settings["reason_field"],
+        "title": run_settings["title"],
+        "counts_file": f"{prefix}{PRISMA_COUNTS}",
+        "svg_file": f"{prefix}{PRISMA_SVG}",
+        "decisions_file": f"{prefix}{PRISMA_DECISIONS}",
+    }
+
+    written = []
+    pending = {filename for filename, _, action, _ in to_write if action != "keep"}
+    if notebook_name in pending:
+        written.append(write_notebook("prisma", context, os.path.join(analysis_path, notebook_name)))
+    if pending & set(COPIED_MODULES):
+        written.extend(copy_analysis_modules(analysis_path))
+
+    cprint(f"PRISMA notebook ready — {len(written)} file(s) written:\n  {analysis_path}")
+    cprint(f"Jupyter Notebook: [bold yellow]{os.path.join(analysis_path, notebook_name)}[/bold yellow]")

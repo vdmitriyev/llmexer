@@ -32,6 +32,7 @@ TEMPLATES = {
     "experiment": "analyse_experiment.ipynb.j2",
     "searches": "analyse_searches.ipynb.j2",
     "agreements": "analyse_experiment_agreements.ipynb.j2",
+    "prisma": "analyse_prisma.ipynb.j2",
 }
 
 # Output file per kind, written into <project>/analysis/ by ``analysis init``.
@@ -44,6 +45,7 @@ NOTEBOOKS = {
 # question about an experiment that has already been flattened.
 ADDON_NOTEBOOKS = {
     "agreements": "analyse_experiment_agreements.ipynb",
+    "prisma": "analyse_prisma.ipynb",
 }
 
 # Where the copied modules come from: this package's own directory.
