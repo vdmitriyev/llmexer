@@ -414,6 +414,8 @@ llmexer search run --pid llm-survey-2026 --file <ID>.yaml --limit 500
 
 To use them in every new search, set `search_engines = semantic_scholar, openalex, core, europepmc, pubmed, arxiv` in `.llmexer/llmexer.ini` instead.
 
+To run each engine from its own search file, with its own search string, see [Scenario 7](#-scenario-7-one-search-file-for-each-engine).
+
 Results are saved as `<ID>__results.csv` in `searches/`.
 
 **2. Filter out rows you do not need (optional)**
@@ -639,6 +641,88 @@ llmexer analysis add-prisma --pid llm-survey-2026 --exp abstracts
 ```
 
 `analysis/abstracts__analyse_prisma.ipynb` takes the saved settings, shows each stage and the papers the models disagree on, then draws the same SVG. It reads and writes the same three files as `analysis draw-prisma`.
+
+## 📢 Scenario 7: One search file for each engine
+
+Sometimes each search engine needs its own search string, and you want to run and check each engine on its own. You can keep all of them in one project: create one search file for each engine, and use `engines:` and `queries:` in each file to set its one engine and its own search string.
+
+Example below just created 3 search files using the tool, but you can also create one file, convert it (e.g., create 3 queries) and then manually copy the file and remove queries and search engines you don't need.
+
+**1. Create one search for each engine**
+
+```bash
+llmexer search create --pid llm-survey-2026 --query '"large language models" AND diagnosis'
+llmexer search create --pid llm-survey-2026 --query '"large language models" AND diagnosis'
+llmexer search create --pid llm-survey-2026 --query '"large language models" AND diagnosis'
+llmexer search list --pid llm-survey-2026
+```
+
+Give the searches names you can recognize. The names become column names in step 4:
+```bash
+llmexer search rename --pid llm-survey-2026 --old-id <ID_1> --new-id llm-dx-s2
+llmexer search rename --pid llm-survey-2026 --old-id <ID_2> --new-id llm-dx-pubmed
+llmexer search rename --pid llm-survey-2026 --old-id <ID_3> --new-id llm-dx-arxiv
+```
+
+**2. Set one engine and its search string in each file**
+
+`searches/llm-dx-s2.yaml` uses `query`, converted for Semantic Scholar:
+```yaml
+query: '"large language models" AND diagnosis'
+year: 2020-2025
+onlyOpenAccess: false
+engines: [semantic_scholar]
+```
+
+`searches/llm-dx-pubmed.yaml` sends its own string to PubMed:
+```yaml
+query: '"large language models" AND diagnosis'
+year: 2020-2025
+onlyOpenAccess: false
+engines: [pubmed]
+queries:
+  pubmed: '"large language models"[tiab] AND "Diagnosis"[mh]'
+```
+
+`searches/llm-dx-arxiv.yaml` sends its own string to arXiv, and searches a longer period:
+```yaml
+query: '"large language models" AND diagnosis'
+year: 2018-2025
+onlyOpenAccess: true
+engines: [arxiv]
+queries:
+  arxiv: 'abs:"large language models" AND abs:diagnosis AND cat:cs.CL'
+```
+
+- `engines:` in a search file replaces the engine list from `llmexer.ini` and `LLMEXER_SEARCH_ENGINES`, so each file runs only its one engine.
+- A string under `queries:` is sent exactly as written. Choose the fields yourself, because llmexer does not limit an own string to title and abstract. `query` must still be there, but that engine no longer uses it.
+- `year` and `onlyOpenAccess` are added for each file, so each engine can have its own values.
+
+To start from llmexer's conversion instead of writing a string from scratch, run `search convert --file llm-dx-pubmed.yaml` and then edit `queries:`.
+
+**3. Run each search**
+```bash
+llmexer search run --pid llm-survey-2026 --file llm-dx-s2.yaml --limit 500
+llmexer search run --pid llm-survey-2026 --file llm-dx-pubmed.yaml --limit 500
+llmexer search run --pid llm-survey-2026 --file llm-dx-arxiv.yaml --limit 500
+```
+
+Each search writes its own `<ID>__results.csv`, so you can check, filter (`search filter`) or run again (`--rewrite`) one engine without touching the others. `llmexer.log` has the exact string sent to each engine:
+```
+INFO - PubMed query (own string from queries:): "large language models"[tiab] AND "Diagnosis"[mh] [publication date 2020-2025]
+```
+
+**4. Combine the results**
+```bash
+llmexer search merge --pid llm-survey-2026
+```
+
+This reads every search of the project and writes `searches/llm-survey-2026__merged_results.csv` (and `__merged_filtered.csv` from the filtered files). To use the result in an experiment:
+```bash
+llmexer experiment copy-search --pid llm-survey-2026 --file llm-survey-2026__merged_results.csv
+```
+
+The PRISMA diagram (Scenario 6) adds up the numbers of all searches in the project for each engine, and counts the papers found by more than one search as duplicates.
 
 #### Working with the current project
 
