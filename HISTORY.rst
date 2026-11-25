@@ -2,19 +2,26 @@
 History
 =======
 
-0.6.2 (2026-11-24)
+0.6.2 (2026-11-25)
 -------------------
 
-* ``search run`` queries more engines: CORE (needs ``CORE_API_KEY``), Europe PMC, PubMed, arXiv and Zenodo (no key).
+* ``search run`` queries more engines: CORE (requires ``CORE_API_KEY``), Europe PMC, PubMed, arXiv and Zenodo.
 * Zenodo is searched for publications only, without data management plans, deliverables, milestones and proposals.
-* Optional keys for higher limits: ``NCBI_API_KEY`` (PubMed) and ``ZENODO_API_KEY`` (Zenodo).
-* Choose the engines with ``engines:`` in the search file, or ``search_engines`` in ``llmexer.ini`` / ``LLMEXER_SEARCH_ENGINES``. The default stays Semantic Scholar, plus OpenAlex and CORE when their key is set.
+* Optional keys for higher limits by some search engines: PubMed (``NCBI_API_KEY``) and Zenodo (``ZENODO_API_KEY``).
+* Tool takes the engine list from the first of these places, and ignores the rest (are not combined):
+  1. ``engines:`` option in the search file (YAML)
+  2. ``LLMEXER_SEARCH_ENGINES`` option (shell or ``.env``)
+  3. ``search_engines`` option in ``.llmexer/llmexer.ini``
+  4. the default: ``semantic_scholar, openalex, core`` (OpenAlex and CORE are skipped without ``OPENALEX_API_KEY`` / ``CORE_API_KEY``)
 * A search file can give an engine its own search string under ``queries:``, used as written.
+  - With a ``query``: engines without an own string get ``query`` converted.
+  - Without a ``query``: list only engines with an own string in ``engines:``; any other engine is sent no search terms.
 * Add ``search convert``: shows a query in every engine's syntax (``--query``) or writes it into a search file's ``queries:`` (``--file``).
 * Every search string sent to an engine is written to ``llmexer.log``.
 * ``analysis draw-prisma`` counts the records of every engine.
 * ``search rename`` now also moves the OpenAlex raw responses.
-* ``MAX_OPEN_ALEX_RESPONSES`` is renamed to ``OPEN_ALEX_MAX_RESPONSES`` (the old name still works, with a warning). New caps: ``CORE_MAX_RESPONSES`` and ``SEARCH_MAX_RESPONSES`` (Europe PMC, PubMed, arXiv, Zenodo).
+* ``MAX_OPEN_ALEX_RESPONSES`` is renamed to ``OPEN_ALEX_MAX_RESPONSES``.
+* New request caps: ``CORE_MAX_RESPONSES`` and ``SEARCH_MAX_RESPONSES`` (Europe PMC, PubMed, arXiv, Zenodo).
 * New dependency: ``defusedxml``.
 
 0.6.1 (2026-11-24)
