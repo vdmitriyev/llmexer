@@ -81,6 +81,11 @@ def _search_file(project, name: str, text: str):
     (searches / name).write_text(text, encoding="utf-8")
 
 
+def _in_output(text: str, result) -> bool:
+    """True when ``text`` is in the output. Rich wraps long lines (e.g. Windows temp paths), so whitespace is ignored."""
+    return "".join(text.split()) in "".join(result.output.split())
+
+
 def _counts(project):
     return json.loads(next((project / "searches" / "logs").glob("*__counts.json")).read_text(encoding="utf-8"))
 
@@ -142,7 +147,7 @@ def test_default_engines_skip_the_ones_without_a_key(project, fake_engines):
 
     assert result.exit_code == 0, result.output
     assert fake_engines == ["semantic_scholar"]
-    assert "OpenAlex skipped" in result.output and "CORE skipped" in result.output
+    assert _in_output("OpenAlex skipped", result) and _in_output("CORE skipped", result)
     assert _counts(project) == {
         "semantic_scholar": 1,
         "openalex": 0,
@@ -193,7 +198,7 @@ def test_engine_option_is_gone(project, fake_engines):
     result = _run("--engine", "arxiv")
 
     assert result.exit_code != 0
-    assert "No such option" in result.output
+    assert _in_output("No such option", result)
     assert fake_engines == []
 
 
@@ -231,7 +236,7 @@ def test_dry_run_names_every_raw_file(project, fake_engines, monkeypatch):
     result = runner.invoke(app, ["--dry-run", "search", "run", "--query", "x"])
 
     assert result.exit_code == 0, result.output
-    assert "__pubmed_results_raw.json" in result.output and "__arxiv_results_raw.json" in result.output
+    assert _in_output("__pubmed_results_raw.json", result) and _in_output("__arxiv_results_raw.json", result)
     assert fake_engines == []
 
 
@@ -324,7 +329,7 @@ def test_own_string_for_an_unused_engine_is_a_warning(project, fake_engines):
     result = runner.invoke(app, ["search", "run", "--file", "s1.yaml"])
 
     assert result.exit_code == 0, result.output
-    assert "queries: arxiv:" in result.output and "not used" in result.output
+    assert _in_output("queries: arxiv:", result) and _in_output("not used", result)
     assert fake_engines == ["pubmed"]
 
 

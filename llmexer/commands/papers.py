@@ -8,8 +8,10 @@ from typing import List, Optional
 import pandas as pd
 import pypdf
 import typer
+from rich.markup import escape
 from rich.table import Table
 
+from llmexer.base.paper_removal import find_removal_targets, removal_filter
 from llmexer.base.papers import (
     PAPER_TYPES,
     UNPAYWALL_EMAIL,
@@ -18,11 +20,18 @@ from llmexer.base.papers import (
     PDFProcessor,
     download_pdf_from_url,
     extract_via_docling,
+    find_missing_papers,
     format_created_timestamp,
     is_paper_file,
     list_paper_files,
     resolve_unpaywall_pdf_url,
     scan_papers,
+)
+from llmexer.base.search import (
+    _is_missing,
+    gather_search_csvs,
+    merge_search_csvs,
+    read_search_params,
 )
 from llmexer.common import (
     ensure_directory_exists,
@@ -47,6 +56,11 @@ from llmexer.exceptions import (
 )
 
 app = typer.Typer(help="Manages the papers.")
+
+_SEARCH_FILE_HELP = (
+    "Search results CSV filename inside searches/ "
+    "(e.g. '20260401-bfdd863d__results.csv' or '20260401-bfdd863d__filtered.csv')."
+)
 
 
 @app.command()
@@ -152,8 +166,7 @@ def download(
     search_file: Optional[str] = typer.Option(
         None,
         "--search-file",
-        help="Search results CSV filename inside searches/ (e.g. '20260401-bfdd863d__results.csv' or '20260401-bfdd863d__filtered.csv'). "
-        "Iterates all rows and downloads each paper by DOI.",
+        help=f"{_SEARCH_FILE_HELP} Iterates all rows and downloads each paper by DOI.",
     ),
     email: Optional[str] = typer.Option(
         UNPAYWALL_EMAIL,
@@ -750,3 +763,199 @@ def stats(
     console.print(_build_papers_stats_grid(entries))
     cprint()
     console.print(_build_file_types_table(entries))
+
+
+def _text_cell(value) -> str:
+    return "[dim]—[/dim]" if _is_missing(value) else escape(str(value).strip())
+
+
+def _build_missing_table(missing_df: pd.DataFrame, total: int) -> Table:
+    """One row per search result whose PDF is not in papers/."""
+
+    table = Table(
+        title="Papers missing from papers/",
+        show_footer=True,
+        header_style="bold",
+        footer_style="bold",
+    )
+    table.add_column("#", justify="right", style="cyan", no_wrap=True)
+    table.add_column("Year", no_wrap=True)
+    table.add_column("Title", footer=f"{len(missing_df)} of {total} paper(s) missing", overflow="fold")
+    table.add_column("DOI", overflow="fold")
+    table.add_column("PDF file", overflow="fold")
+
+    for index, (_, row) in enumerate(missing_df.iterrows(), start=1):
+        year = row.get("year")
+        year_text = str(int(year)) if isinstance(year, float) and not _is_missing(year) else year
+        table.add_row(
+            str(index),
+            _text_cell(year_text),
+            _text_cell(row.get("title")),
+            _text_cell(row.get("doi")),
+            _text_cell(row.get("pdf_filename")),
+        )
+
+    return table
+
+
+@app.command()
+def find(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    search_file: Optional[str] = typer.Option(None, "--search-file", help=_SEARCH_FILE_HELP),
+    missing: bool = typer.Option(
+        False,
+        "--missing",
+        help="List the papers of the search file whose PDF is not in papers/.",
+    ),
+    filename_only: bool = typer.Option(
+        False,
+        "--filename-only",
+        help="Print only the PDF file names, one per line, without table or header. Rows without one are left out.",
+    ),
+    doi_only: bool = typer.Option(
+        False,
+        "--doi-only",
+        help="Print only the DOIs, one per line, without table or header. Rows without one are left out.",
+    ),
+) -> None:
+    """Find papers of a search file, e.g. the ones not downloaded yet (--missing)"""
+
+    if not missing:
+        raise UnexpectedCLIParamsException("Provide --missing (the only `papers find` mode so far).")
+    if search_file is None:
+        raise UnexpectedCLIParamsException("--search-file is required with --missing.")
+    if filename_only and doi_only:
+        raise UnexpectedCLIParamsException("Only one can be set: --filename-only or --doi-only.")
+
+    from llmexer.commands.search import _collect_export_csvs
+
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+    csv_path = _collect_export_csvs(None, search_file, pid, experiment_path, searches_path)[0]
+
+    df = pd.read_csv(csv_path, sep=";")
+    missing_df = find_missing_papers(df, _papers_path(pid))
+
+    if filename_only or doi_only:
+        column = "pdf_filename" if filename_only else "doi"
+        for value in missing_df[column]:
+            if _is_missing(value):
+                continue
+            cprint(str(value).strip(), markup=False, highlight=False, soft_wrap=True)
+        return
+
+    cprint(f"[bold]Project:[/bold] [cyan]{pid}[/cyan]")
+    cprint(f"[bold]Search file:[/bold] [yellow]{escape(Path(csv_path).name)}[/yellow] ({len(df)} papers)")
+
+    if missing_df.empty:
+        cprint(f"All {len(df)} paper(s) of {escape(Path(csv_path).name)} are in {PAPERS_DIR}/.")
+        return
+
+    cprint()
+    console.print(_build_missing_table(missing_df, len(df)))
+
+    cprint("\nExample to download the missing papers:")
+    cprint(
+        f"[bold yellow]llmexer papers download --pid {pid} --search-file {escape(search_file)}[/bold yellow]",
+        soft_wrap=True,
+    )
+
+
+REMOVE_DOI_HELP = "DOI of a paper to remove. Can be given more than once."
+REMOVE_NAME_HELP = (
+    "Full file name of a paper in papers/ (e.g. '2024_Smith_Title_10.1_x.pdf'). Can be given more than once."
+)
+REMOVE_YES_HELP = "Remove without asking for confirmation."
+
+
+def remove_papers(pid: Optional[str], doi: Optional[List[str]], name: Optional[List[str]], yes: bool) -> None:
+    """Shared body of `papers remove` and `search remove`."""
+
+    from llmexer.commands.search import (
+        MERGED_FILTERED_SUFFIX,
+        _filter_search,
+        print_search_header,
+    )
+
+    dois = list(doi or [])
+    names = list(name or [])
+    if not dois and not names:
+        raise UnexpectedCLIParamsException("Provide at least one --doi or --name.")
+
+    pid = get_proper_pid(pid)
+    experiment_path = get_project_directory_path(pid)
+    searches_path = os.path.join(experiment_path, SEARCHES_DIR)
+
+    files, search_ids = find_removal_targets(experiment_path, dois, names)
+    filters = [removal_filter(dois, names)]
+
+    cprint(f"[bold]Project:[/bold] [cyan]{pid}[/cyan]")
+    if files:
+        cprint(f"Files to delete from [yellow]{PAPERS_DIR}/[/yellow]:")
+        for path in files:
+            cprint(f"  {escape(path.name)}")
+    else:
+        cprint(f"No files to delete from [yellow]{PAPERS_DIR}/[/yellow].")
+    if search_ids:
+        cprint(f"Searches to remove rows from: {', '.join(search_ids)}")
+    else:
+        cprint("No search result rows to remove.")
+
+    if not settings.dry_run and not yes and not typer.confirm("Remove?", default=False):
+        cprint("Nothing removed.")
+        return
+
+    for path in files:
+        if settings.dry_run:
+            cprint(f"[bold yellow]Dry run:[/bold yellow] would delete '{path}'")
+            continue
+        path.unlink()
+        logger.info("Removed paper file '%s'", path)
+
+    for search_id in search_ids:
+        _, query, year, only_open_access = read_search_params(f"{search_id}.yaml", experiment_path)
+        print_search_header(pid, search_id, query, year, only_open_access)
+        _filter_search(search_id, experiment_path, filters)
+
+    merged_filtered_path = os.path.join(searches_path, f"{pid}{MERGED_FILTERED_SUFFIX}")
+    if search_ids and os.path.exists(merged_filtered_path):
+        if settings.dry_run:
+            cprint(f"[bold yellow]Dry run:[/bold yellow] would write '{merged_filtered_path}'")
+        else:
+            _, filtered_csvs = gather_search_csvs(searches_path)
+            merged_df, _ = merge_search_csvs(filtered_csvs, "__filtered")
+            merged_df.to_csv(merged_filtered_path, index=False, encoding="utf-8", sep=";")
+            cprint(f"Rebuilt merged filtered results: [bold]{Path(merged_filtered_path).name}[/bold]")
+
+    if not settings.dry_run:
+        cprint(f"[bold green]Removed[/bold green] {len(files)} file(s), rows from {len(search_ids)} search(es).")
+
+
+@app.command(name="delete", hidden=True)
+@app.command()
+def remove(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    doi: List[str] = typer.Option(None, "--doi", help=REMOVE_DOI_HELP),
+    name: List[str] = typer.Option(None, "--name", help=REMOVE_NAME_HELP),
+    yes: bool = typer.Option(False, "--yes", "-y", help=REMOVE_YES_HELP),
+) -> None:
+    """Remove papers from papers/ and from the filtered search results.
+
+    Deletes the PDF and the TXT / Markdown extracted from it.
+
+    Removes the paper's row from every <id>__filtered.csv (created from <id>__results.csv when missing) and from
+    the merged filtered CSV. The <id>__results.csv files are never changed.
+
+    Removed rows are logged in searches/logs/filters-applied.log, like `search filter`. Same as `search remove`.
+    """
+
+    remove_papers(pid, doi, name, yes)

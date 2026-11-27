@@ -34,5 +34,5 @@ keywords:
   - command-line tool
   - scientific software tool
 license: MIT
-version: 0.6.2 # package-version
-date-released: 2026-11-24 #package-version-date
+version: 0.6.3 # package-version
+date-released: 2026-11-27 #package-version-date

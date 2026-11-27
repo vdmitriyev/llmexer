@@ -1070,3 +1070,34 @@ def export(
 
     for csv_path in csv_paths:
         _export_csv(csv_path, pid, rewrite)
+
+
+@app.command(name="delete", hidden=True)
+@app.command()
+def remove(
+    pid: str = typer.Option(
+        None,
+        "--pid",
+        help="Project ID. If not provided, uses PROJECT_ID from .env.",
+    ),
+    doi: list[str] = typer.Option(None, "--doi", help="DOI of a paper to remove. Can be given more than once."),
+    name: list[str] = typer.Option(
+        None,
+        "--name",
+        help="Full file name of a paper in papers/ (e.g. '2024_Smith_Title_10.1_x.pdf'). Can be given more than once.",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Remove without asking for confirmation."),
+) -> None:
+    """Remove papers from the filtered search results and from papers/.
+
+    Removes the paper's row from every <id>__filtered.csv (created from <id>__results.csv when missing) and from
+    the merged filtered CSV. The <id>__results.csv files are never changed.
+
+    Deletes the PDF and the TXT / Markdown extracted from it. Removed rows are logged in
+    searches/logs/filters-applied.log, like `search filter`.
+    Same as `papers remove`.
+    """
+
+    from llmexer.commands.papers import remove_papers
+
+    remove_papers(pid, doi, name, yes)

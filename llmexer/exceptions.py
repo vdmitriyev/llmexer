@@ -38,6 +38,10 @@ class PaperExtractException(LLMExerException):
     """Raised when a paper cannot be extracted."""
 
 
+class PaperRemoveException(LLMExerException):
+    """Raised when a paper to remove matches no file and no search result row."""
+
+
 class SearchResultsAlreadyExistException(LLMExerException):
     """Raised when search result files already exist and --force-rewrite is not set."""
 

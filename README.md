@@ -807,8 +807,10 @@ The `papers` category manages the PDFs of a project.
 | `download --doi` | Downloads open-access PDFs by DOI through the Unpaywall API. Needs your email, from `--email` or `UNPAYWALL_EMAIL`. | `llmexer papers download --doi 10.1038/nature12373 --email you@example.com` |
 | `download --search-file` | Downloads every paper with a DOI from a search result or filtered CSV, then syncs the search against `papers/`. Failures are logged so you can retry them. | `llmexer papers download --search-file 20260401-abc123__filtered.csv` |
 | `extract` | Extracts the text of every PDF in `papers/`. The default `pypdf` backend saves `.txt`; the `docling` backend saves `.md`. Already extracted files are skipped unless you pass `--rewrite`. | `llmexer papers extract --pid my-project --processor docling` |
+| `find --missing` | Lists the papers of a search CSV whose PDF is not in `papers/` (the `pdf_downloaded` column is not used, since it can be out of date). Needs `--search-file`. `--filename-only` or `--doi-only` prints just that value, one per line (rows without it are left out). Changes nothing. | `llmexer papers find --missing --search-file 20260401-abc123__filtered.csv` |
 | `list` | Lists the files in the project's `papers/` folder. `--created` adds the creation time of each file. Sort with `--sort-by alpha` (default), `--sort-by date` (creation date) or `--sort-by size` (file size), and reverse with `--desc`. | `llmexer papers list --sort-by date --desc` |
 | `show` | Shows one row per paper with its file types (PDF, TXT, MD), their sizes and the creation date. Any other files in `papers/` are listed in a separate *Other files* table. The Created (PDF) column shows when the PDF was created; for a paper without a PDF, it shows the date of its oldest file and names that file's type. Takes the same `--sort-by` and `--desc` as `list`; `size` sorts by the PDF size (all files of a paper without a PDF). Aliases: `view`, `table`. | `llmexer papers show --pid my-project` |
+| `remove` | Removes papers by `--doi` or by full file name (`--name`). Deletes the PDF and its extracted TXT / Markdown from `papers/`, and removes the row from every filtered CSV (created from the results CSV when missing) and from the merged filtered CSV. Results CSVs never change. Removed rows are logged in `searches/logs/filters-applied.log`, like `search filter`. Asks first unless you pass `--yes`. Supports `--dry-run`. Same as `search remove`. Alias: `delete`. | `llmexer papers remove --name 2023_Smith_Title_10.1234_x.pdf` |
 | `stats` | Shows statistics for the `papers/` folder: papers by year (from `YEAR_...` file names), how many papers have a PDF, TXT or Markdown file, and the number and size of files per type. | `llmexer papers stats --pid my-project` |
 
 ## 🔍 CLI category: **search**
@@ -853,6 +855,7 @@ Each engine's raw responses go to `searches/jsons/<ID>__<engine>_results_raw.jso
 | `rename` | Renames a search and all the files that belong to it. | `llmexer search rename --old-id 20260401-abc123 --new-id my-search` |
 | `stats` | Shows the statistics of a search: papers per year, plus a breakdown by open access, language, download state and source. | `llmexer search stats --file 20260401-abc123.yaml` |
 | `filter` | Removes rows from a search and rewrites its filtered CSV. Filters chain, and you can combine `--language`, `--source`, `--doi` and `--downloaded`. Leave out `--file` to filter every search. Each applied filter is logged. | `llmexer search filter --file 20260401-abc123.yaml --language de --downloaded` |
+| `remove` | Same as `papers remove`: removes papers by `--doi` or `--name` from the filtered CSVs and from `papers/`. Alias: `delete`. | `llmexer search remove --doi 10.1234/x` |
 | `merge` | Merges the project's search CSVs into one deduplicated results file and one deduplicated filtered file, marking which search each row came from and how often it was found. Supports `--rewrite` and `--dry-run`. | `llmexer search merge --pid my-project` |
 | `sync` | Reconciles a search against the project's `papers/` folder and updates which files each row has. Pass `--add-local-extra-pdfs` to also list PDFs that no row mentions yet. Leave out `--file` to sync every search. Supports `--dry-run`. | `llmexer search sync --file 20260401-abc123.yaml` |
 | `export` | Renders search results as an HTML page next to the CSV, with sortable columns, per-column filters, clickable DOIs and collapsible abstracts. Leave out `--file` and `--csv-file` to export the whole project. Supports `--rewrite` and `--dry-run`. | `llmexer search export --file 20260401-abc123.yaml` |
@@ -959,7 +962,7 @@ If you use `llmexer` in your research, please cite it. The metadata is in [CITAT
 @software{dmitriyev_llmexer_2026,
   author    = {Dmitriyev, Viktor and Valko, Danila},
   title     = {llmexer},
-  version   = {0.6.2},
+  version   = {0.6.3},
   year      = {2026},
   month     = {11},
   doi       = {10.5281/zenodo.23646932},

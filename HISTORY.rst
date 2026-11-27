@@ -2,6 +2,12 @@
 History
 =======
 
+0.6.3 (2026-11-27)
+-------------------
+
+* Add ``papers remove`` and ``search remove``: delete a paper's files and drop it from the filtered search results (``--doi`` / ``--name``), with a log.
+* Add ``papers find --missing``: lists the papers of a search CSV that are not in ``papers/`` (``--filename-only`` / ``--doi-only`` for a plain list).
+
 0.6.2 (2026-11-25)
 -------------------
 

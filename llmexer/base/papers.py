@@ -9,9 +9,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
 import requests
 import urllib3
 
+from llmexer.base.search import _is_missing
 from llmexer.common import make_http_session
 from llmexer.configs import logger, settings
 from llmexer.exceptions import (
@@ -368,6 +370,20 @@ def scan_papers(
         papers.sort(key=lambda entry: entry.stem.lower(), reverse=desc)
 
     return papers
+
+
+def find_missing_papers(df: pd.DataFrame, papers_path: str) -> pd.DataFrame:
+    """Rows of a search CSV whose ``pdf_filename`` is not a file in ``papers_path``.
+
+    A blank ``pdf_filename`` counts as missing. The ``pdf_downloaded`` column is not used, since it
+    can be out of date (e.g. after ``papers remove``, or before ``search sync``).
+    """
+
+    present_names = {path.name for path in list_paper_files(papers_path)}
+    pdf_names = df["pdf_filename"].map(lambda value: "" if _is_missing(value) else str(value).strip())
+    is_present = pdf_names.isin(present_names)
+    missing_df = df[~is_present]
+    return missing_df
 
 
 def format_created_timestamp(timestamp: float) -> str:
